@@ -1,0 +1,372 @@
+/**
+ * ASTParser — Wraps web-tree-sitter to extract structured nodes
+ * (functions, classes, interfaces, imports, export defaults, arrow functions)
+ * from TypeScript/JavaScript files.
+ *
+ * Expanded pattern support per flaw analysis (F-09):
+ *   - export default
+ *   - arrow functions
+ *   - variable declarators with function types
+ *
+ * Handles both tree-sitter WASM grammar versions:
+ *   - import_statement (newer tree-sitter-typescript)
+ *   - import_declaration (older tree-sitter-typescript)
+ */
+import * as TreeSitter from 'web-tree-sitter';
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { createRequire } from 'node:module';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+// WASM path discovery — check multiple candidate locations
+// When running from built output: __dirname = dist/        → wasm is at dist/wasm/
+// When running from source (tsx): __dirname = src/ast/     → wasm is at dist/wasm/ (two levels up)
+// When installed globally:         __dirname = <prefix>/   → wasm is at <prefix>/wasm/
+function findWasmDir(): string {
+  const candidates = [
+    // Built output: __dirname is dist/ → wasm/ is right next to it
+    path.join(__dirname, 'wasm'),
+    // Source mode: __dirname is src/ast/ → need to go up to project root, then dist/wasm
+    path.join(__dirname, '..', '..', 'dist', 'wasm'),
+    // node_modules location (tree-sitter.wasm lives inside web-tree-sitter)
+    path.join(__dirname, '..', 'node_modules'),
+    path.join(__dirname, '..', '..', 'node_modules'),
+  ];
+
+  for (const dir of candidates) {
+    if (fs.existsSync(path.join(dir, 'tree-sitter.wasm'))) {
+      return dir;
+    }
+  }
+
+  // Fallback: try to find web-tree-sitter in node_modules
+  try {
+    const _require = createRequire(import.meta.url);
+    const pkgPath = _require.resolve('web-tree-sitter/package.json');
+    const pkgDir = path.dirname(pkgPath);
+    if (fs.existsSync(path.join(pkgDir, 'tree-sitter.wasm'))) {
+      return pkgDir;
+    }
+  } catch {
+    // Package not found in standard locations
+  }
+
+  // Last resort: return the most likely built-output path
+  return path.join(__dirname, 'wasm');
+}
+
+const WASM_DIR = findWasmDir();
+
+export interface MethodRange {
+  name: string;
+  signatureLine: number;
+}
+
+export interface CallSite {
+  filePath: string;
+  line: number;
+  snippet: string;
+}
+
+export interface ParsedNode {
+  type: 'function' | 'class' | 'interface' | 'import' | 'export_default' | 'arrow_function';
+  name: string;
+  signature?: string;
+  methods?: string[];
+  methodRanges?: MethodRange[];
+  source?: string;
+  startLine: number;
+  endLine: number;
+}
+
+export class ASTParser {
+  private tsLang: TreeSitter.Language | null = null;
+
+  async init(): Promise<void> {
+    await TreeSitter.Parser.init({
+      locateFile: () => path.join(WASM_DIR, 'tree-sitter.wasm'),
+    });
+
+    // Load TypeScript grammar — try multiple paths
+    const grammarCandidates = [
+      path.join(WASM_DIR, 'tree-sitter-typescript.wasm'),
+      path.join(WASM_DIR, 'tree-sitter-typescript', 'tree-sitter-typescript.wasm'),
+      // Also check node_modules for the grammar
+      path.join(__dirname, '..', 'node_modules', 'web-tree-sitter', 'tree-sitter-typescript.wasm'),
+      path.join(__dirname, '..', '..', 'node_modules', 'web-tree-sitter', 'tree-sitter-typescript.wasm'),
+    ];
+
+    let grammarPath = '';
+    for (const candidate of grammarCandidates) {
+      if (fs.existsSync(candidate)) {
+        grammarPath = candidate;
+        break;
+      }
+    }
+
+    if (!grammarPath) {
+      throw new Error('Could not locate tree-sitter-typescript.wasm grammar file');
+    }
+
+    this.tsLang = await TreeSitter.Language.load(grammarPath);
+  }
+
+  async parse(filePath: string): Promise<ParsedNode[]> {
+    if (!this.tsLang) throw new Error('ASTParser not initialized. Call init() first.');
+
+    const parser = new TreeSitter.Parser();
+    parser.setLanguage(this.tsLang);
+
+    const source = fs.readFileSync(filePath, 'utf-8');
+    const tree = parser.parse(source);
+    if (!tree) return [];
+
+    const nodes: ParsedNode[] = [];
+    const lines = source.split('\n');
+    // Track processed node IDs to prevent duplicates from export_statement
+    const processedIds = new Set<number>();
+
+    const walk = (node: TreeSitter.Node) => {
+      // Skip if already processed (prevents duplicates from export_statement)
+      if (processedIds.has(node.id)) return;
+
+      switch (node.type) {
+        // ─── Import statements (both grammar versions) ────────────────────
+        case 'import_statement':
+        case 'import_declaration': {
+          const srcNode = node.children.find(c => c?.type === 'string');
+          if (srcNode) {
+            nodes.push({
+              type: 'import',
+              name: srcNode.text.replace(/['"]/g, ''),
+              source: srcNode.text.replace(/['"]/g, ''),
+              startLine: node.startPosition.row + 1,
+              endLine: node.endPosition.row + 1,
+            });
+          }
+          processedIds.add(node.id);
+          return; // Don't recurse into import nodes
+        }
+
+        // ─── Export statements (export function, export default) ────────
+        case 'export_statement': {
+          const hasDefault = node.children.some(c => c?.type === 'default');
+
+          if (hasDefault) {
+            // export default function foo() {} or export default class Foo {}
+            const innerFunc = node.children.find(c => c?.type === 'function_declaration');
+            const innerClass = node.children.find(c => c?.type === 'class_declaration');
+
+            if (innerFunc) {
+              processedIds.add(innerFunc.id);
+              const nameNode = innerFunc.childForFieldName?.('name')
+                ?? innerFunc.children.find(c => c?.type === 'identifier');
+              const sig = lines[node.startPosition.row] ?? '';
+              nodes.push({
+                type: 'export_default',
+                name: nameNode?.text ?? 'default',
+                signature: sig.trim(),
+                startLine: node.startPosition.row + 1,
+                endLine: node.endPosition.row + 1,
+              });
+            } else if (innerClass) {
+              processedIds.add(innerClass.id);
+              const nameNode = innerClass.childForFieldName?.('name');
+              const sig = lines[node.startPosition.row] ?? '';
+              nodes.push({
+                type: 'export_default',
+                name: nameNode?.text ?? 'default',
+                signature: sig.trim(),
+                startLine: node.startPosition.row + 1,
+                endLine: node.endPosition.row + 1,
+              });
+            } else {
+              // export default expression (identifier, call_expression, etc.)
+              const exprChild = node.children.find(c =>
+                c?.type === 'identifier' || c?.type === 'call_expression' || c?.type === 'class'
+              );
+              if (exprChild) {
+                const sig = lines[node.startPosition.row] ?? '';
+                nodes.push({
+                  type: 'export_default',
+                  name: exprChild.text.split('(')[0].trim().slice(0, 50),
+                  signature: sig.trim(),
+                  startLine: node.startPosition.row + 1,
+                  endLine: node.endPosition.row + 1,
+                });
+              }
+            }
+          } else {
+            // export function / export class / export interface / export const
+            // Walk the inner child — it will add itself to processedIds when processed
+            const innerChild = node.children.find(
+              c => c?.type === 'function_declaration'
+                || c?.type === 'class_declaration'
+                || c?.type === 'interface_declaration'
+                || c?.type === 'lexical_declaration'
+                || c?.type === 'type_alias_declaration'
+            );
+
+            if (innerChild) {
+              // Walk the inner child — it will be processed and mark itself
+              walk(innerChild);
+            }
+          }
+
+          processedIds.add(node.id);
+          return; // Don't recurse into export_statement children (we handled them above)
+        }
+
+        // ─── Function declarations ──────────────────────────────────────
+        case 'function_declaration': {
+          const nameNode = node.childForFieldName?.('name')
+            ?? node.children.find(c => c?.type === 'identifier');
+          if (nameNode) {
+            const sig = lines[node.startPosition.row] ?? '';
+            nodes.push({
+              type: 'function',
+              name: nameNode.text,
+              signature: sig.trim(),
+              startLine: node.startPosition.row + 1,
+              endLine: node.endPosition.row + 1,
+            });
+          }
+          processedIds.add(node.id);
+          // Don't recurse into function bodies
+          return;
+        }
+
+        // ─── Class declarations ─────────────────────────────────────────
+        case 'class_declaration': {
+          const nameNode = node.childForFieldName?.('name');
+          if (nameNode) {
+            const body = node.childForFieldName?.('body');
+            const methodNodes = (body?.children ?? []).filter(
+              c => c?.type === 'method_definition' || c?.type === 'public_field_definition',
+            ) as TreeSitter.Node[];
+            const methods = methodNodes
+              .map(c => c.childForFieldName?.('name')?.text ?? '')
+              .filter(Boolean);
+
+            const methodRanges: MethodRange[] = methodNodes
+              .map(c => {
+                const mName = c.childForFieldName?.('name')?.text ?? '';
+                return mName ? { name: mName, signatureLine: c.startPosition.row + 1 } : null;
+              })
+              .filter((x): x is MethodRange => x !== null);
+
+            nodes.push({
+              type: 'class',
+              name: nameNode.text,
+              signature: `class ${nameNode.text}`,
+              methods,
+              methodRanges,
+              startLine: node.startPosition.row + 1,
+              endLine: node.endPosition.row + 1,
+            });
+          }
+          processedIds.add(node.id);
+          // Don't recurse into class bodies
+          return;
+        }
+
+        // ─── Interface declarations ─────────────────────────────────────
+        case 'interface_declaration': {
+          const nameNode = node.childForFieldName?.('name');
+          if (nameNode) {
+            nodes.push({
+              type: 'interface',
+              name: nameNode.text,
+              signature: `interface ${nameNode.text}`,
+              startLine: node.startPosition.row + 1,
+              endLine: node.endPosition.row + 1,
+            });
+          }
+          processedIds.add(node.id);
+          return;
+        }
+
+        // ─── Lexical declarations (const fn = () => {}) ────────────────
+        case 'lexical_declaration': {
+          for (const child of node.children) {
+            if (!child || child.type !== 'variable_declarator') continue;
+            const declarator = child;
+            const nameNode = declarator.childForFieldName?.('name');
+            const valueNode = declarator.childForFieldName?.('value');
+
+            if (nameNode && valueNode) {
+              if (valueNode.type === 'arrow_function' || valueNode.type === 'function') {
+                const sig = lines[declarator.startPosition.row] ?? '';
+                nodes.push({
+                  type: 'arrow_function',
+                  name: nameNode.text,
+                  signature: sig.trim().replace(/\s*\=>\s*\{.*$/, ' => ...'),
+                  startLine: declarator.startPosition.row + 1,
+                  endLine: declarator.endPosition.row + 1,
+                });
+              }
+            }
+          }
+          processedIds.add(node.id);
+          return;
+        }
+      }
+
+      // Recurse into children
+      for (const child of node.children) {
+        if (child) walk(child);
+      }
+    };
+
+    walk(tree.rootNode);
+    return nodes;
+  }
+
+  /**
+   * Find all call sites of a symbol in a file.
+   */
+  async findCallSites(filePath: string, symbolName: string): Promise<CallSite[]> {
+    if (!this.tsLang) throw new Error('ASTParser not initialized. Call init() first.');
+
+    const parser = new TreeSitter.Parser();
+    parser.setLanguage(this.tsLang);
+
+    const source = fs.readFileSync(filePath, 'utf-8');
+    const tree = parser.parse(source);
+    if (!tree) return [];
+
+    const lines = source.split('\n');
+    const results: CallSite[] = [];
+
+    const walk = (node: TreeSitter.Node): void => {
+      if (node.type === 'call_expression' || node.type === 'new_expression') {
+        const fn = node.childForFieldName?.('function') ?? node.children[0];
+        if (fn) {
+          const name =
+            fn.type === 'identifier'
+              ? fn.text
+              : fn.type === 'member_expression'
+                ? (fn.childForFieldName?.('property')?.text ?? '')
+                : '';
+
+          if (name === symbolName) {
+            const lineIdx = node.startPosition.row;
+            results.push({
+              filePath,
+              line: lineIdx + 1,
+              snippet: (lines[lineIdx] ?? '').trim(),
+            });
+          }
+        }
+      }
+      for (const child of node.children) {
+        if (child) walk(child);
+      }
+    };
+
+    walk(tree.rootNode);
+    return results;
+  }
+}
