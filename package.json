@@ -1,0 +1,66 @@
+{
+  "name": "contextmesh",
+  "version": "1.0.0",
+  "description": "ContextMesh — The Universal Code Context Engine. A local-first MCP sidecar providing intelligent code context via hybrid Vector + AST + Graph search with Skeletonization.",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "bin": {
+    "contextmesh": "dist/index.js"
+  },
+  "files": [
+    "dist/**/*"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "prepublishOnly": "tsup",
+    "start": "node dist/index.js",
+    "dev": "tsx src/index.ts",
+    "test": "vitest run",
+    "lint": "tsc --noEmit",
+    "postinstall": "node dist/setup/postinstall.js || true"
+  },
+  "keywords": [
+    "mcp",
+    "context-engine",
+    "code-search",
+    "ast",
+    "skeletonization",
+    "vector-search",
+    "dependency-graph",
+    "code-skeleton",
+    "ai-context",
+    "lancedb",
+    "tree-sitter",
+    "model-context-protocol"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/YOUR_GITHUB_USERNAME/contextmesh"
+  },
+  "homepage": "https://github.com/YOUR_GITHUB_USERNAME/contextmesh#readme",
+  "bugs": {
+    "url": "https://github.com/YOUR_GITHUB_USERNAME/contextmesh/issues"
+  },
+  "author": "ContextMesh Team",
+  "dependencies": {
+    "@huggingface/transformers": "^3.0.0",
+    "@lancedb/lancedb": "^0.27.0",
+    "@modelcontextprotocol/sdk": "^1.12.0",
+    "chokidar": "^4.0.0",
+    "tree-sitter-typescript": "^0.23.2",
+    "web-tree-sitter": "^0.25.0",
+    "zod": "^3.23.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "tsup": "^8.0.0",
+    "tsx": "^4.0.0",
+    "typescript": "^5.7.0",
+    "vitest": "^3.0.0"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}
