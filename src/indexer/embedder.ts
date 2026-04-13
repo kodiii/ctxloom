@@ -9,6 +9,7 @@
 import { pipeline, type FeatureExtractionPipeline } from '@huggingface/transformers';
 import fs from 'node:fs';
 import path from 'node:path';
+import { logger } from '../utils/logger.js';
 
 const EMBEDDING_DIMENSION = 384;
 const MODEL_ID = 'sentence-transformers/all-MiniLM-L6-v2';
@@ -84,6 +85,7 @@ export function collectFiles(dir: string, results: string[] = []): string[] {
 
 /**
  * Index an entire directory: chunk files and store embeddings.
+ * Processes up to CONCURRENCY files simultaneously for better throughput.
  */
 export async function indexDirectory(
   rootDir: string,
@@ -94,24 +96,40 @@ export async function indexDirectory(
   await store.init();
 
   const files = collectFiles(rootDir);
+  const total = files.length;
   let indexed = 0;
   let errors = 0;
+  let processed = 0;
 
-  for (let i = 0; i < files.length; i++) {
-    const filePath = files[i];
-    try {
-      const content = fs.readFileSync(filePath, 'utf-8');
-      if (!content.trim()) continue;
+  const CONCURRENCY = 4;
 
-      const relPath = path.relative(rootDir, filePath);
-      const embedding = await generateEmbedding(content);
-      await store.upsert(relPath, embedding, content);
+  // Process files in fixed-size batches for controlled parallelism
+  for (let i = 0; i < files.length; i += CONCURRENCY) {
+    const batch = files.slice(i, i + CONCURRENCY);
 
-      indexed++;
-      onProgress?.(relPath, i + 1, files.length);
-    } catch (err) {
-      errors++;
-      console.error(`[ContextMesh] Failed to index ${filePath}:`, err);
+    const results = await Promise.allSettled(
+      batch.map(async (filePath) => {
+        const content = fs.readFileSync(filePath, 'utf-8');
+        if (!content.trim()) return null;
+
+        const relPath = path.relative(rootDir, filePath);
+        const embedding = await generateEmbedding(content);
+        await store.upsert(relPath, embedding, content);
+        return relPath;
+      }),
+    );
+
+    for (const result of results) {
+      processed++;
+      if (result.status === 'fulfilled') {
+        if (result.value !== null) {
+          indexed++;
+          onProgress?.(result.value, processed, total);
+        }
+      } else {
+        errors++;
+        logger.error('Failed to index file', { detail: result.reason instanceof Error ? result.reason.message : String(result.reason) });
+      }
     }
   }
 

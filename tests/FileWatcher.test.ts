@@ -40,13 +40,13 @@ describe('FileWatcher', () => {
     watcher.start();
 
     // Give chokidar time to initialize
-    await new Promise(r => setTimeout(r, 500));
+    await new Promise(r => setTimeout(r, 600));
 
     const newFile = path.join(tempDir, 'new-file.ts');
     fs.writeFileSync(newFile, 'export const x = 1;');
 
-    // Wait for debounce (200ms) + processing
-    await new Promise(r => setTimeout(r, 800));
+    // Wait for debounce (200ms) + chokidar processing buffer
+    await new Promise(r => setTimeout(r, 1000));
 
     watcher.stop();
 

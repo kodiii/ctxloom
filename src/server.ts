@@ -29,6 +29,7 @@ import { Skeletonizer } from './ast/Skeletonizer.js';
 import { FileWatcher } from './watcher/FileWatcher.js';
 import { findCallers, getCallGraph } from './tools/findCallers.js';
 import { RuleManager } from './tools/ruleManager.js';
+import { logger } from './utils/logger.js';
 
 // ─── Configuration ──────────────────────────────────────────────────────
 
@@ -60,6 +61,11 @@ const CtxGetCallGraphSchema = z.object({
 
 const CtxGetDefinitionSchema = z.object({
   symbol: z.string().describe('Symbol name to look up'),
+});
+
+const CtxSimilarFilesSchema = z.object({
+  target_file: z.string().describe('Relative path to the file to find similar files for'),
+  limit: z.number().optional().default(10).describe('Maximum results to return'),
 });
 
 // ─── Lazy Singletons ────────────────────────────────────────────────────
@@ -334,6 +340,28 @@ export function createServer(): Server {
           properties: {},
         },
       },
+      {
+        name: 'ctx_similar_files',
+        description:
+          'Find files semantically similar to a given file using vector embeddings. Useful for locating related components, similar utilities, or code that may need the same change.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            target_file: { type: 'string', description: 'Relative path to the file to find similar files for' },
+            limit: { type: 'number', description: 'Maximum results to return (default: 10)' },
+          },
+          required: ['target_file'],
+        },
+      },
+      {
+        name: 'ctx_status',
+        description:
+          'Return the current status of the ContextMesh server: initialization state, graph size, vector store record count, and project root.',
+        inputSchema: {
+          type: 'object',
+          properties: {},
+        },
+      },
     ],
   }));
 
@@ -463,6 +491,91 @@ export function createServer(): Server {
         }
       }
 
+      // ─── ctx_similar_files ─────────────────────────────────────────
+      if (name === 'ctx_similar_files') {
+        const { target_file, limit } = CtxSimilarFilesSchema.parse(args);
+        try {
+          const pathValidator = getPathValidator();
+          const content = pathValidator.readFile(target_file);
+          const store = await getStore();
+          const queryEmbedding = await generateEmbedding(content);
+          const results = await store.search(queryEmbedding, limit + 1); // +1 to exclude self
+
+          // Filter out the target file itself from results
+          const filtered = results
+            .filter(r => r.filePath !== target_file)
+            .slice(0, limit);
+
+          const lines = [
+            `<similar_files target="${escapeXML(target_file)}" count="${filtered.length}">`,
+          ];
+          for (const r of filtered) {
+            lines.push(`  <file path="${escapeXML(r.filePath)}" score="${r.score.toFixed(4)}" />`);
+          }
+          lines.push('</similar_files>');
+
+          return { content: [{ type: 'text' as const, text: lines.join('\n') }] };
+        } catch (err) {
+          return {
+            content: [{
+              type: 'text' as const,
+              text: `Error: ${err instanceof Error ? err.message : String(err)}`,
+            }],
+            isError: true,
+          };
+        }
+      }
+
+      // ─── ctx_status ────────────────────────────────────────────────
+      if (name === 'ctx_status') {
+        try {
+          const statusLines: string[] = ['<ctx_status>'];
+
+          statusLines.push(`  <project_root>${escapeXML(PROJECT_ROOT)}</project_root>`);
+          statusLines.push(`  <database>${escapeXML(DB_PATH)}</database>`);
+
+          // Graph status
+          if (_graphPromise) {
+            try {
+              const graph = await _graphPromise;
+              statusLines.push(`  <graph status="ready" edges="${graph.edgeCount()}" nodes="${graph.allFiles().length}" />`);
+            } catch {
+              statusLines.push('  <graph status="error" />');
+            }
+          } else {
+            statusLines.push('  <graph status="not_initialized" />');
+          }
+
+          // Vector store status
+          if (_storePromise) {
+            try {
+              const store = await _storePromise;
+              const count = await store.count();
+              statusLines.push(`  <vector_store status="ready" records="${count}" />`);
+            } catch {
+              statusLines.push('  <vector_store status="error" />');
+            }
+          } else {
+            statusLines.push('  <vector_store status="not_initialized" />');
+          }
+
+          // Parser status
+          statusLines.push(`  <ast_parser status="${_parserPromise ? 'ready' : 'not_initialized'}" />`);
+
+          statusLines.push('</ctx_status>');
+
+          return { content: [{ type: 'text' as const, text: statusLines.join('\n') }] };
+        } catch (err) {
+          return {
+            content: [{
+              type: 'text' as const,
+              text: `Error: ${err instanceof Error ? err.message : String(err)}`,
+            }],
+            isError: true,
+          };
+        }
+      }
+
       // Unknown tool
       return {
         content: [{
@@ -492,27 +605,38 @@ export async function startServer(): Promise<void> {
   const transport = new StdioServerTransport();
   await server.connect(transport);
 
-  console.error('[ContextMesh] MCP Server started on Stdio transport');
-  console.error(`[ContextMesh] Project root: ${PROJECT_ROOT}`);
-  console.error(`[ContextMesh] Database: ${DB_PATH}`);
+  logger.info('MCP Server started on Stdio transport');
+  logger.info('Project root', { root: PROJECT_ROOT });
+  logger.info('Database', { db: DB_PATH });
 
   // Signal readiness when both graph and embedder are initialized
   Promise.all([
     getGraph(),
     generateEmbedding('warmup'),
   ]).then(([graph]) => {
-    console.error(`[ContextMesh] Ready — graph: ${graph.edgeCount()} edges, embedder: loaded`);
+    logger.info('Ready — graph and embedder loaded', { edges: graph.edgeCount() });
   }).catch(err => {
-    console.error('[ContextMesh] Initialization warning:', err);
+    logger.warn('Initialization warning', { detail: String(err) });
   });
 
   // Start file watcher
   const watcher = new FileWatcher(PROJECT_ROOT, async (absPath, event) => {
+    const relPath = path.relative(PROJECT_ROOT, absPath);
+
     if (event === 'unlink') {
+      // Remove from vector store
       const store = await getStore();
-      const relPath = path.relative(PROJECT_ROOT, absPath);
       await store.remove(relPath);
-      console.error(`[ContextMesh] Removed from index: ${relPath}`);
+      // Remove from dependency graph (if initialized)
+      if (_graphPromise) {
+        try {
+          const graph = await _graphPromise;
+          graph.removeFile(relPath);
+        } catch {
+          // graph not ready yet — skip graph update
+        }
+      }
+      logger.info('Removed from index', { file: relPath });
       return;
     }
 
@@ -529,32 +653,42 @@ export async function startServer(): Promise<void> {
     const basename = path.basename(absPath);
     if (['.cursorrules', 'CLAUDE.md', 'CONTEXT.md', '.contextmeshrc'].includes(basename)) {
       getRuleManager().invalidateCache();
-      console.error(`[ContextMesh] Rule cache invalidated: ${basename}`);
+      logger.info('Rule cache invalidated', { file: basename });
     }
 
+    // Update vector store embedding
     try {
       const store = await getStore();
-      const relPath = path.relative(PROJECT_ROOT, absPath);
       const embedding = await generateEmbedding(content.slice(0, 4096));
       await store.upsert(relPath, embedding, content.slice(0, 512));
-      console.error(`[ContextMesh] Re-indexed: ${relPath}`);
+      logger.info('Re-indexed', { file: relPath });
     } catch (err) {
-      console.error(`[ContextMesh] Failed to re-index ${absPath}:`, err);
+      logger.error('Failed to re-index', { file: absPath, detail: String(err) });
+    }
+
+    // Update dependency graph (if initialized and parser ready)
+    if (_graphPromise && _parserPromise) {
+      try {
+        const graph = await _graphPromise;
+        await graph.updateFile(absPath, PROJECT_ROOT);
+      } catch (err) {
+        logger.error('Failed to update graph', { file: relPath, detail: err instanceof Error ? err.message : String(err) });
+      }
     }
   });
 
   watcher.start();
-  console.error('[ContextMesh] File watcher active');
+  logger.info('File watcher active');
 
   // Handle graceful shutdown
   process.on('SIGINT', () => {
-    console.error('[ContextMesh] Shutting down...');
+    logger.info('Shutting down');
     watcher.stop();
     process.exit(0);
   });
 
   process.on('SIGTERM', () => {
-    console.error('[ContextMesh] Shutting down...');
+    logger.info('Shutting down');
     watcher.stop();
     process.exit(0);
   });

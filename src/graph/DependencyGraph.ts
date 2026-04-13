@@ -12,6 +12,14 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { ASTParser } from '../ast/ASTParser.js';
 import { collectFiles } from '../indexer/embedder.js';
+import { logger } from '../utils/logger.js';
+import {
+  extractImports,
+  resolveImport as resolveMultiLangImport,
+} from '../utils/importExtractor.js';
+
+/** Extensions handled by the TypeScript/JS AST parser. */
+const TS_EXTENSIONS = new Set(['.ts', '.tsx', '.js', '.jsx', '.mjs']);
 
 export interface GraphEdge {
   from: string;
@@ -47,7 +55,7 @@ export class DependencyGraph {
 
     // Try to hydrate from snapshot, passing current file count for staleness detection
     if (await this.loadSnapshot(files.length)) {
-      console.error(`[ContextMesh] Loaded graph from snapshot (${this.edgeCount()} edges)`);
+      logger.info('Loaded graph from snapshot', { edges: this.edgeCount() });
       return;
     }
 
@@ -59,41 +67,49 @@ export class DependencyGraph {
 
     for (const absPath of files) {
       const relPath = path.relative(rootDir, absPath);
+      const ext = path.extname(absPath).toLowerCase();
+
       try {
-        const nodes = await this.parser.parse(absPath);
+        if (TS_EXTENSIONS.has(ext)) {
+          // ── TypeScript / JavaScript: full AST parse ──────────────────
+          const nodes = await this.parser.parse(absPath);
 
-        // Process imports
-        const importNodes = nodes.filter(n => n.type === 'import');
-        for (const imp of importNodes) {
-          const src = imp.source ?? '';
-          if (!src.startsWith('.')) continue; // skip node_modules
-
-          const resolved = this.resolveImport(absPath, src, rootDir);
-          if (resolved) {
-            this.addEdge(relPath, resolved);
+          const importNodes = nodes.filter(n => n.type === 'import');
+          for (const imp of importNodes) {
+            const src = imp.source ?? '';
+            if (!src.startsWith('.')) continue; // skip node_modules
+            const resolved = this.resolveImport(absPath, src, rootDir);
+            if (resolved) this.addEdge(relPath, resolved);
           }
-        }
 
-        // Process symbol definitions for symbol index
-        for (const node of nodes) {
-          if (node.type === 'function' || node.type === 'class' || node.type === 'interface') {
-            const existing = this.symbolIndex.get(node.name) ?? [];
-            existing.push({
-              filePath: relPath,
-              type: node.type,
-              signature: node.signature ?? `${node.type} ${node.name}`,
-            });
-            this.symbolIndex.set(node.name, existing);
+          for (const node of nodes) {
+            if (node.type === 'function' || node.type === 'class' || node.type === 'interface') {
+              const existing = this.symbolIndex.get(node.name) ?? [];
+              existing.push({
+                filePath: relPath,
+                type: node.type,
+                signature: node.signature ?? `${node.type} ${node.name}`,
+              });
+              this.symbolIndex.set(node.name, existing);
+            }
+          }
+        } else {
+          // ── Other languages: regex-based import extraction ────────────
+          const content = fs.readFileSync(absPath, 'utf-8');
+          const rawImports = extractImports(absPath, content);
+          for (const raw of rawImports) {
+            const resolved = resolveMultiLangImport(absPath, raw, rootDir);
+            if (resolved) this.addEdge(relPath, resolved);
           }
         }
       } catch (err) {
-        console.error(`[ContextMesh] Failed to parse ${relPath}:`, err instanceof Error ? err.message : String(err));
+        logger.error('Failed to parse', { file: relPath, detail: err instanceof Error ? err.message : String(err) });
       }
     }
 
     // Save snapshot
     await this.saveSnapshot();
-    console.error(`[ContextMesh] Graph built from ${files.length} files (${this.edgeCount()} edges)`);
+    logger.info('Graph built', { files: files.length, edges: this.edgeCount() });
   }
 
   /**
@@ -194,6 +210,76 @@ export class DependencyGraph {
   }
 
   /**
+   * Incrementally update the graph for a single changed file.
+   * Removes stale edges, re-parses imports, and rebuilds the symbol index
+   * entries for this file. Saves a new snapshot after the update.
+   */
+  async updateFile(absPath: string, rootDir: string): Promise<void> {
+    if (!this.parser) {
+      logger.warn('DependencyGraph.updateFile: no parser set, skipping graph update');
+      return;
+    }
+
+    const relPath = path.relative(rootDir, absPath);
+
+    // 1. Remove stale edges and symbol index entries for this file
+    this.removeFile(relPath);
+    for (const [symbol, entries] of this.symbolIndex.entries()) {
+      const filtered = entries.filter(e => e.filePath !== relPath);
+      if (filtered.length === 0) {
+        this.symbolIndex.delete(symbol);
+      } else {
+        this.symbolIndex.set(symbol, filtered);
+      }
+    }
+
+    // 2. Re-parse and rebuild edges
+    const ext = path.extname(absPath).toLowerCase();
+    try {
+      if (TS_EXTENSIONS.has(ext)) {
+        // TypeScript / JavaScript: full AST parse
+        const nodes = await this.parser.parse(absPath);
+        const importNodes = nodes.filter(n => n.type === 'import');
+
+        for (const importNode of importNodes) {
+          const src = importNode.source ?? '';
+          if (!src.startsWith('.')) continue;
+          const resolved = this.resolveImport(absPath, src, rootDir);
+          if (resolved) this.addEdge(relPath, resolved);
+        }
+
+        // 3. Rebuild symbol index entries from this file
+        for (const node of nodes) {
+          if (node.type === 'function' || node.type === 'class' || node.type === 'interface') {
+            const existing = this.symbolIndex.get(node.name) ?? [];
+            existing.push({
+              filePath: relPath,
+              type: node.type,
+              signature: node.signature ?? `${node.type} ${node.name}`,
+            });
+            this.symbolIndex.set(node.name, existing);
+          }
+        }
+      } else {
+        // Other languages: regex-based extraction
+        const content = fs.readFileSync(absPath, 'utf-8');
+        const rawImports = extractImports(absPath, content);
+        for (const raw of rawImports) {
+          const resolved = resolveMultiLangImport(absPath, raw, rootDir);
+          if (resolved) this.addEdge(relPath, resolved);
+        }
+      }
+
+      logger.info('Graph updated', { file: relPath, edges: this.edgeCount() });
+    } catch (err) {
+      logger.error('Failed to update graph', { file: relPath, detail: err instanceof Error ? err.message : String(err) });
+    }
+
+    // 4. Persist updated snapshot
+    this.saveSnapshot();
+  }
+
+  /**
    * Get total number of edges in the graph.
    */
   edgeCount(): number {
@@ -253,7 +339,7 @@ export class DependencyGraph {
       // Staleness check: if file count changed, force rebuild
       if (currentFileCount !== undefined && data.fileCount !== undefined) {
         if (data.fileCount !== currentFileCount) {
-          console.error(`[ContextMesh] Graph snapshot stale (${data.fileCount} → ${currentFileCount} files), rebuilding...`);
+          logger.info('Graph snapshot stale, rebuilding', { prev: data.fileCount, curr: currentFileCount });
           return false;
         }
       }
@@ -271,7 +357,7 @@ export class DependencyGraph {
 
       return true;
     } catch (err) {
-      console.error('[ContextMesh] Failed to load graph snapshot (will rebuild):', err instanceof Error ? err.message : String(err));
+      logger.error('Failed to load graph snapshot, will rebuild', { detail: err instanceof Error ? err.message : String(err) });
       return false;
     }
   }
