@@ -40,7 +40,7 @@ const DB_PATH = path.join(PROJECT_ROOT, '.contextmesh', 'vectors.lancedb');
 
 const CtxSearchSchema = z.object({
   query: z.string().describe('Search query — natural language or code fragment'),
-  limit: z.number().optional().default(10).describe('Maximum results to return'),
+  limit: z.number().max(100).optional().default(10).describe('Maximum results to return'),
 });
 
 const CtxGetFileSchema = z.object({
@@ -55,7 +55,7 @@ const CtxGetContextPacketSchema = z.object({
 const CtxGetCallGraphSchema = z.object({
   symbol: z.string().describe('Symbol name to search for'),
   direction: z.enum(['callers', 'callees']).optional().default('callers').describe('Traversal direction'),
-  depth: z.number().optional().default(1).describe('Transitive traversal depth'),
+  depth: z.number().max(10).optional().default(1).describe('Transitive traversal depth (max 10)'),
   target_file: z.string().optional().describe('Optional: relative file path to start from'),
 });
 
@@ -65,7 +65,7 @@ const CtxGetDefinitionSchema = z.object({
 
 const CtxSimilarFilesSchema = z.object({
   target_file: z.string().describe('Relative path to the file to find similar files for'),
-  limit: z.number().optional().default(10).describe('Maximum results to return'),
+  limit: z.number().max(100).optional().default(10).describe('Maximum results to return'),
 });
 
 // ─── Lazy Singletons ────────────────────────────────────────────────────
@@ -449,12 +449,12 @@ export function createServer(): Server {
             return {
               content: [{
                 type: 'text' as const,
-                text: `<definitions symbol="${symbol}" count="0">\n  <!-- Symbol not found -->\n</definitions>`,
+                text: `<definitions symbol="${escapeXML(symbol)}" count="0">\n  <!-- Symbol not found -->\n</definitions>`,
               }],
             };
           }
 
-          const lines = [`<definitions symbol="${symbol}" count="${definitions.length}">`];
+          const lines = [`<definitions symbol="${escapeXML(symbol)}" count="${definitions.length}">`];
           for (const def of definitions) {
             lines.push(`  <definition file="${def.filePath}" type="${def.type}">`);
             lines.push(`    ${def.signature.replace(/&/g, '&amp;').replace(/</g, '&lt;')}`);
@@ -621,6 +621,13 @@ export async function startServer(): Promise<void> {
 
   // Start file watcher
   const watcher = new FileWatcher(PROJECT_ROOT, async (absPath, event) => {
+    // H-2: Validate the reported path is still within project root before any I/O
+    const pathValidator = getPathValidator();
+    if (!pathValidator.isWithinRoot(absPath)) {
+      logger.warn('FileWatcher: ignoring path outside project root', { path: absPath });
+      return;
+    }
+
     const relPath = path.relative(PROJECT_ROOT, absPath);
 
     if (event === 'unlink') {

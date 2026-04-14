@@ -409,10 +409,12 @@ function commandExists(cmd: string): boolean {
   const isWin = PLATFORM === 'win32';
   const checkCmd = isWin ? 'where' : 'which';
   try {
-    const result = execSync(
-      `${checkCmd} ${cmd} 2>/dev/null`,
-      { encoding: 'utf-8', timeout: 3000, stdio: 'pipe' },
-    );
+    // Use execFileSync (not execSync) to avoid shell injection via cmd interpolation
+    const result = execFileSync(checkCmd, [cmd], {
+      encoding: 'utf-8',
+      timeout: 3000,
+      stdio: 'pipe',
+    });
     return result.trim().length > 0;
   } catch {
     return false;

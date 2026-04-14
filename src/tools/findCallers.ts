@@ -37,8 +37,8 @@ export async function getCallGraph(opts: GetCallGraphOptions): Promise<string> {
   } else {
     const definitions = graph.lookupSymbol(symbol);
     if (definitions.length === 0) {
-      return `<call_graph symbol="${symbol}" direction="${direction}" depth="${depth}" count="0">\n` +
-             `  <!-- Symbol "${symbol}" not found in graph index -->\n` +
+      return `<call_graph symbol="${escapeXML(symbol)}" direction="${direction}" depth="${depth}" count="0">\n` +
+             `  <!-- Symbol not found in graph index -->\n` +
              `</call_graph>`;
     }
     startFiles = definitions.map(d => d.filePath);
@@ -67,7 +67,7 @@ export async function getCallGraph(opts: GetCallGraphOptions): Promise<string> {
     lines.push('  </source>');
   }
 
-  return `<call_graph symbol="${symbol}" direction="${direction}" depth="${depth}" count="${totalCount}">\n` +
+  return `<call_graph symbol="${escapeXML(symbol)}" direction="${direction}" depth="${depth}" count="${totalCount}">\n` +
          lines.join('\n') + '\n' +
          `</call_graph>`;
 }
@@ -87,8 +87,8 @@ export async function findCallers(opts: FindCallersOptions): Promise<string> {
 
   const importers = graph.getImporters(targetFile);
   if (importers.length === 0) {
-    return `<callers symbol="${symbolName}" target="${targetFile}" count="0">\n` +
-           `  <!-- No files import ${targetFile} -->\n` +
+    return `<callers symbol="${escapeXML(symbolName)}" target="${escapeXML(targetFile)}" count="0">\n` +
+           `  <!-- No files import this target -->\n` +
            `</callers>`;
   }
 
@@ -118,12 +118,12 @@ export async function findCallers(opts: FindCallersOptions): Promise<string> {
   }
 
   if (callLines.length === 0) {
-    return `<callers symbol="${symbolName}" target="${targetFile}" count="0">\n` +
-           `  <!-- No call sites found for '${symbolName}' in ${importers.length} importer(s) -->\n` +
+    return `<callers symbol="${escapeXML(symbolName)}" target="${escapeXML(targetFile)}" count="0">\n` +
+           `  <!-- No call sites found in ${importers.length} importer(s) -->\n` +
            `</callers>`;
   }
 
-  return `<callers symbol="${symbolName}" target="${targetFile}" count="${totalCount}">\n` +
+  return `<callers symbol="${escapeXML(symbolName)}" target="${escapeXML(targetFile)}" count="${totalCount}">\n` +
          callLines.join('\n') + '\n' +
          `</callers>`;
 }

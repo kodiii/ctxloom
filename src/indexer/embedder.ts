@@ -109,6 +109,13 @@ export async function indexDirectory(
 
     const results = await Promise.allSettled(
       batch.map(async (filePath) => {
+        // H-3: Guard against enormous files before reading into memory
+        const MAX_INDEX_SIZE = 5 * 1024 * 1024; // 5 MB
+        const stat = fs.statSync(filePath);
+        if (stat.size > MAX_INDEX_SIZE) {
+          logger.warn('Skipping oversized file', { file: filePath, size: stat.size });
+          return null;
+        }
         const content = fs.readFileSync(filePath, 'utf-8');
         if (!content.trim()) return null;
 

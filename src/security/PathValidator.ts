@@ -39,8 +39,9 @@ export class PathValidator {
 
     // Ensure canonical path starts with the project root
     if (!canonical.startsWith(this.canonicalRoot + path.sep) && canonical !== this.canonicalRoot) {
+      // M-6: Do not leak canonical absolute paths in error messages
       throw new Error(
-        `Path traversal blocked: "${inputPath}" resolves to "${canonical}" which is outside project root "${this.canonicalRoot}"`
+        `Path traversal blocked: "${inputPath}" resolves outside of the project root`
       );
     }
 
