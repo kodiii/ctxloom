@@ -7,10 +7,10 @@
  * hybrid Vector + AST + Graph search with Skeletonization.
  *
  * Usage:
- *   contextmesh              Start MCP server on Stdio
- *   contextmesh index        Index the current directory
- *   contextmesh setup        Configure MCP clients (interactive wizard)
- *   contextmesh --help       Show help
+ *   ctxloom              Start MCP server on Stdio
+ *   ctxloom index        Index the current directory
+ *   ctxloom setup        Configure MCP clients (interactive wizard)
+ *   ctxloom --help       Show help
  */
 
 import { startServer } from './server.js';
@@ -53,27 +53,27 @@ async function main(): Promise<void> {
 ContextMesh — The Universal Code Context Engine
 
 Usage:
-  contextmesh          Start MCP server on Stdio transport
-  contextmesh index    Index the current directory and build dependency graph
-  contextmesh setup    Detect and configure MCP-compatible AI tools
-  contextmesh --help   Show this help
+  ctxloom          Start MCP server on Stdio transport
+  ctxloom index    Index the current directory and build dependency graph
+  ctxloom setup    Detect and configure MCP-compatible AI tools
+  ctxloom --help   Show this help
 
 Environment Variables:
-  CONTEXTMESH_ROOT     Project root directory (default: current working directory)
+  CTXLOOM_ROOT     Project root directory (default: current working directory)
 
 MCP Client Configuration:
   Add to your MCP client config (e.g., Claude Code, Cursor):
 
   {
     "mcpServers": {
-      "contextmesh": {
+      "ctxloom": {
         "command": "npx",
-        "args": ["-y", "contextmesh"]
+        "args": ["-y", "ctxloom"]
       }
     }
   }
 
-  Or run 'contextmesh setup' to auto-detect and configure your tools.
+  Or run 'ctxloom setup' to auto-detect and configure your tools.
 
 Tools Exposed:
   ctx_search             Hybrid semantic + graph search
@@ -82,6 +82,8 @@ Tools Exposed:
   ctx_get_call_graph     Bidirectional call graph traversal with depth
   ctx_get_definition     Symbol definition lookup
   ctx_get_rules          Project rule injection from .cursorrules, CLAUDE.md, etc.
+  ctx_similar_files      Find semantically similar files via vector embeddings
+  ctx_status             Server status: graph size, vector store, init state
 `);
       break;
     }

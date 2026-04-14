@@ -1,15 +1,17 @@
 {
-  "name": "contextmesh",
+  "name": "ctxloom",
   "version": "1.0.0",
-  "description": "ContextMesh — The Universal Code Context Engine. A local-first MCP sidecar providing intelligent code context via hybrid Vector + AST + Graph search with Skeletonization.",
+  "description": "ctxloom — The Universal Code Context Engine. A local-first MCP server providing intelligent code context via hybrid Vector + AST + Graph search with Skeletonization (70-90% token reduction).",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "bin": {
-    "contextmesh": "dist/index.js"
+    "ctxloom": "dist/index.js"
   },
   "files": [
-    "dist/**/*"
+    "dist/**/*",
+    "!dist/**/*.map",
+    "LICENSE"
   ],
   "scripts": {
     "build": "tsup",
@@ -22,26 +24,34 @@
   },
   "keywords": [
     "mcp",
+    "model-context-protocol",
+    "code-context",
     "context-engine",
     "code-search",
+    "semantic-search",
     "ast",
     "skeletonization",
     "vector-search",
     "dependency-graph",
-    "code-skeleton",
+    "call-graph",
     "ai-context",
     "lancedb",
     "tree-sitter",
-    "model-context-protocol"
+    "local-first",
+    "typescript",
+    "python",
+    "rust",
+    "golang",
+    "java"
   ],
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/kodiii/Context-MESH"
+    "url": "https://github.com/kodiii/ctxLOOM"
   },
-  "homepage": "https://github.com/kodiii/Context-MESH/blob/main/README.md",
+  "homepage": "https://github.com/kodiii/ctxLOOM/blob/main/README.md",
   "bugs": {
-    "url": "https://github.com/kodiii/Context-MESH/issues"
+    "url": "https://github.com/kodiii/ctxLOOM/issues"
   },
   "author": "Codzign",
   "dependencies": {

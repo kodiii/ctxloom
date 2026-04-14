@@ -34,7 +34,7 @@ export class VectorStore {
   private initialized = false;
 
   constructor(dbPath?: string) {
-    this.dbPath = dbPath ?? path.join(process.cwd(), '.contextmesh', 'vectors.lancedb');
+    this.dbPath = dbPath ?? path.join(process.cwd(), '.ctxloom', 'vectors.lancedb');
   }
 
   async init(): Promise<void> {

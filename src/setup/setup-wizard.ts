@@ -5,7 +5,7 @@
  * configuring ContextMesh for each one.
  *
  * Can be run via:
- *   - `contextmesh setup` (CLI command)
+ *   - `ctxloom setup` (CLI command)
  *   - `npm postinstall` hook (first-time install)
  *
  * The wizard will:
@@ -83,9 +83,9 @@ export async function runSetupWizard(options?: { nonInteractive?: boolean }): Pr
     console.log('');
     console.log(`  ${C.cyan}{${C.reset}`);
     console.log(`  ${C.cyan}  "mcpServers": {${C.reset}`);
-    console.log(`  ${C.cyan}    "contextmesh": {${C.reset}`);
+    console.log(`  ${C.cyan}    "ctxloom": {${C.reset}`);
     console.log(`  ${C.cyan}      "command": "npx",${C.reset}`);
-    console.log(`  ${C.cyan}      "args": ["-y", "contextmesh"]${C.reset}`);
+    console.log(`  ${C.cyan}      "args": ["-y", "ctxloom"]${C.reset}`);
     console.log(`  ${C.cyan}    }${C.reset}`);
     console.log(`  ${C.cyan}  }${C.reset}`);
     console.log(`  ${C.cyan}}${C.reset}`);
@@ -117,7 +117,7 @@ export async function runSetupWizard(options?: { nonInteractive?: boolean }): Pr
   if (needsConfig.length === 0) {
     console.log(`  ${C.green}${C.bold}All detected tools are already configured!${C.reset}`);
     console.log('');
-    console.log(`  Run ${C.cyan}contextmesh index${C.reset} to index your project, then start coding.`);
+    console.log(`  Run ${C.cyan}ctxloom index${C.reset} to index your project, then start coding.`);
     console.log('');
     return;
   }
@@ -153,7 +153,7 @@ export async function runSetupWizard(options?: { nonInteractive?: boolean }): Pr
 
   if (answer.toLowerCase() === 's' || answer === '') {
     console.log('');
-    console.log(`  ${ICON_SKIP} Setup skipped. Run ${C.cyan}contextmesh setup${C.reset} anytime to configure later.`);
+    console.log(`  ${ICON_SKIP} Setup skipped. Run ${C.cyan}ctxloom setup${C.reset} anytime to configure later.`);
     console.log('');
     return;
   }
@@ -174,7 +174,7 @@ export async function runSetupWizard(options?: { nonInteractive?: boolean }): Pr
 
   if (toConfigure.length === 0) {
     console.log('');
-    console.log(`  ${ICON_SKIP} No tools selected. Run ${C.cyan}contextmesh setup${C.reset} anytime to configure later.`);
+    console.log(`  ${ICON_SKIP} No tools selected. Run ${C.cyan}ctxloom setup${C.reset} anytime to configure later.`);
     console.log('');
     return;
   }
@@ -214,9 +214,9 @@ function printNextSteps(): void {
   console.log(`  ${C.bold}Next steps:${C.reset}`);
   console.log('');
   console.log(`  1. ${C.cyan}cd /path/to/your/project${C.reset}`);
-  console.log(`  2. ${C.cyan}contextmesh index${C.reset}    ${C.dim}# Index your codebase${C.reset}`);
+  console.log(`  2. ${C.cyan}ctxloom index${C.reset}    ${C.dim}# Index your codebase${C.reset}`);
   console.log(`  3. ${C.dim}Open your AI tool and start coding — ContextMesh provides context automatically${C.reset}`);
   console.log('');
-  console.log(`  ${C.dim}Documentation: https://contextmesh.dev/docs${C.reset}`);
+  console.log(`  ${C.dim}Documentation: https://ctxloom.dev/docs${C.reset}`);
   console.log('');
 }

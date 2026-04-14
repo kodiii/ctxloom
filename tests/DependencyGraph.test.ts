@@ -142,8 +142,8 @@ describe('DependencyGraph snapshot', () => {
 
   beforeEach(() => {
     tempDir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'ctx-graph-test-')));
-    // Create .contextmesh directory for snapshots
-    fs.mkdirSync(path.join(tempDir, '.contextmesh'), { recursive: true });
+    // Create .ctxloom directory for snapshots
+    fs.mkdirSync(path.join(tempDir, '.ctxloom'), { recursive: true });
     // Create a simple TypeScript file
     fs.writeFileSync(path.join(tempDir, 'a.ts'), 'export const a = 1;');
     fs.writeFileSync(path.join(tempDir, 'b.ts'), "import { a } from './a.js'; export const b = a;");
@@ -157,7 +157,7 @@ describe('DependencyGraph snapshot', () => {
     const graph = new DependencyGraph();
     await graph.buildFromDirectory(tempDir);
 
-    const snapshotPath = path.join(tempDir, '.contextmesh', 'graph-snapshot.json');
+    const snapshotPath = path.join(tempDir, '.ctxloom', 'graph-snapshot.json');
     expect(fs.existsSync(snapshotPath)).toBe(true);
 
     const data = JSON.parse(fs.readFileSync(snapshotPath, 'utf-8'));

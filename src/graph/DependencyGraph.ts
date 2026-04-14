@@ -48,7 +48,7 @@ export class DependencyGraph {
    */
   async buildFromDirectory(rootDir: string): Promise<void> {
     this.rootDir = rootDir;
-    this.snapshotDir = path.join(rootDir, '.contextmesh');
+    this.snapshotDir = path.join(rootDir, '.ctxloom');
 
     // Collect files first so we can pass the count to the snapshot staleness check
     const files = collectFiles(rootDir);

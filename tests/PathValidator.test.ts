@@ -12,7 +12,7 @@ describe('PathValidator', () => {
   let validator: PathValidator;
 
   beforeEach(() => {
-    tempDir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'contextmesh-test-')));
+    tempDir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'ctxloom-test-')));
     // Create a test file
     fs.writeFileSync(path.join(tempDir, 'test.txt'), 'hello');
     fs.mkdirSync(path.join(tempDir, 'src'), { recursive: true });
