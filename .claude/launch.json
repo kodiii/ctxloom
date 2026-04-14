@@ -1,0 +1,17 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "dev",
+      "runtimeExecutable": "tsx",
+      "runtimeArgs": ["src/index.ts"],
+      "port": 3000
+    },
+    {
+      "name": "start",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["dist/index.js"],
+      "port": 3000
+    }
+  ]
+}

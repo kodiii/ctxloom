@@ -16,7 +16,7 @@ describe('VectorStore', () => {
   let store: VectorStore;
 
   beforeEach(async () => {
-    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'contextmesh-db-'));
+    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ctxloom-db-'));
     dbPath = path.join(tempDir, 'test-vectors.lancedb');
     store = new VectorStore(dbPath);
     await store.init();

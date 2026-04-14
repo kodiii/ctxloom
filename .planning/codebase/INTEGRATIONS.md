@@ -18,17 +18,17 @@
 
 **Vector Database:**
 - LanceDB (embedded, file-based) via `@lancedb/lancedb` ^0.27.0
-  - Path: `{PROJECT_ROOT}/.contextmesh/vectors.lancedb`
+  - Path: `{PROJECT_ROOT}/.ctxloom/vectors.lancedb`
   - Table: `code_embeddings` (schema: `id`, `filePath`, `vector Float32[384]`, `content`)
   - Client: Direct `@lancedb/lancedb` SDK — no ORM
-  - Lifecycle: Created automatically on first `contextmesh index` run
+  - Lifecycle: Created automatically on first `ctxloom index` run
   - Used in: `src/db/VectorStore.ts`
 
 **File Storage:**
 - Local filesystem only
   - Source files: read from `PROJECT_ROOT` (all `.ts`, `.tsx`, `.js`, `.jsx`, `.py`, `.rs`, `.go`, `.java`, `.c`, `.cpp`, `.h`, `.md`, `.json`, `.yaml`, `.yml`, `.toml`)
   - MCP client configs: read/written to OS-standard locations (see MCP Clients section)
-  - Vector data: written to `.contextmesh/` directory
+  - Vector data: written to `.ctxloom/` directory
 
 **Caching:**
 - None beyond LanceDB on-disk persistence
@@ -52,8 +52,8 @@
 ## CI/CD & Deployment
 
 **Hosting:**
-- npm registry — published as `contextmesh` package with `bin.contextmesh` pointing to `dist/index.js`
-- Consumers install via `npx -y contextmesh` or `npm install -g contextmesh`
+- npm registry — published as `ctxloom` package with `bin.ctxloom` pointing to `dist/index.js`
+- Consumers install via `npx -y ctxloom` or `npm install -g ctxloom`
 
 **CI Pipeline:**
 - Not detected — no `.github/workflows/`, no `Dockerfile`, no `docker-compose.yml`
@@ -69,7 +69,7 @@
 - None are required — the application starts without any environment variables
 
 **Optional env vars:**
-- `CONTEXTMESH_ROOT` - Override project root directory; defaults to `process.cwd()`
+- `CTXLOOM_ROOT` - Override project root directory; defaults to `process.cwd()`
 - CI detection vars (`CI`, `GITHUB_ACTIONS`, etc.) are read but not set by the application
 
 **Secrets location:**
@@ -77,7 +77,7 @@
 
 ## MCP Clients (Integration Targets)
 
-The application writes configuration into the config files of these AI coding tools when `contextmesh setup` is run:
+The application writes configuration into the config files of these AI coding tools when `ctxloom setup` is run:
 
 - **Claude Desktop** — `~/.claude/claude_desktop_config.json` or `~/Library/Application Support/Claude/claude_desktop_config.json`
 - **Claude Code** — `~/.claude/mcp.json` or `~/.claude.json`
@@ -93,7 +93,7 @@ The application writes configuration into the config files of these AI coding to
 - **Qwen Code** — `~/.qwen/mcp.json`
 - **JetBrains AI** — platform config dir `JetBrains/ai-mcp.json`
 
-Config detection logic is in `src/setup/clients.ts`. Config writing uses `addContextMeshToConfig()` which preserves existing JSON and merges the `contextmesh` entry under the `mcpServers` key (or client-specific path).
+Config detection logic is in `src/setup/clients.ts`. Config writing uses `addContextMeshToConfig()` which preserves existing JSON and merges the `ctxloom` entry under the `mcpServers` key (or client-specific path).
 
 ## Webhooks & Callbacks
 
@@ -107,7 +107,7 @@ Config detection logic is in `src/setup/clients.ts`. Config writing uses `addCon
 
 **Chokidar file watcher** (`src/watcher/FileWatcher.ts`):
 - Watches `PROJECT_ROOT` recursively
-- Ignores: `node_modules`, `.git`, `dist`, `build`, `.contextmesh`, `coverage`, `.next`, `.cache`
+- Ignores: `node_modules`, `.git`, `dist`, `build`, `.ctxloom`, `coverage`, `.next`, `.cache`
 - Triggers re-embedding of modified source files via `generateEmbedding()` + `VectorStore.upsert()`
 - 200ms debounce per file path
 - Monitors: `.ts`, `.tsx`, `.js`, `.jsx`, `.mjs`, `.py`, `.rs`, `.go`, `.java`, `.c`, `.cpp`, `.h`

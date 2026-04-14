@@ -33,8 +33,8 @@ import { logger } from './utils/logger.js';
 
 // ─── Configuration ──────────────────────────────────────────────────────
 
-const PROJECT_ROOT = process.env.CONTEXTMESH_ROOT ?? process.cwd();
-const DB_PATH = path.join(PROJECT_ROOT, '.contextmesh', 'vectors.lancedb');
+const PROJECT_ROOT = process.env.CTXLOOM_ROOT ?? process.cwd();
+const DB_PATH = path.join(PROJECT_ROOT, '.ctxloom', 'vectors.lancedb');
 
 // ─── Schemas ────────────────────────────────────────────────────────────
 
@@ -253,7 +253,7 @@ export async function handleCtxGetContextPacket(
 export function createServer(): Server {
   const server = new Server(
     {
-      name: 'contextmesh',
+      name: 'ctxloom',
       version: '1.0.0',
     },
     {
@@ -334,7 +334,7 @@ export function createServer(): Server {
       {
         name: 'ctx_get_rules',
         description:
-          'Load and inject project-level rules from standard files (.cursorrules, CLAUDE.md, CONTEXT.md, .contextmeshrc). Helps the AI understand project conventions.',
+          'Load and inject project-level rules from standard files (.cursorrules, CLAUDE.md, CONTEXT.md, .ctxloomrc). Helps the AI understand project conventions.',
         inputSchema: {
           type: 'object',
           properties: {},
@@ -658,7 +658,7 @@ export async function startServer(): Promise<void> {
 
     // Invalidate rule cache if a rule file changed
     const basename = path.basename(absPath);
-    if (['.cursorrules', 'CLAUDE.md', 'CONTEXT.md', '.contextmeshrc'].includes(basename)) {
+    if (['.cursorrules', 'CLAUDE.md', 'CONTEXT.md', '.ctxloomrc'].includes(basename)) {
       getRuleManager().invalidateCache();
       logger.info('Rule cache invalidated', { file: basename });
     }

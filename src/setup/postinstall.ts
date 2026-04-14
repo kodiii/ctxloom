@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 /**
- * postinstall.ts — Runs after npm install / npm install -g contextmesh.
+ * postinstall.ts — Runs after npm install / npm install -g ctxloom.
  *
  * Detects installed MCP clients and offers to configure ContextMesh.
  *
@@ -9,7 +9,7 @@
  *   - It only DETECTS tools, never silently modifies configs
  *   - In CI/CD (detected via env vars), it skips entirely
  *   - It respects the --ignore-scripts flag (npm handles that)
- *   - The user can always re-run with `contextmesh setup`
+ *   - The user can always re-run with `ctxloom setup`
  */
 import { detectInstalledClients } from './clients.js';
 
@@ -47,7 +47,7 @@ if (unconfigured.length > 0) {
     console.log(`    ${C.green}•${C.reset} ${d.client.name}`);
   }
   console.log('');
-  console.log(`  Run ${C.cyan}contextmesh setup${C.reset} to configure ${unconfigured.length > 1 ? 'them' : 'it'} now.`);
+  console.log(`  Run ${C.cyan}ctxloom setup${C.reset} to configure ${unconfigured.length > 1 ? 'them' : 'it'} now.`);
 } else if (detected.length > 0) {
   console.log(`  ${C.green}✓${C.reset} All detected MCP tools are already configured.`);
 } else {
@@ -55,6 +55,6 @@ if (unconfigured.length > 0) {
 }
 
 console.log('');
-console.log(`  Quick start: ${C.cyan}contextmesh index${C.reset} ${C.dim}# Index your project${C.reset}`);
-console.log(`  Setup:       ${C.cyan}contextmesh setup${C.reset} ${C.dim}# Configure AI tools${C.reset}`);
+console.log(`  Quick start: ${C.cyan}ctxloom index${C.reset} ${C.dim}# Index your project${C.reset}`);
+console.log(`  Setup:       ${C.cyan}ctxloom setup${C.reset} ${C.dim}# Configure AI tools${C.reset}`);
 console.log('');

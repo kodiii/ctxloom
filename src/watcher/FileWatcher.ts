@@ -15,7 +15,7 @@ const IGNORED = [
   '**/.git/**',
   '**/dist/**',
   '**/build/**',
-  '**/.contextmesh/**',
+  '**/.ctxloom/**',
   '**/coverage/**',
   '**/.next/**',
   '**/.cache/**',

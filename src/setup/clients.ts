@@ -43,15 +43,15 @@ export interface MCPServerEntry {
 
 export const CONTEXTMESH_SERVER: MCPServerEntry = {
   command: 'npx',
-  args: ['-y', 'contextmesh'],
+  args: ['-y', 'ctxloom'],
   env: {},
 };
 
 // If installed globally, use direct command instead of npx
 function getServerEntry(): MCPServerEntry {
   try {
-    execFileSync('contextmesh', ['--version'], { stdio: 'ignore', timeout: 3000 });
-    return { command: 'contextmesh', args: [], env: {} };
+    execFileSync('ctxloom', ['--version'], { stdio: 'ignore', timeout: 3000 });
+    return { command: 'ctxloom', args: [], env: {} };
   } catch {
     // Not installed globally, use npx
   }
@@ -311,12 +311,12 @@ export function detectInstalledClients(): DetectedClient[] {
         configPath = cp;
         configExists = true;
 
-        // Check if contextmesh is already configured
+        // Check if ctxloom is already configured
         try {
           const content = fs.readFileSync(cp, 'utf-8');
           const config = JSON.parse(content);
           const servers = getNestedValue(config, client.serversPath);
-          if (servers && (servers as Record<string, unknown>)['contextmesh']) {
+          if (servers && (servers as Record<string, unknown>)['ctxloom']) {
             alreadyConfigured = true;
           }
         } catch {
@@ -459,7 +459,7 @@ export function addContextMeshToConfig(detected: DetectedClient): { success: boo
     setNestedValue(config, client.serversPath, {});
     servers = getNestedValue(config, client.serversPath);
   }
-  (servers as Record<string, unknown>)['contextmesh'] = entryValue;
+  (servers as Record<string, unknown>)['ctxloom'] = entryValue;
 
   // Ensure directory exists
   const dir = path.dirname(configPath);
@@ -491,11 +491,11 @@ export function removeContextMeshFromConfig(detected: DetectedClient): { success
     const config = JSON.parse(content);
     const servers = getNestedValue(config, client.serversPath);
 
-    if (!servers || !(servers as Record<string, unknown>).contextmesh) {
+    if (!servers || !(servers as Record<string, unknown>).ctxloom) {
       return { success: true, message: `ContextMesh not found in ${client.name} config` };
     }
 
-    delete (servers as Record<string, unknown>)['contextmesh'];
+    delete (servers as Record<string, unknown>)['ctxloom'];
     fs.writeFileSync(configPath, JSON.stringify(config, null, 2) + '\n', 'utf-8');
     return { success: true, message: `Removed ContextMesh from ${client.name} (${configPath})` };
   } catch (err) {

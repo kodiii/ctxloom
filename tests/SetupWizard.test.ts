@@ -55,7 +55,7 @@ describe('detectInstalledClients', () => {
 });
 
 describe('addContextMeshToConfig', () => {
-  const tmpDir = path.join(os.tmpdir(), 'contextmesh-test-config-' + process.pid);
+  const tmpDir = path.join(os.tmpdir(), 'ctxloom-test-config-' + process.pid);
 
   beforeEach(() => {
     fs.mkdirSync(tmpDir, { recursive: true });
@@ -79,8 +79,8 @@ describe('addContextMeshToConfig', () => {
 
     const written = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
     expect(written.mcpServers).toBeDefined();
-    expect(written.mcpServers.contextmesh).toBeDefined();
-    expect(written.mcpServers.contextmesh.command).toBeDefined();
+    expect(written.mcpServers.ctxloom).toBeDefined();
+    expect(written.mcpServers.ctxloom.command).toBeDefined();
   });
 
   it('should add to existing config without overwriting other entries', () => {
@@ -104,14 +104,14 @@ describe('addContextMeshToConfig', () => {
 
     const written = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
     expect(written.mcpServers['other-tool']).toBeDefined();
-    expect(written.mcpServers.contextmesh).toBeDefined();
+    expect(written.mcpServers.ctxloom).toBeDefined();
   });
 
   it('should skip if already configured', () => {
     const configPath = path.join(tmpDir, 'mcp.json');
     const existing = {
       mcpServers: {
-        contextmesh: { command: 'npx', args: ['-y', 'contextmesh'] },
+        ctxloom: { command: 'npx', args: ['-y', 'ctxloom'] },
       },
     };
     fs.writeFileSync(configPath, JSON.stringify(existing, null, 2));
@@ -141,7 +141,7 @@ describe('addContextMeshToConfig', () => {
     expect(result.success).toBe(true);
 
     const written = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
-    const continueEntry = written.experimental?.mcpServers?.contextmesh;
+    const continueEntry = written.experimental?.mcpServers?.ctxloom;
     expect(continueEntry).toBeDefined();
     expect(continueEntry.transport).toBe('stdio');
   });
@@ -160,12 +160,12 @@ describe('addContextMeshToConfig', () => {
 
     const written = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
     expect(written.servers).toBeDefined();
-    expect(written.servers.contextmesh).toBeDefined();
+    expect(written.servers.ctxloom).toBeDefined();
   });
 });
 
 describe('removeContextMeshFromConfig', () => {
-  const tmpDir = path.join(os.tmpdir(), 'contextmesh-test-remove-' + process.pid);
+  const tmpDir = path.join(os.tmpdir(), 'ctxloom-test-remove-' + process.pid);
 
   beforeEach(() => {
     fs.mkdirSync(tmpDir, { recursive: true });
@@ -175,11 +175,11 @@ describe('removeContextMeshFromConfig', () => {
     fs.rmSync(tmpDir, { recursive: true, force: true });
   });
 
-  it('should remove contextmesh from existing config', () => {
+  it('should remove ctxloom from existing config', () => {
     const configPath = path.join(tmpDir, 'mcp.json');
     const existing = {
       mcpServers: {
-        contextmesh: { command: 'npx', args: ['-y', 'contextmesh'] },
+        ctxloom: { command: 'npx', args: ['-y', 'ctxloom'] },
         'other-tool': { command: 'other', args: [] },
       },
     };
@@ -196,7 +196,7 @@ describe('removeContextMeshFromConfig', () => {
     expect(result.success).toBe(true);
 
     const written = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
-    expect(written.mcpServers.contextmesh).toBeUndefined();
+    expect(written.mcpServers.ctxloom).toBeUndefined();
     expect(written.mcpServers['other-tool']).toBeDefined();
   });
 

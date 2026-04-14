@@ -195,7 +195,7 @@ it('should parse the sample TypeScript file', async () => {
 **Filesystem Testing (temp dir pattern):**
 ```typescript
 beforeEach(() => {
-  tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'contextmesh-test-'));
+  tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ctxloom-test-'));
   validator = new PathValidator(tempDir);
 });
 

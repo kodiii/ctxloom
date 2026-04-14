@@ -5,9 +5,9 @@
 ## Directory Layout
 
 ```
-contextmesh/
+ctxloom/
 ├── src/                        # All TypeScript source
-│   ├── index.ts                # CLI entry point (bin: contextmesh)
+│   ├── index.ts                # CLI entry point (bin: ctxloom)
 │   ├── server.ts               # MCP server: tool registration, request routing, lazy singletons
 │   ├── ast/                    # AST parsing and skeletonization
 │   │   ├── ASTParser.ts        # web-tree-sitter wrapper; extracts functions/classes/imports
@@ -124,10 +124,10 @@ contextmesh/
 - Contains: Unit and integration tests; co-located fixture files in `tests/fixtures/`
 - Key files: `tests/fixtures/sample.ts` (parseable TypeScript for AST tests), `tests/fixtures/config.ts`
 
-**`.contextmesh/` (runtime-generated, not in repo):**
+**`.ctxloom/` (runtime-generated, not in repo):**
 - Purpose: Project-local data store created during indexing
 - Contains: `vectors.lancedb` (LanceDB vector database), `graph-snapshot.json` (serialized DependencyGraph)
-- Generated: Yes — created on first `contextmesh index` or server startup
+- Generated: Yes — created on first `ctxloom index` or server startup
 - Committed: No — should be in `.gitignore`
 
 **`dist/` (build output, not in repo):**
@@ -144,7 +144,7 @@ contextmesh/
 - `src/setup/postinstall.ts`: npm postinstall hook entry point
 
 **Configuration:**
-- `package.json`: Package metadata, `bin` (maps `contextmesh` to `dist/index.js`), `scripts`, dependencies, `engines.node >= 20`
+- `package.json`: Package metadata, `bin` (maps `ctxloom` to `dist/index.js`), `scripts`, dependencies, `engines.node >= 20`
 - `tsconfig.json`: TypeScript strict mode, `NodeNext` module resolution, outputs to `dist/`, sources from `src/`
 - `tsup.config.ts`: Build entry points (`src/index.ts`, `src/workers/indexerWorker.ts`, `src/setup/postinstall.ts`), ESM format, WASM copy in `onSuccess`
 - `vitest.config.ts`: Test include pattern `tests/**/*.test.ts`, 30s timeout, node environment
@@ -201,9 +201,9 @@ contextmesh/
 
 ## Special Directories
 
-**`.contextmesh/`:**
+**`.ctxloom/`:**
 - Purpose: Runtime data directory created by ContextMesh in the indexed project's root
-- Generated: Yes (created during `contextmesh index` or first server start)
+- Generated: Yes (created during `ctxloom index` or first server start)
 - Committed: No (should be gitignored in consumer projects)
 - Contents: `vectors.lancedb/` (LanceDB columnar store), `graph-snapshot.json` (serialized graph)
 

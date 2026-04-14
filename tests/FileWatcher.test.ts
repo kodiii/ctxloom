@@ -12,7 +12,7 @@ describe('FileWatcher', () => {
   let changes: Array<{ path: string; event: string }>;
 
   beforeEach(() => {
-    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'contextmesh-watch-'));
+    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ctxloom-watch-'));
     changes = [];
   });
 

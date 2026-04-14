@@ -38,7 +38,7 @@
 
 **Critical:**
 - `@huggingface/transformers` ^3.0.0 - Local embedding generation using the `sentence-transformers/all-MiniLM-L6-v2` model (384 dimensions, fp32); runs fully offline, no network calls during inference
-- `@lancedb/lancedb` ^0.27.0 - Embedded vector database storing code embeddings on disk at `.contextmesh/vectors.lancedb`
+- `@lancedb/lancedb` ^0.27.0 - Embedded vector database storing code embeddings on disk at `.ctxloom/vectors.lancedb`
 - `web-tree-sitter` ^0.25.0 - WASM-based Tree-sitter core; used for AST parsing of TypeScript/TSX files
 - `tree-sitter-typescript` ^0.23.2 - TypeScript/TSX grammar for web-tree-sitter (shipped as `.wasm` grammars)
 - `chokidar` ^4.0.0 - File system watcher with 200ms debounce for incremental re-indexing
@@ -49,7 +49,7 @@
 ## Configuration
 
 **Environment:**
-- `CONTEXTMESH_ROOT` - Optional; overrides project root directory (defaults to `process.cwd()`)
+- `CTXLOOM_ROOT` - Optional; overrides project root directory (defaults to `process.cwd()`)
 - No `.env` files exist; no dotenv library used
 - All configuration is via environment variables or runtime detection
 
@@ -71,11 +71,11 @@
 - Tests: `npm test` (vitest run, reads `tests/**/*.test.ts`)
 
 **Production:**
-- Published to npm as `contextmesh` package (bin: `contextmesh`)
-- Invoked via `npx -y contextmesh` or global install
+- Published to npm as `ctxloom` package (bin: `ctxloom`)
+- Invoked via `npx -y ctxloom` or global install
 - No Docker, no containerization, no cloud runtime — runs as a local process
 - Transport: MCP Stdio (reads from stdin, writes to stdout)
-- Persistent storage: `.contextmesh/vectors.lancedb` directory in project root (created at runtime)
+- Persistent storage: `.ctxloom/vectors.lancedb` directory in project root (created at runtime)
 - No CI/CD pipeline detected (no `.github/` directory, no `Dockerfile`)
 
 ---

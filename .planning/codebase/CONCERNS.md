@@ -21,7 +21,7 @@
 **`require()` call in an ESM module:**
 - Issue: `commandExists()` in `src/setup/clients.ts` (line 414) uses `require('node:child_process').execSync`. The package is declared as `"type": "module"`, making CommonJS `require()` unavailable at runtime in standard ESM contexts. A second `require()` appears in `getServerEntry()` at line 53 for `require.resolve`.
 - Files: `src/setup/clients.ts` lines 53, 414
-- Impact: `contextmesh setup` will throw `ReferenceError: require is not defined` at runtime on Node 22 in strict ESM mode.
+- Impact: `ctxloom setup` will throw `ReferenceError: require is not defined` at runtime on Node 22 in strict ESM mode.
 - Fix approach: Replace with `import { execSync } from 'node:child_process'` and `import.meta.resolve()` respectively; or use `createRequire(import.meta.url)` as a shim.
 
 **`require()` in `ASTParser.ts` (ESM module):**
@@ -43,7 +43,7 @@
 - Fix approach: Read the file once at the top of `skeletonize()` and `skeletonizeXML()`, pass the lines array to `readLines()`.
 
 **`collectFiles` ignores directories that start with `.` (too broad):**
-- Issue: In `src/indexer/embedder.ts` line 72, any directory whose name starts with `.` is silently skipped. This correctly excludes `.git` and `.contextmesh`, but also accidentally excludes legitimate source directories like `.github/workflows` or `.claude/agents`.
+- Issue: In `src/indexer/embedder.ts` line 72, any directory whose name starts with `.` is silently skipped. This correctly excludes `.git` and `.ctxloom`, but also accidentally excludes legitimate source directories like `.github/workflows` or `.claude/agents`.
 - Files: `src/indexer/embedder.ts` line 72
 - Impact: Hidden source directories are not indexed or graphed, causing incomplete search results.
 - Fix approach: Replace the blanket `.startsWith('.')` check with an explicit allowlist or explicit denylist using the same `IGNORED_DIRS` set already defined above it.
@@ -71,7 +71,7 @@
 - Recommendations: Use LanceDB's parameterised filter API if available; otherwise apply a comprehensive allowlist on `filePath` (alphanumeric, `/`, `.`, `_`, `-`).
 
 **`getServerEntry()` uses `require.resolve` to detect global install:**
-- Risk: As noted in Tech Debt above, this call throws at runtime in ESM. Beyond the crash risk, resolving a package path and running it as `command: 'contextmesh'` without verifying the binary location could be a supply-chain vector if the package name is squatted.
+- Risk: As noted in Tech Debt above, this call throws at runtime in ESM. Beyond the crash risk, resolving a package path and running it as `command: 'ctxloom'` without verifying the binary location could be a supply-chain vector if the package name is squatted.
 - Files: `src/setup/clients.ts` lines 50–61
 - Current mitigation: None (call is always inside a try/catch that silently falls back).
 - Recommendations: Remove `require.resolve` in favour of `import.meta.resolve`; verify the resolved binary against a known prefix before using it.

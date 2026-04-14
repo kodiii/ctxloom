@@ -1,0 +1,667 @@
+{
+  "version": 1,
+  "builtAt": 1776156841935,
+  "fileCount": 24,
+  "forwardEdges": {
+    "src/ast/Skeletonizer.ts": [
+      "src/ast/ASTParser.ts"
+    ],
+    "src/db/VectorStore.ts": [
+      "src/utils/logger.ts"
+    ],
+    "src/graph/DependencyGraph.ts": [
+      "src/ast/ASTParser.ts",
+      "src/indexer/embedder.ts",
+      "src/utils/logger.ts",
+      "src/utils/importExtractor.ts"
+    ],
+    "src/index.ts": [
+      "src/server.ts",
+      "src/indexer/embedder.ts",
+      "src/graph/DependencyGraph.ts",
+      "src/ast/ASTParser.ts",
+      "src/setup/setup-wizard.ts"
+    ],
+    "src/indexer/embedder.ts": [
+      "src/utils/logger.ts"
+    ],
+    "src/server.ts": [
+      "src/security/PathValidator.ts",
+      "src/db/VectorStore.ts",
+      "src/indexer/embedder.ts",
+      "src/graph/DependencyGraph.ts",
+      "src/ast/ASTParser.ts",
+      "src/ast/Skeletonizer.ts",
+      "src/watcher/FileWatcher.ts",
+      "src/tools/findCallers.ts",
+      "src/tools/ruleManager.ts",
+      "src/utils/logger.ts"
+    ],
+    "src/setup/postinstall.ts": [
+      "src/setup/clients.ts"
+    ],
+    "src/setup/setup-wizard.ts": [
+      "src/setup/clients.ts"
+    ],
+    "src/tools/findCallers.ts": [
+      "src/ast/ASTParser.ts",
+      "src/graph/DependencyGraph.ts"
+    ],
+    "src/tools/ruleManager.ts": [
+      "src/security/PathValidator.ts"
+    ],
+    "src/watcher/FileWatcher.ts": [
+      "src/utils/logger.ts"
+    ],
+    "src/workers/indexerWorker.ts": [
+      "src/indexer/embedder.ts",
+      "src/db/VectorStore.ts"
+    ],
+    "tests/ASTParser.test.ts": [
+      "src/ast/ASTParser.ts",
+      "src/ast/Skeletonizer.ts"
+    ],
+    "tests/DependencyGraph.test.ts": [
+      "src/graph/DependencyGraph.ts"
+    ],
+    "tests/Embedder.test.ts": [
+      "src/indexer/embedder.ts"
+    ],
+    "tests/FileWatcher.test.ts": [
+      "src/watcher/FileWatcher.ts"
+    ],
+    "tests/MCP.test.ts": [
+      "src/server.ts"
+    ],
+    "tests/PathValidator.test.ts": [
+      "src/security/PathValidator.ts"
+    ],
+    "tests/RuleManager.test.ts": [
+      "src/tools/ruleManager.ts",
+      "src/security/PathValidator.ts"
+    ],
+    "tests/SetupWizard.test.ts": [
+      "src/setup/clients.ts"
+    ],
+    "tests/VectorStore.test.ts": [
+      "src/db/VectorStore.ts"
+    ],
+    "tests/findCallers.test.ts": [
+      "src/graph/DependencyGraph.ts",
+      "src/tools/findCallers.ts"
+    ],
+    "tests/fixtures/sample.ts": [
+      "tests/fixtures/config.ts"
+    ],
+    "tests/importExtractor.test.ts": [
+      "src/utils/importExtractor.ts"
+    ]
+  },
+  "reverseEdges": {
+    "src/ast/ASTParser.ts": [
+      "src/ast/Skeletonizer.ts",
+      "src/graph/DependencyGraph.ts",
+      "src/index.ts",
+      "src/server.ts",
+      "src/tools/findCallers.ts",
+      "tests/ASTParser.test.ts"
+    ],
+    "src/utils/logger.ts": [
+      "src/db/VectorStore.ts",
+      "src/graph/DependencyGraph.ts",
+      "src/indexer/embedder.ts",
+      "src/server.ts",
+      "src/watcher/FileWatcher.ts"
+    ],
+    "src/indexer/embedder.ts": [
+      "src/graph/DependencyGraph.ts",
+      "src/index.ts",
+      "src/server.ts",
+      "src/workers/indexerWorker.ts",
+      "tests/Embedder.test.ts"
+    ],
+    "src/utils/importExtractor.ts": [
+      "src/graph/DependencyGraph.ts",
+      "tests/importExtractor.test.ts"
+    ],
+    "src/server.ts": [
+      "src/index.ts",
+      "tests/MCP.test.ts"
+    ],
+    "src/graph/DependencyGraph.ts": [
+      "src/index.ts",
+      "src/server.ts",
+      "src/tools/findCallers.ts",
+      "tests/DependencyGraph.test.ts",
+      "tests/findCallers.test.ts"
+    ],
+    "src/setup/setup-wizard.ts": [
+      "src/index.ts"
+    ],
+    "src/security/PathValidator.ts": [
+      "src/server.ts",
+      "src/tools/ruleManager.ts",
+      "tests/PathValidator.test.ts",
+      "tests/RuleManager.test.ts"
+    ],
+    "src/db/VectorStore.ts": [
+      "src/server.ts",
+      "src/workers/indexerWorker.ts",
+      "tests/VectorStore.test.ts"
+    ],
+    "src/ast/Skeletonizer.ts": [
+      "src/server.ts",
+      "tests/ASTParser.test.ts"
+    ],
+    "src/watcher/FileWatcher.ts": [
+      "src/server.ts",
+      "tests/FileWatcher.test.ts"
+    ],
+    "src/tools/findCallers.ts": [
+      "src/server.ts",
+      "tests/findCallers.test.ts"
+    ],
+    "src/tools/ruleManager.ts": [
+      "src/server.ts",
+      "tests/RuleManager.test.ts"
+    ],
+    "src/setup/clients.ts": [
+      "src/setup/postinstall.ts",
+      "src/setup/setup-wizard.ts",
+      "tests/SetupWizard.test.ts"
+    ],
+    "tests/fixtures/config.ts": [
+      "tests/fixtures/sample.ts"
+    ]
+  },
+  "symbolIndex": {
+    "findWasmDir": [
+      {
+        "filePath": "src/ast/ASTParser.ts",
+        "type": "function",
+        "signature": "function findWasmDir(): string {"
+      }
+    ],
+    "MethodRange": [
+      {
+        "filePath": "src/ast/ASTParser.ts",
+        "type": "interface",
+        "signature": "interface MethodRange"
+      }
+    ],
+    "CallSite": [
+      {
+        "filePath": "src/ast/ASTParser.ts",
+        "type": "interface",
+        "signature": "interface CallSite"
+      }
+    ],
+    "ParsedNode": [
+      {
+        "filePath": "src/ast/ASTParser.ts",
+        "type": "interface",
+        "signature": "interface ParsedNode"
+      }
+    ],
+    "ASTParser": [
+      {
+        "filePath": "src/ast/ASTParser.ts",
+        "type": "class",
+        "signature": "class ASTParser"
+      }
+    ],
+    "Skeletonizer": [
+      {
+        "filePath": "src/ast/Skeletonizer.ts",
+        "type": "class",
+        "signature": "class Skeletonizer"
+      }
+    ],
+    "VectorSearchResult": [
+      {
+        "filePath": "src/db/VectorStore.ts",
+        "type": "interface",
+        "signature": "interface VectorSearchResult"
+      }
+    ],
+    "sanitizeFilterPath": [
+      {
+        "filePath": "src/db/VectorStore.ts",
+        "type": "function",
+        "signature": "function sanitizeFilterPath(filePath: string): string {"
+      }
+    ],
+    "VectorStore": [
+      {
+        "filePath": "src/db/VectorStore.ts",
+        "type": "class",
+        "signature": "class VectorStore"
+      }
+    ],
+    "GraphEdge": [
+      {
+        "filePath": "src/graph/DependencyGraph.ts",
+        "type": "interface",
+        "signature": "interface GraphEdge"
+      }
+    ],
+    "DependencyGraph": [
+      {
+        "filePath": "src/graph/DependencyGraph.ts",
+        "type": "class",
+        "signature": "class DependencyGraph"
+      }
+    ],
+    "main": [
+      {
+        "filePath": "src/index.ts",
+        "type": "function",
+        "signature": "async function main(): Promise<void> {"
+      }
+    ],
+    "getEmbedder": [
+      {
+        "filePath": "src/indexer/embedder.ts",
+        "type": "function",
+        "signature": "async function getEmbedder(): Promise<FeatureExtractionPipeline> {"
+      }
+    ],
+    "generateEmbedding": [
+      {
+        "filePath": "src/indexer/embedder.ts",
+        "type": "function",
+        "signature": "export async function generateEmbedding(text: string): Promise<number[]> {"
+      }
+    ],
+    "collectFiles": [
+      {
+        "filePath": "src/indexer/embedder.ts",
+        "type": "function",
+        "signature": "export function collectFiles(dir: string, results: string[] = []): string[] {"
+      }
+    ],
+    "indexDirectory": [
+      {
+        "filePath": "src/indexer/embedder.ts",
+        "type": "function",
+        "signature": "export async function indexDirectory("
+      }
+    ],
+    "PathValidator": [
+      {
+        "filePath": "src/security/PathValidator.ts",
+        "type": "class",
+        "signature": "class PathValidator"
+      }
+    ],
+    "getPathValidator": [
+      {
+        "filePath": "src/server.ts",
+        "type": "function",
+        "signature": "function getPathValidator(): PathValidator {"
+      }
+    ],
+    "getStore": [
+      {
+        "filePath": "src/server.ts",
+        "type": "function",
+        "signature": "function getStore(): Promise<VectorStore> {"
+      }
+    ],
+    "getParser": [
+      {
+        "filePath": "src/server.ts",
+        "type": "function",
+        "signature": "function getParser(): Promise<ASTParser> {"
+      }
+    ],
+    "getGraph": [
+      {
+        "filePath": "src/server.ts",
+        "type": "function",
+        "signature": "function getGraph(): Promise<DependencyGraph> {"
+      }
+    ],
+    "getSkeletonizer": [
+      {
+        "filePath": "src/server.ts",
+        "type": "function",
+        "signature": "function getSkeletonizer(): Promise<Skeletonizer> {"
+      }
+    ],
+    "getRuleManager": [
+      {
+        "filePath": "src/server.ts",
+        "type": "function",
+        "signature": "function getRuleManager(): RuleManager {"
+      }
+    ],
+    "escapeXML": [
+      {
+        "filePath": "src/server.ts",
+        "type": "function",
+        "signature": "function escapeXML(text: string): string {"
+      },
+      {
+        "filePath": "src/tools/findCallers.ts",
+        "type": "function",
+        "signature": "function escapeXML(text: string): string {"
+      }
+    ],
+    "handleCtxSearch": [
+      {
+        "filePath": "src/server.ts",
+        "type": "function",
+        "signature": "async function handleCtxSearch(query: string, limit: number): Promise<string> {"
+      }
+    ],
+    "handleCtxGetContextPacket": [
+      {
+        "filePath": "src/server.ts",
+        "type": "function",
+        "signature": "export async function handleCtxGetContextPacket("
+      }
+    ],
+    "createServer": [
+      {
+        "filePath": "src/server.ts",
+        "type": "function",
+        "signature": "export function createServer(): Server {"
+      }
+    ],
+    "startServer": [
+      {
+        "filePath": "src/server.ts",
+        "type": "function",
+        "signature": "export async function startServer(): Promise<void> {"
+      }
+    ],
+    "xdgConfig": [
+      {
+        "filePath": "src/setup/clients.ts",
+        "type": "function",
+        "signature": "function xdgConfig(): string {"
+      }
+    ],
+    "xdgData": [
+      {
+        "filePath": "src/setup/clients.ts",
+        "type": "function",
+        "signature": "function xdgData(): string {"
+      }
+    ],
+    "MCPServerEntry": [
+      {
+        "filePath": "src/setup/clients.ts",
+        "type": "interface",
+        "signature": "interface MCPServerEntry"
+      }
+    ],
+    "getServerEntry": [
+      {
+        "filePath": "src/setup/clients.ts",
+        "type": "function",
+        "signature": "function getServerEntry(): MCPServerEntry {"
+      }
+    ],
+    "MCPClient": [
+      {
+        "filePath": "src/setup/clients.ts",
+        "type": "interface",
+        "signature": "interface MCPClient"
+      }
+    ],
+    "DetectedClient": [
+      {
+        "filePath": "src/setup/clients.ts",
+        "type": "interface",
+        "signature": "interface DetectedClient"
+      }
+    ],
+    "detectInstalledClients": [
+      {
+        "filePath": "src/setup/clients.ts",
+        "type": "function",
+        "signature": "export function detectInstalledClients(): DetectedClient[] {"
+      }
+    ],
+    "getNestedValue": [
+      {
+        "filePath": "src/setup/clients.ts",
+        "type": "function",
+        "signature": "function getNestedValue(obj: Record<string, unknown>, path: string): unknown {"
+      }
+    ],
+    "setNestedValue": [
+      {
+        "filePath": "src/setup/clients.ts",
+        "type": "function",
+        "signature": "function setNestedValue(obj: Record<string, unknown>, path: string, value: unknown): void {"
+      }
+    ],
+    "commandExists": [
+      {
+        "filePath": "src/setup/clients.ts",
+        "type": "function",
+        "signature": "function commandExists(cmd: string): boolean {"
+      }
+    ],
+    "addContextMeshToConfig": [
+      {
+        "filePath": "src/setup/clients.ts",
+        "type": "function",
+        "signature": "export function addContextMeshToConfig(detected: DetectedClient): { success: boolean; message: string } {"
+      }
+    ],
+    "removeContextMeshFromConfig": [
+      {
+        "filePath": "src/setup/clients.ts",
+        "type": "function",
+        "signature": "export function removeContextMeshFromConfig(detected: DetectedClient): { success: boolean; message: string } {"
+      }
+    ],
+    "ask": [
+      {
+        "filePath": "src/setup/setup-wizard.ts",
+        "type": "function",
+        "signature": "function ask(question: string): Promise<string> {"
+      }
+    ],
+    "printBanner": [
+      {
+        "filePath": "src/setup/setup-wizard.ts",
+        "type": "function",
+        "signature": "function printBanner(): void {"
+      }
+    ],
+    "runSetupWizard": [
+      {
+        "filePath": "src/setup/setup-wizard.ts",
+        "type": "function",
+        "signature": "export async function runSetupWizard(options?: { nonInteractive?: boolean }): Promise<void> {"
+      }
+    ],
+    "printNextSteps": [
+      {
+        "filePath": "src/setup/setup-wizard.ts",
+        "type": "function",
+        "signature": "function printNextSteps(): void {"
+      }
+    ],
+    "GetCallGraphOptions": [
+      {
+        "filePath": "src/tools/findCallers.ts",
+        "type": "interface",
+        "signature": "interface GetCallGraphOptions"
+      }
+    ],
+    "getCallGraph": [
+      {
+        "filePath": "src/tools/findCallers.ts",
+        "type": "function",
+        "signature": "export async function getCallGraph(opts: GetCallGraphOptions): Promise<string> {"
+      }
+    ],
+    "FindCallersOptions": [
+      {
+        "filePath": "src/tools/findCallers.ts",
+        "type": "interface",
+        "signature": "interface FindCallersOptions"
+      }
+    ],
+    "findCallers": [
+      {
+        "filePath": "src/tools/findCallers.ts",
+        "type": "function",
+        "signature": "export async function findCallers(opts: FindCallersOptions): Promise<string> {"
+      }
+    ],
+    "RuleFile": [
+      {
+        "filePath": "src/tools/ruleManager.ts",
+        "type": "interface",
+        "signature": "interface RuleFile"
+      }
+    ],
+    "RuleManager": [
+      {
+        "filePath": "src/tools/ruleManager.ts",
+        "type": "class",
+        "signature": "class RuleManager"
+      }
+    ],
+    "RawImport": [
+      {
+        "filePath": "src/utils/importExtractor.ts",
+        "type": "interface",
+        "signature": "interface RawImport"
+      }
+    ],
+    "extractImports": [
+      {
+        "filePath": "src/utils/importExtractor.ts",
+        "type": "function",
+        "signature": "export function extractImports(filePath: string, content: string): RawImport[] {"
+      }
+    ],
+    "resolveImport": [
+      {
+        "filePath": "src/utils/importExtractor.ts",
+        "type": "function",
+        "signature": "export function resolveImport("
+      }
+    ],
+    "extractPythonImports": [
+      {
+        "filePath": "src/utils/importExtractor.ts",
+        "type": "function",
+        "signature": "function extractPythonImports(content: string): RawImport[] {"
+      }
+    ],
+    "resolvePythonImport": [
+      {
+        "filePath": "src/utils/importExtractor.ts",
+        "type": "function",
+        "signature": "function resolvePythonImport("
+      }
+    ],
+    "extractRustModules": [
+      {
+        "filePath": "src/utils/importExtractor.ts",
+        "type": "function",
+        "signature": "function extractRustModules(content: string): RawImport[] {"
+      }
+    ],
+    "resolveRustModule": [
+      {
+        "filePath": "src/utils/importExtractor.ts",
+        "type": "function",
+        "signature": "function resolveRustModule("
+      }
+    ],
+    "extractGoImports": [
+      {
+        "filePath": "src/utils/importExtractor.ts",
+        "type": "function",
+        "signature": "function extractGoImports(content: string): RawImport[] {"
+      }
+    ],
+    "resolveGoImport": [
+      {
+        "filePath": "src/utils/importExtractor.ts",
+        "type": "function",
+        "signature": "function resolveGoImport("
+      }
+    ],
+    "extractJavaImports": [
+      {
+        "filePath": "src/utils/importExtractor.ts",
+        "type": "function",
+        "signature": "function extractJavaImports(content: string): RawImport[] {"
+      }
+    ],
+    "resolveJavaImport": [
+      {
+        "filePath": "src/utils/importExtractor.ts",
+        "type": "function",
+        "signature": "function resolveJavaImport("
+      }
+    ],
+    "getConfiguredLevel": [
+      {
+        "filePath": "src/utils/logger.ts",
+        "type": "function",
+        "signature": "function getConfiguredLevel(): LogLevel {"
+      }
+    ],
+    "write": [
+      {
+        "filePath": "src/utils/logger.ts",
+        "type": "function",
+        "signature": "function write(level: LogLevel, msg: string, extra?: Record<string, unknown>): void {"
+      }
+    ],
+    "FileWatcher": [
+      {
+        "filePath": "src/watcher/FileWatcher.ts",
+        "type": "class",
+        "signature": "class FileWatcher"
+      }
+    ],
+    "run": [
+      {
+        "filePath": "src/workers/indexerWorker.ts",
+        "type": "function",
+        "signature": "async function run(): Promise<void> {"
+      }
+    ],
+    "Config": [
+      {
+        "filePath": "tests/fixtures/config.ts",
+        "type": "interface",
+        "signature": "interface Config"
+      }
+    ],
+    "User": [
+      {
+        "filePath": "tests/fixtures/sample.ts",
+        "type": "interface",
+        "signature": "interface User"
+      }
+    ],
+    "UserService": [
+      {
+        "filePath": "tests/fixtures/sample.ts",
+        "type": "class",
+        "signature": "class UserService"
+      }
+    ],
+    "formatUser": [
+      {
+        "filePath": "tests/fixtures/sample.ts",
+        "type": "function",
+        "signature": "export function formatUser(user: User): string {"
+      }
+    ]
+  }
+}

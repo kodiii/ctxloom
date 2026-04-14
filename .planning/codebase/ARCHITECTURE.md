@@ -38,14 +38,14 @@
 **Graph Layer:**
 - Purpose: Bidirectional in-memory import dependency graph with snapshot persistence
 - Location: `src/graph/DependencyGraph.ts`
-- Contains: `DependencyGraph` class with forward/reverse adjacency lists (`Map<string, Set<string>>`), symbol index (`Map<string, Array<{filePath, type, signature}>>`), and snapshot serialization to `.contextmesh/graph-snapshot.json`
+- Contains: `DependencyGraph` class with forward/reverse adjacency lists (`Map<string, Set<string>>`), symbol index (`Map<string, Array<{filePath, type, signature}>>`), and snapshot serialization to `.ctxloom/graph-snapshot.json`
 - Depends on: `ASTParser`, `collectFiles` from embedder
 - Used by: server.ts tool handlers for graph expansion in search, context packet generation, call graph traversal, and symbol definition lookup
 
 **Vector Store Layer:**
 - Purpose: Persist and search 384-dimensional code embeddings using approximate nearest neighbor
 - Location: `src/db/VectorStore.ts`
-- Contains: `VectorStore` class wrapping `@lancedb/lancedb`; schema: `{ id, filePath, vector: Float32[384], content }`; stores data at `.contextmesh/vectors.lancedb`
+- Contains: `VectorStore` class wrapping `@lancedb/lancedb`; schema: `{ id, filePath, vector: Float32[384], content }`; stores data at `.ctxloom/vectors.lancedb`
 - Depends on: `@lancedb/lancedb`
 - Used by: `indexDirectory`, `handleCtxSearch`, FileWatcher re-indexing callback
 
@@ -66,7 +66,7 @@
 **Tools Layer:**
 - Purpose: Specialized tool logic for call graph traversal and project rule injection
 - Location: `src/tools/`
-- Contains: `findCallers.ts` (`getCallGraph()`, `findCallers()` — bidirectional BFS traversal with depth), `ruleManager.ts` (`RuleManager` — scans for `.cursorrules`, `CLAUDE.md`, `CONTEXT.md`, `.contextmeshrc`, caches results)
+- Contains: `findCallers.ts` (`getCallGraph()`, `findCallers()` — bidirectional BFS traversal with depth), `ruleManager.ts` (`RuleManager` — scans for `.cursorrules`, `CLAUDE.md`, `CONTEXT.md`, `.ctxloomrc`, caches results)
 - Depends on: `ASTParser`, `DependencyGraph`, `PathValidator`
 - Used by: `src/server.ts` tool handlers
 
@@ -129,14 +129,14 @@
 **Graph Initialization:**
 
 1. `startServer()` triggers `getGraph()` asynchronously in the background
-2. `DependencyGraph.buildFromDirectory(PROJECT_ROOT)` checks `.contextmesh/graph-snapshot.json` first
+2. `DependencyGraph.buildFromDirectory(PROJECT_ROOT)` checks `.ctxloom/graph-snapshot.json` first
 3. If snapshot exists: hydrate from JSON in O(n) time
 4. If not: `collectFiles()` → for each file, `ASTParser.parse()` → extract import nodes → `addEdge()` → build symbol index
-5. After build: `saveSnapshot()` persists to `.contextmesh/graph-snapshot.json`
+5. After build: `saveSnapshot()` persists to `.ctxloom/graph-snapshot.json`
 
 **State Management:**
 - `DependencyGraph`: in-memory `Map<string, Set<string>>` adjacency lists; persisted as JSON snapshot
-- `VectorStore`: LanceDB file-based at `.contextmesh/vectors.lancedb`
+- `VectorStore`: LanceDB file-based at `.ctxloom/vectors.lancedb`
 - Embedder (`all-MiniLM-L6-v2` model): lazy singleton, cached in module scope
 - All server-level subsystems: lazy singletons initialized on first tool call, stored as module-level `let` variables in `server.ts`
 
@@ -166,17 +166,17 @@
 
 **CLI Default (MCP Server):**
 - Location: `src/index.ts` → `startServer()` in `src/server.ts`
-- Triggers: `contextmesh` with no arguments, or `npx contextmesh` from MCP client config
+- Triggers: `ctxloom` with no arguments, or `npx ctxloom` from MCP client config
 - Responsibilities: Initialize MCP server on Stdio, start FileWatcher, lazily build DependencyGraph in background
 
 **CLI: index:**
 - Location: `src/index.ts` → `indexDirectory()` + `DependencyGraph.buildFromDirectory()`
-- Triggers: `contextmesh index`
+- Triggers: `ctxloom index`
 - Responsibilities: Batch-embed all source files in cwd, build and persist dependency graph snapshot
 
 **CLI: setup:**
 - Location: `src/index.ts` → `runSetupWizard()`
-- Triggers: `contextmesh setup`
+- Triggers: `ctxloom setup`
 - Responsibilities: Detect installed MCP clients, offer interactive or automatic config writing
 
 **Postinstall:**
@@ -209,7 +209,7 @@
 
 **Authentication:** None — local-only server, no network exposure. Path boundary enforcement via `PathValidator` is the primary access control.
 
-**Snapshot Persistence:** `DependencyGraph` writes `.contextmesh/graph-snapshot.json`; `VectorStore` writes `.contextmesh/vectors.lancedb`. Both directories are excluded from file watching and indexing.
+**Snapshot Persistence:** `DependencyGraph` writes `.ctxloom/graph-snapshot.json`; `VectorStore` writes `.ctxloom/vectors.lancedb`. Both directories are excluded from file watching and indexing.
 
 ---
 

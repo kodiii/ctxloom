@@ -53,7 +53,7 @@ export async function generateEmbedding(text: string): Promise<number[]> {
  */
 export function collectFiles(dir: string, results: string[] = []): string[] {
   const IGNORED_DIRS = new Set([
-    'node_modules', '.git', 'dist', 'build', '.contextmesh',
+    'node_modules', '.git', 'dist', 'build', '.ctxloom',
     'coverage', '.next', '.nuxt', 'out', '.cache', '.turbo',
   ]);
 
@@ -92,7 +92,7 @@ export async function indexDirectory(
   onProgress?: (file: string, index: number, total: number) => void,
 ): Promise<{ indexed: number; errors: number }> {
   const { VectorStore } = await import('../db/VectorStore.js');
-  const store = new VectorStore(path.join(rootDir, '.contextmesh', 'vectors.lancedb'));
+  const store = new VectorStore(path.join(rootDir, '.ctxloom', 'vectors.lancedb'));
   await store.init();
 
   const files = collectFiles(rootDir);

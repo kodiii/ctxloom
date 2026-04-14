@@ -14,7 +14,7 @@ describe('RuleManager', () => {
   let pathValidator: PathValidator;
 
   beforeEach(() => {
-    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'contextmesh-rules-'));
+    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ctxloom-rules-'));
     pathValidator = new PathValidator(tempDir);
     ruleManager = new RuleManager(tempDir, pathValidator);
   });
@@ -51,11 +51,11 @@ describe('RuleManager', () => {
       expect(rules[0].name).toBe('CONTEXT.md');
     });
 
-    it('should find .contextmeshrc file', async () => {
-      fs.writeFileSync(path.join(tempDir, '.contextmeshrc'), '{"embeddingModel": "all-MiniLM-L6-v2"}');
+    it('should find .ctxloomrc file', async () => {
+      fs.writeFileSync(path.join(tempDir, '.ctxloomrc'), '{"embeddingModel": "all-MiniLM-L6-v2"}');
       const rules = await ruleManager.loadRules();
       expect(rules).toHaveLength(1);
-      expect(rules[0].name).toBe('.contextmeshrc');
+      expect(rules[0].name).toBe('.ctxloomrc');
     });
 
     it('should find multiple rule files', async () => {

@@ -85,7 +85,7 @@ describe('Embedder', () => {
     let tempDir: string;
 
     beforeEach(() => {
-      tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'contextmesh-collect-'));
+      tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ctxloom-collect-'));
     });
 
     afterEach(() => {
@@ -140,9 +140,9 @@ describe('Embedder', () => {
       expect(files.length).toBe(0);
     });
 
-    it('should ignore .contextmesh directory', () => {
-      fs.mkdirSync(path.join(tempDir, '.contextmesh'), { recursive: true });
-      fs.writeFileSync(path.join(tempDir, '.contextmesh', 'snapshot.json'), '');
+    it('should ignore .ctxloom directory', () => {
+      fs.mkdirSync(path.join(tempDir, '.ctxloom'), { recursive: true });
+      fs.writeFileSync(path.join(tempDir, '.ctxloom', 'snapshot.json'), '');
       const files = collectFiles(tempDir);
       expect(files.length).toBe(0);
     });

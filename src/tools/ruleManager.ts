@@ -1,7 +1,7 @@
 /**
  * RuleManager — Scans for and loads project rule files.
  *
- * Supports: .cursorrules, CLAUDE.md, CONTEXT.md, .contextmeshrc
+ * Supports: .cursorrules, CLAUDE.md, CONTEXT.md, .ctxloomrc
  * Fulfills FR-09 (Rule Injection, P0) from the PRD.
  */
 import fs from 'node:fs';
@@ -12,7 +12,7 @@ const RULE_FILES = [
   '.cursorrules',
   'CLAUDE.md',
   'CONTEXT.md',
-  '.contextmeshrc',
+  '.ctxloomrc',
   '.cursor/rules',
   '.claude/CLAUDE.md',
 ];
