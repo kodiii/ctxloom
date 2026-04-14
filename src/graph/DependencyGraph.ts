@@ -146,6 +146,10 @@ export class DependencyGraph {
    *            'callees' = forward edges (who do I import)
    */
   traverse(startFile: string, direction: 'callers' | 'callees', depth: number = 1): string[] {
+    // M-4: Clamp depth to prevent runaway traversal on cyclic graphs
+    const MAX_DEPTH = 10;
+    depth = Math.min(depth, MAX_DEPTH);
+
     const visited = new Set<string>();
     const queue: Array<{ file: string; currentDepth: number }> = [{ file: startFile, currentDepth: 0 }];
 
@@ -326,7 +330,34 @@ export class DependencyGraph {
       symbolIndex: Object.fromEntries(this.symbolIndex.entries()),
     };
 
-    fs.writeFileSync(this.getSnapshotPath(), JSON.stringify(data, null, 2));
+    // L-3: Atomic write via temp file + rename to prevent partial reads
+    const snapshotPath = this.getSnapshotPath();
+    const tmpPath = snapshotPath + '.tmp';
+    fs.writeFileSync(tmpPath, JSON.stringify(data, null, 2));
+    fs.renameSync(tmpPath, snapshotPath);
+  }
+
+  /** M-2: Validate snapshot shape before hydrating to prevent prototype pollution. */
+  private isValidSnapshot(data: unknown): data is {
+    version: number;
+    forwardEdges: Record<string, string[]>;
+    reverseEdges: Record<string, string[]>;
+    fileCount?: number;
+    symbolIndex?: Record<string, Array<{ filePath: string; type: string; signature: string }>>;
+  } {
+    if (!data || typeof data !== 'object') return false;
+    const d = data as Record<string, unknown>;
+    if (typeof d['version'] !== 'number') return false;
+    if (!d['forwardEdges'] || typeof d['forwardEdges'] !== 'object') return false;
+    if (!d['reverseEdges'] || typeof d['reverseEdges'] !== 'object') return false;
+    // Validate that edge values are arrays of strings
+    for (const v of Object.values(d['forwardEdges'] as Record<string, unknown>)) {
+      if (!Array.isArray(v) || !v.every(s => typeof s === 'string')) return false;
+    }
+    for (const v of Object.values(d['reverseEdges'] as Record<string, unknown>)) {
+      if (!Array.isArray(v) || !v.every(s => typeof s === 'string')) return false;
+    }
+    return true;
   }
 
   private async loadSnapshot(currentFileCount?: number): Promise<boolean> {
@@ -334,7 +365,15 @@ export class DependencyGraph {
     if (!fs.existsSync(snapshotPath)) return false;
 
     try {
-      const data = JSON.parse(fs.readFileSync(snapshotPath, 'utf-8'));
+      const raw = JSON.parse(fs.readFileSync(snapshotPath, 'utf-8'));
+
+      // M-2: Validate schema before hydrating
+      if (!this.isValidSnapshot(raw)) {
+        logger.warn('Graph snapshot failed schema validation, will rebuild');
+        return false;
+      }
+
+      const data = raw;
 
       // Staleness check: if file count changed, force rebuild
       if (currentFileCount !== undefined && data.fileCount !== undefined) {

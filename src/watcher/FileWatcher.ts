@@ -6,6 +6,7 @@
  * Ignores common non-source directories.
  */
 import chokidar, { FSWatcher } from 'chokidar';
+import { logger } from '../utils/logger.js';
 
 export type ChangeCallback = (absolutePath: string, event: 'add' | 'change' | 'unlink') => void | Promise<void>;
 
@@ -52,7 +53,11 @@ export class FileWatcher {
         const result = this.onChange(filePath, event);
         if (result instanceof Promise) {
           result.catch(err => {
-            console.error(`[ContextMesh] FileWatcher callback error for ${filePath}:`, err instanceof Error ? err.message : String(err));
+            // L-2: Use structured logger instead of console.error
+            logger.error('FileWatcher callback error', {
+              file: filePath,
+              detail: err instanceof Error ? err.message : String(err),
+            });
           });
         }
       }, this.debounceMs);

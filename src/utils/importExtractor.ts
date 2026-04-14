@@ -162,8 +162,11 @@ function extractGoImports(content: string): RawImport[] {
   }
 
   // Block import: import (\n  "path"\n  alias "path"\n)
-  const blockImport = /import\s*\(([^)]+)\)/gs;
-  while ((m = blockImport.exec(content)) !== null) {
+  // M-1: Limit block content to 512KB to prevent ReDoS on crafted input
+  const MAX_BLOCK_LEN = 512 * 1024;
+  const safeContent = content.length > MAX_BLOCK_LEN ? content.slice(0, MAX_BLOCK_LEN) : content;
+  const blockImport = /import\s*\(([^)]{0,4096})\)/gs;
+  while ((m = blockImport.exec(safeContent)) !== null) {
     const block = m[1];
     const lineRe = /(?:\w+\s+)?"([^"]+)"/g;
     let lm: RegExpExecArray | null;

@@ -9,6 +9,7 @@ import type { Connection, Table } from '@lancedb/lancedb';
 import { makeArrowTable } from '@lancedb/lancedb';
 import path from 'node:path';
 import fs from 'node:fs';
+import { logger } from '../utils/logger.js';
 
 export interface VectorSearchResult {
   filePath: string;
@@ -80,7 +81,7 @@ export class VectorStore {
     try {
       await this.table.delete(`filePath = '${safe}'`);
     } catch (err) {
-      console.error('[VectorStore] Delete before upsert failed (continuing):', err instanceof Error ? err.message : String(err));
+      logger.warn('Delete before upsert failed, continuing', { detail: err instanceof Error ? err.message : String(err) });
     }
 
     // Insert new record
@@ -115,7 +116,7 @@ export class VectorStore {
         }));
     } catch (err) {
       // If vector index doesn't exist yet, try creating it
-      console.error('[VectorStore] Search failed, attempting to create index:', err);
+      logger.warn('Search failed, attempting to create index', { detail: String(err) });
       try {
         await this.table.createIndex('vector');
         const results = await this.table
@@ -146,7 +147,7 @@ export class VectorStore {
     try {
       await this.table.delete(`filePath = '${safe}'`);
     } catch (err) {
-      console.error('[VectorStore] Remove failed:', err instanceof Error ? err.message : String(err));
+      logger.error('Remove failed', { detail: err instanceof Error ? err.message : String(err) });
     }
   }
 
@@ -158,7 +159,7 @@ export class VectorStore {
     try {
       return await this.table.countRows();
     } catch (err) {
-      console.error('[VectorStore] countRows failed:', err instanceof Error ? err.message : String(err));
+      logger.error('countRows failed', { detail: err instanceof Error ? err.message : String(err) });
       return 0;
     }
   }

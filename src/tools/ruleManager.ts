@@ -59,6 +59,12 @@ export class RuleManager {
             const dirEntries = fs.readdirSync(fullPath);
             for (const entry of dirEntries) {
               const entryPath = path.join(fullPath, entry);
+              try {
+                // M-5: Validate each directory entry to prevent traversal via symlinks
+                this.pathValidator.validate(entryPath);
+              } catch {
+                continue; // Skip entries that escape the project root
+              }
               const entryStat = fs.statSync(entryPath);
               if (entryStat.isFile()) {
                 const content = fs.readFileSync(entryPath, 'utf-8');
