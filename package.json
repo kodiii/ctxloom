@@ -37,13 +37,13 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/YOUR_GITHUB_USERNAME/contextmesh"
+    "url": "https://github.com/kodiii/Context-MESH"
   },
-  "homepage": "https://github.com/YOUR_GITHUB_USERNAME/contextmesh#readme",
+  "homepage": "https://github.com/kodiii/Context-MESH/blob/main/README.md",
   "bugs": {
-    "url": "https://github.com/YOUR_GITHUB_USERNAME/contextmesh/issues"
+    "url": "https://github.com/kodiii/Context-MESH/issues"
   },
-  "author": "ContextMesh Team",
+  "author": "Codzign",
   "dependencies": {
     "@huggingface/transformers": "^3.0.0",
     "@lancedb/lancedb": "^0.27.0",
