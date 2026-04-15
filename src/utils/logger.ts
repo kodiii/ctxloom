@@ -1,5 +1,5 @@
 /**
- * Minimal structured logger for ContextMesh.
+ * Minimal structured logger for ctxloom.
  *
  * Writes JSON lines to stderr (to avoid polluting MCP stdio transport on stdout).
  * Log level is controlled by the LOG_LEVEL environment variable:

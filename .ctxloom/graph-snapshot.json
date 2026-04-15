@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "builtAt": 1776156841935,
+  "builtAt": 1776236753224,
   "fileCount": 24,
   "forwardEdges": {
     "src/ast/Skeletonizer.ts": [
@@ -446,18 +446,18 @@
         "signature": "function commandExists(cmd: string): boolean {"
       }
     ],
-    "addContextMeshToConfig": [
+    "addCtxloomToConfig": [
       {
         "filePath": "src/setup/clients.ts",
         "type": "function",
-        "signature": "export function addContextMeshToConfig(detected: DetectedClient): { success: boolean; message: string } {"
+        "signature": "export function addCtxloomToConfig(detected: DetectedClient): { success: boolean; message: string } {"
       }
     ],
-    "removeContextMeshFromConfig": [
+    "removeCtxloomFromConfig": [
       {
         "filePath": "src/setup/clients.ts",
         "type": "function",
-        "signature": "export function removeContextMeshFromConfig(detected: DetectedClient): { success: boolean; message: string } {"
+        "signature": "export function removeCtxloomFromConfig(detected: DetectedClient): { success: boolean; message: string } {"
       }
     ],
     "ask": [

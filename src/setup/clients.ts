@@ -41,7 +41,7 @@ export interface MCPServerEntry {
   env?: Record<string, string>;
 }
 
-export const CONTEXTMESH_SERVER: MCPServerEntry = {
+export const CTXLOOM_SERVER: MCPServerEntry = {
   command: 'npx',
   args: ['-y', 'ctxloom'],
   env: {},
@@ -55,7 +55,7 @@ function getServerEntry(): MCPServerEntry {
   } catch {
     // Not installed globally, use npx
   }
-  return CONTEXTMESH_SERVER;
+  return CTXLOOM_SERVER;
 }
 
 // ─── Client Definitions ───────────────────────────────────────
@@ -422,14 +422,14 @@ function commandExists(cmd: string): boolean {
 }
 
 /**
- * Add ContextMesh to a client's MCP config file.
+ * Add ctxloom to a client's MCP config file.
  * Creates the file if it doesn't exist, preserves existing config.
  */
-export function addContextMeshToConfig(detected: DetectedClient): { success: boolean; message: string } {
+export function addCtxloomToConfig(detected: DetectedClient): { success: boolean; message: string } {
   const { client, configPath, configExists, alreadyConfigured } = detected;
 
   if (alreadyConfigured) {
-    return { success: true, message: `ContextMesh is already configured in ${client.name}` };
+    return { success: true, message: `ctxloom is already configured in ${client.name}` };
   }
 
   let config: Record<string, unknown>;
@@ -470,16 +470,16 @@ export function addContextMeshToConfig(detected: DetectedClient): { success: boo
   // Write back
   try {
     fs.writeFileSync(configPath, JSON.stringify(config, null, 2) + '\n', 'utf-8');
-    return { success: true, message: `Added ContextMesh to ${client.name} (${configPath})` };
+    return { success: true, message: `Added ctxloom to ${client.name} (${configPath})` };
   } catch (err) {
     return { success: false, message: `Failed to write config at ${configPath}: ${err}` };
   }
 }
 
 /**
- * Remove ContextMesh from a client's MCP config file.
+ * Remove ctxloom from a client's MCP config file.
  */
-export function removeContextMeshFromConfig(detected: DetectedClient): { success: boolean; message: string } {
+export function removeCtxloomFromConfig(detected: DetectedClient): { success: boolean; message: string } {
   const { client, configPath, configExists } = detected;
 
   if (!configExists) {
@@ -492,12 +492,12 @@ export function removeContextMeshFromConfig(detected: DetectedClient): { success
     const servers = getNestedValue(config, client.serversPath);
 
     if (!servers || !(servers as Record<string, unknown>).ctxloom) {
-      return { success: true, message: `ContextMesh not found in ${client.name} config` };
+      return { success: true, message: `ctxloom not found in ${client.name} config` };
     }
 
     delete (servers as Record<string, unknown>)['ctxloom'];
     fs.writeFileSync(configPath, JSON.stringify(config, null, 2) + '\n', 'utf-8');
-    return { success: true, message: `Removed ContextMesh from ${client.name} (${configPath})` };
+    return { success: true, message: `Removed ctxloom from ${client.name} (${configPath})` };
   } catch (err) {
     return { success: false, message: `Failed to update config at ${configPath}: ${err}` };
   }
