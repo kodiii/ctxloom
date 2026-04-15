@@ -13,7 +13,7 @@ describe('MCP Server', () => {
   let server: Server;
 
   beforeAll(() => {
-    server = createServer();
+    ({ server } = createServer());
   });
 
   describe('createServer()', () => {
@@ -43,7 +43,7 @@ describe('MCP Server', () => {
       expect(server).toBeInstanceOf(Server);
     });
 
-    it('should define all 6 expected tools', async () => {
+    it('should define all 8 expected tools', async () => {
       // Verify the tool names are defined in the tools source files.
       // After the ToolRegistry refactor each tool lives in its own file under
       // src/tools/ — we search all TS files in that directory.
@@ -54,6 +54,8 @@ describe('MCP Server', () => {
         'ctx_get_call_graph',
         'ctx_get_definition',
         'ctx_get_rules',
+        'ctx_similar_files',
+        'ctx_status',
       ];
       const fs = await import('node:fs');
       const path = await import('node:path');

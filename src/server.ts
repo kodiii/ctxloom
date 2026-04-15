@@ -82,7 +82,7 @@ function buildContext(): ServerContext {
 }
 
 // ─── Server factory ─────────────────────────────────────────────────────────
-export function createServer(): Server {
+export function createServer(): { server: Server; ctx: ServerContext } {
   const server = new Server({ name: 'ctxloom', version: '1.0.0' }, { capabilities: { tools: {} } });
   const ctx = buildContext();
   const registry = createToolRegistry(ctx);
@@ -100,13 +100,12 @@ export function createServer(): Server {
     }
   });
 
-  return server;
+  return { server, ctx };
 }
 
 // ─── Server startup ──────────────────────────────────────────────────────────
 export async function startServer(): Promise<void> {
-  const server = createServer();
-  const ctx = buildContext();
+  const { server, ctx } = createServer();
   const transport = new StdioServerTransport();
   await server.connect(transport);
 
