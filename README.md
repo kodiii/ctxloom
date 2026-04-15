@@ -104,6 +104,24 @@ ctxloom --help       Show help
 
 ---
 
+## How ctxloom Compares
+
+| Feature | ctxloom | code-review-graph | Others |
+|---------|---------|-------------------|--------|
+| Zero Python dependencies | ✅ Pure JS/TS | ❌ Python required | varies |
+| Local-first (no cloud) | ✅ | ✅ | varies |
+| Blast radius analysis | ✅ `ctx_blast_radius` | ✅ | ❌ |
+| Community detection | 🔜 Phase 2 | ✅ | ❌ |
+| Tree-sitter AST | ✅ TypeScript + Python | ✅ Multi-language | varies |
+| Vector semantic search | ✅ | ✅ | varies |
+| Token reduction (skeletonization) | ✅ ~80% | ✅ | ❌ |
+| Grammar size (npm install) | ✅ <5MB (lazy-loaded) | ❌ Large | varies |
+| MCP protocol native | ✅ | ✅ | varies |
+
+*Being honest about what's missing builds trust. Community detection is coming in Phase 2.*
+
+---
+
 ## Language Support
 
 ctxloom builds dependency graphs for **5 language families**:
