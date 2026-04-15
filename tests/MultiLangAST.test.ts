@@ -158,4 +158,13 @@ pub fn greet(user: &User) -> String {
     const result = await parser.parse(rsFile);
     expect(Array.isArray(result)).toBe(true);
   });
+
+  it('parse() returns [] gracefully when Rust grammar unavailable', async () => {
+    const rsFile = path.join(tmpDir, 'empty.rs');
+    fs.writeFileSync(rsFile, 'fn main() {}\n');
+    const parser = new ASTParser();
+    await parser.init();
+    const result = await parser.parse(rsFile);
+    expect(Array.isArray(result)).toBe(true);
+  });
 });
