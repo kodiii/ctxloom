@@ -369,4 +369,69 @@ export class ASTParser {
     walk(tree.rootNode);
     return results;
   }
+
+  /**
+   * Extract all call edges in a TypeScript/TSX file.
+   * Tracks the enclosing function/method context for each call site.
+   * Used to populate CallGraphIndex during indexing.
+   */
+  async parseAllCallEdges(
+    filePath: string,
+  ): Promise<Array<{ callerSymbol: string; calleeSymbol: string; line: number }>> {
+    if (!this.tsLang) throw new Error('ASTParser not initialized. Call init() first.');
+
+    const parser = new TreeSitter.Parser();
+    parser.setLanguage(this.tsLang);
+
+    const source = fs.readFileSync(filePath, 'utf-8');
+    const tree = parser.parse(source);
+    if (!tree) return [];
+
+    const results: Array<{ callerSymbol: string; calleeSymbol: string; line: number }> = [];
+
+    const walk = (node: TreeSitter.Node, contextStack: string[]): void => {
+      let newStack = contextStack;
+
+      if (
+        node.type === 'function_declaration' ||
+        node.type === 'method_definition' ||
+        node.type === 'arrow_function' ||
+        node.type === 'function'
+      ) {
+        const nameNode =
+          node.childForFieldName?.('name') ??
+          node.children.find(c => c?.type === 'identifier');
+        const name = nameNode?.text ?? '';
+        if (name) {
+          newStack = [...contextStack, name];
+        }
+      }
+
+      if (node.type === 'call_expression' || node.type === 'new_expression') {
+        const fn = node.childForFieldName?.('function') ?? node.children[0];
+        if (fn) {
+          const name =
+            fn.type === 'identifier'
+              ? fn.text
+              : fn.type === 'member_expression'
+                ? (fn.childForFieldName?.('property')?.text ?? '')
+                : '';
+          if (name && name.length > 0) {
+            results.push({
+              callerSymbol: newStack[newStack.length - 1] ?? '',
+              calleeSymbol: name,
+              line: node.startPosition.row + 1,
+            });
+          }
+        }
+      }
+
+      for (const child of node.children) {
+        if (child) walk(child, newStack);
+      }
+    };
+
+    walk(tree.rootNode, []);
+    return results;
+  }
 }

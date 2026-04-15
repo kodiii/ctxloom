@@ -67,7 +67,7 @@ export async function getCallGraph(opts: GetCallGraphOptions): Promise<string> {
     lines.push('  </source>');
   }
 
-  return `<call_graph symbol="${escapeXML(symbol)}" direction="${direction}" depth="${depth}" count="${totalCount}">\n` +
+  return `<call_graph symbol="${escapeXML(symbol)}" direction="${direction}" depth="${depth}" count="${totalCount}" graph_type="import">\n` +
          lines.join('\n') + '\n' +
          `</call_graph>`;
 }
