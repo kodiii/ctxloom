@@ -1,0 +1,50 @@
+name: Benchmark
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+jobs:
+  benchmark:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - run: npm ci
+
+      - run: npm run build
+
+      - name: Run benchmarks
+        run: npx tsx benchmarks/benchmark.ts --output benchmarks/results.json
+        timeout-minutes: 10
+
+      - name: Post results as PR comment
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const results = JSON.parse(fs.readFileSync('benchmarks/results.json', 'utf-8'));
+            const body = [
+              '## ctxloom Benchmark Results',
+              '',
+              `**Graph build:** ${results.graph_build?.edges} edges, ${results.graph_build?.nodes} nodes (${results.graph_build?.duration_ms}ms)`,
+              `**Search P50:** ${results.search?.p50_ms}ms | **P95:** ${results.search?.p95_ms}ms | **P99:** ${results.search?.p99_ms}ms`,
+              '',
+              `_Run at: ${results.timestamp}_`,
+            ].join('\n');
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body,
+            });
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-results
+          path: benchmarks/results.json
