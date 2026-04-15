@@ -85,6 +85,9 @@ export interface ParsedNode {
 export class ASTParser {
   private tsLang: TreeSitter.Language | null = null;
   private pyLang: TreeSitter.Language | null = null;
+  private goLang: TreeSitter.Language | null = null;
+  private rustLang: TreeSitter.Language | null = null;
+  private javaLang: TreeSitter.Language | null = null;
   private grammarLoader = new GrammarLoader();
 
   async init(): Promise<void> {
@@ -131,6 +134,20 @@ export class ASTParser {
     }
   }
 
+  /**
+   * Load Go grammar on demand. Downloads and caches WASM if needed.
+   */
+  async loadGo(): Promise<void> {
+    if (this.goLang) return;
+    try {
+      const wasmPath = await this.grammarLoader.ensureGrammar('go');
+      this.goLang = await TreeSitter.Language.load(wasmPath);
+    } catch (err) {
+      const { logger } = await import('../utils/logger.js');
+      logger.warn('Go grammar unavailable', { detail: err instanceof Error ? err.message : String(err) });
+    }
+  }
+
   async parse(filePath: string): Promise<ParsedNode[]> {
     if (!this.tsLang) throw new Error('ASTParser not initialized. Call init() first.');
 
@@ -138,6 +155,7 @@ export class ASTParser {
     if (ext === '.py') {
       return this.parsePython(filePath);
     }
+    if (ext === '.go') return this.parseGo(filePath);
 
     const parser = new TreeSitter.Parser();
     parser.setLanguage(this.tsLang);
@@ -429,6 +447,101 @@ export class ASTParser {
             c => c?.type === 'function_definition' || c?.type === 'class_definition',
           );
           if (inner) walk(inner);
+          return;
+        }
+      }
+
+      for (const child of node.children) {
+        if (child) walk(child);
+      }
+    };
+
+    walk(tree.rootNode);
+    return nodes;
+  }
+
+  private async parseGo(filePath: string): Promise<ParsedNode[]> {
+    if (!this.goLang) await this.loadGo();
+    if (!this.goLang) return [];
+
+    const parser = new TreeSitter.Parser();
+    parser.setLanguage(this.goLang);
+
+    const source = fs.readFileSync(filePath, 'utf-8');
+    const tree = parser.parse(source);
+    if (!tree) return [];
+
+    const nodes: ParsedNode[] = [];
+    const lines = source.split('\n');
+
+    const walk = (node: TreeSitter.Node): void => {
+      switch (node.type) {
+        case 'function_declaration': {
+          const nameNode = node.childForFieldName?.('name');
+          if (nameNode) {
+            nodes.push({
+              type: 'function',
+              name: nameNode.text,
+              signature: (lines[node.startPosition.row] ?? '').trim(),
+              startLine: node.startPosition.row + 1,
+              endLine: node.endPosition.row + 1,
+            });
+          }
+          return;
+        }
+        case 'method_declaration': {
+          const nameNode = node.childForFieldName?.('name');
+          if (nameNode) {
+            nodes.push({
+              type: 'function',
+              name: nameNode.text,
+              signature: (lines[node.startPosition.row] ?? '').trim(),
+              startLine: node.startPosition.row + 1,
+              endLine: node.endPosition.row + 1,
+            });
+          }
+          return;
+        }
+        case 'type_declaration': {
+          for (const child of node.children) {
+            if (child?.type === 'type_spec') {
+              const nameNode = child.childForFieldName?.('name');
+              if (nameNode) {
+                const typeNode = child.childForFieldName?.('type');
+                const isInterface = typeNode?.type === 'interface_type';
+                nodes.push({
+                  type: isInterface ? 'interface' : 'class',
+                  name: nameNode.text,
+                  signature: `type ${nameNode.text} ${typeNode?.type ?? ''}`.trim(),
+                  startLine: node.startPosition.row + 1,
+                  endLine: node.endPosition.row + 1,
+                });
+              }
+            }
+          }
+          return;
+        }
+        case 'import_declaration': {
+          // Walk into import_spec_list or import_spec directly
+          const walkImport = (n: TreeSitter.Node): void => {
+            if (n.type === 'import_spec') {
+              const pathNode = n.childForFieldName?.('path');
+              if (pathNode) {
+                const spec = pathNode.text.replace(/^"|"$/g, '');
+                nodes.push({
+                  type: 'import',
+                  name: spec,
+                  source: spec,
+                  startLine: n.startPosition.row + 1,
+                  endLine: n.endPosition.row + 1,
+                });
+              }
+            }
+            for (const c of n.children) {
+              if (c) walkImport(c);
+            }
+          };
+          walkImport(node);
           return;
         }
       }

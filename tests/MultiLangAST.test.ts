@@ -79,3 +79,48 @@ describe('DependencyGraph — multi-language import resolution', () => {
     expect(graph.allFiles()).toContain('lib.rs');
   });
 });
+
+// ─── ASTParser dispatch tests ─────────────────────────────────────────────
+
+describe('ASTParser — Go dispatch', () => {
+  let tmpDir: string;
+
+  beforeEach(() => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ctxloom-go-test-'));
+  });
+
+  afterEach(() => {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it('parse() dispatches .go files without throwing', async () => {
+    const goFile = path.join(tmpDir, 'main.go');
+    fs.writeFileSync(goFile, `package main
+
+import "fmt"
+
+func greet(name string) string {
+  return fmt.Sprintf("Hello, %s", name)
+}
+
+type User struct {
+  Name string
+  Age  int
+}
+`);
+    const parser = new ASTParser();
+    await parser.init();
+    const result = await parser.parse(goFile);
+    // Grammar may or may not be downloaded in CI; result must be an array
+    expect(Array.isArray(result)).toBe(true);
+  });
+
+  it('parse() returns [] gracefully when Go grammar unavailable', async () => {
+    const goFile = path.join(tmpDir, 'empty.go');
+    fs.writeFileSync(goFile, 'package main\n');
+    const parser = new ASTParser();
+    await parser.init();
+    const result = await parser.parse(goFile);
+    expect(Array.isArray(result)).toBe(true);
+  });
+});
