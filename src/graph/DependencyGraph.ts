@@ -277,6 +277,10 @@ export class DependencyGraph {
 
     // 1. Remove stale edges and symbol index entries for this file
     this.removeFile(relPath);
+    // Re-register so allFiles() retains files with zero imports after update
+    if (!this.forwardEdges.has(relPath)) {
+      this.forwardEdges.set(relPath, new Set());
+    }
     // Remove stale call graph edges for this file before re-indexing
     this.callGraphIndex.removeEdgesForFile(relPath);
     for (const [symbol, entries] of this.symbolIndex.entries()) {
