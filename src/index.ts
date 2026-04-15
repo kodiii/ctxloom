@@ -115,6 +115,7 @@ Tools Exposed:
   ctx_get_rules          Project rule injection from .cursorrules, CLAUDE.md, etc.
   ctx_similar_files      Find semantically similar files via vector embeddings
   ctx_status             Server status: graph size, vector store, init state
+  ctx_blast_radius       Blast radius of changed files: importers + call sites
 `);
       break;
     }
