@@ -62,4 +62,20 @@ describe('DependencyGraph — multi-language import resolution', () => {
     expect(files).toContain('Foo.java');
     expect(files).toContain('lib.rs');
   });
+
+  it('retains a no-import Rust file in allFiles() after updateFile', async () => {
+    fs.writeFileSync(path.join(tmpDir, 'lib.rs'), 'fn hello() {}\n');
+
+    const parser = new ASTParser();
+    await parser.init();
+    const graph = new DependencyGraph();
+    graph.setParser(parser);
+    await graph.buildFromDirectory(tmpDir);
+
+    // Simulate a file change — still no imports
+    fs.writeFileSync(path.join(tmpDir, 'lib.rs'), '// changed\nfn hello() {}\n');
+    await graph.updateFile(path.join(tmpDir, 'lib.rs'), tmpDir);
+
+    expect(graph.allFiles()).toContain('lib.rs');
+  });
 });
