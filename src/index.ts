@@ -116,6 +116,8 @@ Tools Exposed:
   ctx_similar_files      Find semantically similar files via vector embeddings
   ctx_status             Server status: graph size, vector store, init state
   ctx_blast_radius       Blast radius of changed files: importers + call sites
+  ctx_hub_nodes          Top-N files by import degree (architectural chokepoints)
+  ctx_bridge_nodes       Top-N files by betweenness centrality (graph connectors)
 `);
       break;
     }
