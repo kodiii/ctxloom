@@ -21,6 +21,8 @@ import { CallGraphIndex } from './CallGraphIndex.js';
 
 /** Extensions handled by the TypeScript/JS AST parser. */
 const TS_EXTENSIONS = new Set(['.ts', '.tsx', '.js', '.jsx', '.mjs']);
+/** Extensions handled by the AST parser (includes Python). */
+const AST_EXTENSIONS = new Set(['.ts', '.tsx', '.js', '.jsx', '.mjs', '.py']);
 
 export interface GraphEdge {
   from: string;
@@ -73,8 +75,8 @@ export class DependencyGraph {
       const ext = path.extname(absPath).toLowerCase();
 
       try {
-        if (TS_EXTENSIONS.has(ext)) {
-          // ── TypeScript / JavaScript: full AST parse ──────────────────
+        if (AST_EXTENSIONS.has(ext)) {
+          // ── TypeScript / JavaScript / Python: full AST parse ─────────
           const nodes = await this.parser.parse(absPath);
 
           const importNodes = nodes.filter(n => n.type === 'import');
@@ -97,10 +99,12 @@ export class DependencyGraph {
             }
           }
 
-          // Build call graph edges for TypeScript/TSX files
-          const callEdges = await this.parser.parseAllCallEdges(absPath);
-          for (const edge of callEdges) {
-            this.callGraphIndex.addEdge({ callerFile: relPath, ...edge });
+          // Only build call graph edges for TypeScript/JavaScript (Python doesn't have parseAllCallEdges)
+          if (TS_EXTENSIONS.has(ext)) {
+            const callEdges = await this.parser.parseAllCallEdges(absPath);
+            for (const edge of callEdges) {
+              this.callGraphIndex.addEdge({ callerFile: relPath, ...edge });
+            }
           }
         } else {
           // ── Other languages: regex-based import extraction ────────────
@@ -269,8 +273,8 @@ export class DependencyGraph {
     // 2. Re-parse and rebuild edges
     const ext = path.extname(absPath).toLowerCase();
     try {
-      if (TS_EXTENSIONS.has(ext)) {
-        // TypeScript / JavaScript: full AST parse
+      if (AST_EXTENSIONS.has(ext)) {
+        // TypeScript / JavaScript / Python: full AST parse
         const nodes = await this.parser.parse(absPath);
         const importNodes = nodes.filter(n => n.type === 'import');
 
@@ -294,10 +298,12 @@ export class DependencyGraph {
           }
         }
 
-        // Rebuild call graph edges for this file (stale edges were cleared above).
-        const callEdges = await this.parser.parseAllCallEdges(absPath);
-        for (const edge of callEdges) {
-          this.callGraphIndex.addEdge({ callerFile: relPath, ...edge });
+        // Only rebuild call graph edges for TypeScript/JavaScript (stale edges were cleared above).
+        if (TS_EXTENSIONS.has(ext)) {
+          const callEdges = await this.parser.parseAllCallEdges(absPath);
+          for (const edge of callEdges) {
+            this.callGraphIndex.addEdge({ callerFile: relPath, ...edge });
+          }
         }
       } else {
         // Other languages: regex-based extraction
