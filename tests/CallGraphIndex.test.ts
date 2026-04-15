@@ -44,4 +44,18 @@ describe('CallGraphIndex', () => {
     idx.addEdge({ callerFile: 'a.ts', callerSymbol: 'f1', calleeSymbol: 'y', line: 3 });
     expect(idx.size()).toBe(3);
   });
+
+  it('removeEdgesForFile removes all edges where callerFile matches', () => {
+    const idx = new CallGraphIndex();
+    idx.addEdge({ callerFile: 'a.ts', callerSymbol: 'f1', calleeSymbol: 'x', line: 1 });
+    idx.addEdge({ callerFile: 'a.ts', callerSymbol: 'f2', calleeSymbol: 'y', line: 2 });
+    idx.addEdge({ callerFile: 'b.ts', callerSymbol: 'g1', calleeSymbol: 'x', line: 3 });
+
+    idx.removeEdgesForFile('a.ts');
+
+    expect(idx.getCallers('x')).toHaveLength(1);
+    expect(idx.getCallers('x')[0].file).toBe('b.ts');
+    expect(idx.getCallers('y')).toHaveLength(0);
+    expect(idx.size()).toBe(1);
+  });
 });
