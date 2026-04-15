@@ -44,8 +44,9 @@ describe('MCP Server', () => {
     });
 
     it('should define all 6 expected tools', async () => {
-      // Verify the tool names are defined in the server source by checking the
-      // tool registration through the source
+      // Verify the tool names are defined in the tools source files.
+      // After the ToolRegistry refactor each tool lives in its own file under
+      // src/tools/ — we search all TS files in that directory.
       const expectedTools = [
         'ctx_search',
         'ctx_get_file',
@@ -54,15 +55,15 @@ describe('MCP Server', () => {
         'ctx_get_definition',
         'ctx_get_rules',
       ];
-      // Read server source to verify all tool names are registered
       const fs = await import('node:fs');
       const path = await import('node:path');
-      const serverSrc = fs.readFileSync(
-        path.resolve(process.cwd(), 'src/server.ts'),
-        'utf-8'
-      );
+      const toolsDir = path.resolve(process.cwd(), 'src/tools');
+      const toolFiles = fs.readdirSync(toolsDir)
+        .filter((f: string) => f.endsWith('.ts'))
+        .map((f: string) => fs.readFileSync(path.join(toolsDir, f), 'utf-8'));
+      const allSrc = toolFiles.join('\n');
       for (const toolName of expectedTools) {
-        expect(serverSrc).toContain(`'${toolName}'`);
+        expect(allSrc).toContain(`'${toolName}'`);
       }
     });
   });
