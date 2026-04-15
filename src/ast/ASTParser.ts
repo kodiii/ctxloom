@@ -726,14 +726,24 @@ export class ASTParser {
             // Recurse into the body to emit methods as function nodes
             const body = node.childForFieldName?.('body');
             const methods = (body?.children ?? [])
-              .filter((c): c is TreeSitter.Node => c !== null && c.type === 'method_declaration')
+              .filter((c): c is TreeSitter.Node => c !== null && (c.type === 'method_declaration' || c.type === 'constructor_declaration'))
               .map(c => c.childForFieldName?.('name')?.text ?? '')
               .filter(Boolean);
+
+            const methodRanges: MethodRange[] = (body?.children ?? [])
+              .filter((c): c is TreeSitter.Node => c !== null && (c.type === 'method_declaration' || c.type === 'constructor_declaration'))
+              .map(c => {
+                const mName = c.childForFieldName?.('name')?.text ?? '';
+                return mName ? { name: mName, signatureLine: c.startPosition.row + 1 } : null;
+              })
+              .filter((x): x is MethodRange => x !== null);
+
             nodes.push({
               type: 'class',
               name: nameNode.text,
               signature: `class ${nameNode.text}`,
               methods,
+              methodRanges,
               startLine: node.startPosition.row + 1,
               endLine: node.endPosition.row + 1,
             });
@@ -760,6 +770,19 @@ export class ASTParser {
           return;
         }
         case 'method_declaration': {
+          const nameNode = node.childForFieldName?.('name');
+          if (nameNode) {
+            nodes.push({
+              type: 'function',
+              name: nameNode.text,
+              signature: (lines[node.startPosition.row] ?? '').trim(),
+              startLine: node.startPosition.row + 1,
+              endLine: node.endPosition.row + 1,
+            });
+          }
+          return;
+        }
+        case 'constructor_declaration': {
           const nameNode = node.childForFieldName?.('name');
           if (nameNode) {
             nodes.push({
