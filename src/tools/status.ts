@@ -17,19 +17,35 @@ export function registerStatusTool(registry: ToolRegistry, ctx: ServerContext): 
       const lines = ['<ctx_status>'];
       lines.push(`  <project_root>${escapeXML(ctx.projectRoot)}</project_root>`);
       lines.push(`  <database>${escapeXML(ctx.dbPath)}</database>`);
-      try {
-        const graph = await ctx.getGraph();
-        lines.push(`  <graph status="ready" edges="${graph.edgeCount()}" nodes="${graph.allFiles().length}" />`);
-      } catch {
-        lines.push('  <graph status="error" />');
+
+      // Graph — only query if already initialized (non-destructive)
+      if (ctx.isGraphInitialized()) {
+        try {
+          const graph = await ctx.getGraph();
+          lines.push(`  <graph status="ready" edges="${graph.edgeCount()}" nodes="${graph.allFiles().length}" />`);
+        } catch {
+          lines.push('  <graph status="error" />');
+        }
+      } else {
+        lines.push('  <graph status="not_initialized" />');
       }
-      try {
-        const store = await ctx.getStore();
-        const count = await store.count();
-        lines.push(`  <vector_store status="ready" records="${count}" />`);
-      } catch {
-        lines.push('  <vector_store status="error" />');
+
+      // Vector store — only query if already initialized
+      if (ctx.isStoreInitialized()) {
+        try {
+          const store = await ctx.getStore();
+          const count = await store.count();
+          lines.push(`  <vector_store status="ready" records="${count}" />`);
+        } catch {
+          lines.push('  <vector_store status="error" />');
+        }
+      } else {
+        lines.push('  <vector_store status="not_initialized" />');
       }
+
+      // AST parser — non-destructive check
+      lines.push(`  <ast_parser status="${ctx.isParserInitialized() ? 'ready' : 'not_initialized'}" />`);
+
       lines.push('</ctx_status>');
       return lines.join('\n');
     },

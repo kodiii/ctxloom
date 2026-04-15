@@ -77,6 +77,9 @@ function buildContext(): ServerContext {
       if (!_ruleManager) _ruleManager = new RuleManager(PROJECT_ROOT, ctx.getPathValidator());
       return _ruleManager;
     },
+    isStoreInitialized: () => _storePromise !== null,
+    isGraphInitialized: () => _graphPromise !== null,
+    isParserInitialized: () => _parserPromise !== null,
   };
   return ctx;
 }
