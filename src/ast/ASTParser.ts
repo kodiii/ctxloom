@@ -17,6 +17,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
+import { GrammarLoader } from '../grammars/GrammarLoader.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -83,6 +84,8 @@ export interface ParsedNode {
 
 export class ASTParser {
   private tsLang: TreeSitter.Language | null = null;
+  private pyLang: TreeSitter.Language | null = null;
+  private grammarLoader = new GrammarLoader();
 
   async init(): Promise<void> {
     await TreeSitter.Parser.init({
@@ -113,8 +116,28 @@ export class ASTParser {
     this.tsLang = await TreeSitter.Language.load(grammarPath);
   }
 
+  /**
+   * Load Python grammar on demand. Downloads and caches WASM if needed.
+   */
+  async loadPython(): Promise<void> {
+    if (this.pyLang) return;
+    try {
+      const wasmPath = await this.grammarLoader.ensureGrammar('python');
+      this.pyLang = await TreeSitter.Language.load(wasmPath);
+    } catch (err) {
+      // Python grammar unavailable — log warning, skip Python files
+      const { logger } = await import('../utils/logger.js');
+      logger.warn('Python grammar unavailable', { detail: err instanceof Error ? err.message : String(err) });
+    }
+  }
+
   async parse(filePath: string): Promise<ParsedNode[]> {
     if (!this.tsLang) throw new Error('ASTParser not initialized. Call init() first.');
+
+    const ext = path.extname(filePath).toLowerCase();
+    if (ext === '.py') {
+      return this.parsePython(filePath);
+    }
 
     const parser = new TreeSitter.Parser();
     parser.setLanguage(this.tsLang);
@@ -315,6 +338,101 @@ export class ASTParser {
       }
 
       // Recurse into children
+      for (const child of node.children) {
+        if (child) walk(child);
+      }
+    };
+
+    walk(tree.rootNode);
+    return nodes;
+  }
+
+  private async parsePython(filePath: string): Promise<ParsedNode[]> {
+    if (!this.pyLang) await this.loadPython();
+    if (!this.pyLang) return []; // grammar unavailable
+
+    const parser = new TreeSitter.Parser();
+    parser.setLanguage(this.pyLang);
+
+    const source = fs.readFileSync(filePath, 'utf-8');
+    const tree = parser.parse(source);
+    if (!tree) return [];
+
+    const nodes: ParsedNode[] = [];
+    const lines = source.split('\n');
+
+    const walk = (node: TreeSitter.Node): void => {
+      switch (node.type) {
+        case 'import_statement': {
+          // import foo, import foo as bar
+          const nameNode = node.children.find(c => c?.type === 'dotted_name' || c?.type === 'aliased_import');
+          if (nameNode) {
+            nodes.push({
+              type: 'import',
+              name: nameNode.text,
+              source: nameNode.text,
+              startLine: node.startPosition.row + 1,
+              endLine: node.endPosition.row + 1,
+            });
+          }
+          return;
+        }
+        case 'import_from_statement': {
+          // from foo import bar
+          const moduleNode = node.children.find(c => c?.type === 'dotted_name' || c?.type === 'relative_import');
+          nodes.push({
+            type: 'import',
+            name: moduleNode?.text ?? '',
+            source: moduleNode?.text ?? '',
+            startLine: node.startPosition.row + 1,
+            endLine: node.endPosition.row + 1,
+          });
+          return;
+        }
+        case 'function_definition': {
+          const nameNode = node.childForFieldName?.('name');
+          if (nameNode) {
+            const sig = lines[node.startPosition.row] ?? '';
+            nodes.push({
+              type: 'function',
+              name: nameNode.text,
+              signature: sig.trim(),
+              startLine: node.startPosition.row + 1,
+              endLine: node.endPosition.row + 1,
+            });
+          }
+          return; // don't recurse into function body
+        }
+        case 'class_definition': {
+          const nameNode = node.childForFieldName?.('name');
+          if (nameNode) {
+            const body = node.childForFieldName?.('body');
+            const methods = (body?.children ?? [])
+              .filter((c): c is TreeSitter.Node => c !== null && c.type === 'function_definition')
+              .map(c => c.childForFieldName?.('name')?.text ?? '')
+              .filter(Boolean);
+
+            nodes.push({
+              type: 'class',
+              name: nameNode.text,
+              signature: `class ${nameNode.text}`,
+              methods,
+              startLine: node.startPosition.row + 1,
+              endLine: node.endPosition.row + 1,
+            });
+          }
+          return; // don't recurse into class body
+        }
+        case 'decorated_definition': {
+          // @decorator\ndef foo(): ...  →  recurse into the inner definition
+          const inner = node.children.find(
+            c => c?.type === 'function_definition' || c?.type === 'class_definition',
+          );
+          if (inner) walk(inner);
+          return;
+        }
+      }
+
       for (const child of node.children) {
         if (child) walk(child);
       }
