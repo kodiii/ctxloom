@@ -1,0 +1,65 @@
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import fs from 'node:fs';
+import path from 'node:path';
+import os from 'node:os';
+import { DependencyGraph } from '../src/graph/DependencyGraph.js';
+import { ASTParser } from '../src/ast/ASTParser.js';
+
+// ─── DependencyGraph import-resolution regression tests ──────────────────────
+
+describe('DependencyGraph — multi-language import resolution', () => {
+  let tmpDir: string;
+
+  beforeEach(() => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ctxloom-dep-test-'));
+  });
+
+  afterEach(() => {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it('resolves Rust mod declarations to file edges', async () => {
+    // lib.rs declares `mod utils;`  →  expects edge lib.rs → utils.rs
+    fs.writeFileSync(path.join(tmpDir, 'lib.rs'), 'mod utils;\n\nfn main() {}\n');
+    fs.writeFileSync(path.join(tmpDir, 'utils.rs'), 'pub fn helper() {}\n');
+
+    const parser = new ASTParser();
+    await parser.init();
+    const graph = new DependencyGraph();
+    graph.setParser(parser);
+    await graph.buildFromDirectory(tmpDir);
+
+    expect(graph.getImports('lib.rs')).toContain('utils.rs');
+  });
+
+  it('resolves Python relative imports to file edges', async () => {
+    // main.py: `from .utils import helper`  →  edge main.py → utils.py
+    fs.writeFileSync(path.join(tmpDir, 'main.py'), 'from .utils import helper\n');
+    fs.writeFileSync(path.join(tmpDir, 'utils.py'), 'def helper(): pass\n');
+
+    const parser = new ASTParser();
+    await parser.init();
+    const graph = new DependencyGraph();
+    graph.setParser(parser);
+    await graph.buildFromDirectory(tmpDir);
+
+    expect(graph.getImports('main.py')).toContain('utils.py');
+  });
+
+  it('adds Go/Rust/Java files to allFiles() after graph build', async () => {
+    fs.writeFileSync(path.join(tmpDir, 'main.go'), 'package main\nfunc main() {}\n');
+    fs.writeFileSync(path.join(tmpDir, 'Foo.java'), 'public class Foo {}\n');
+    fs.writeFileSync(path.join(tmpDir, 'lib.rs'), 'fn hello() {}\n');
+
+    const parser = new ASTParser();
+    await parser.init();
+    const graph = new DependencyGraph();
+    graph.setParser(parser);
+    await graph.buildFromDirectory(tmpDir);
+
+    const files = graph.allFiles();
+    expect(files).toContain('main.go');
+    expect(files).toContain('Foo.java');
+    expect(files).toContain('lib.rs');
+  });
+});
