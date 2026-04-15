@@ -87,7 +87,6 @@ export class ASTParser {
   private pyLang: TreeSitter.Language | null = null;
   private goLang: TreeSitter.Language | null = null;
   private rustLang: TreeSitter.Language | null = null;
-  // TODO: wired in Task 4 — Java AST support
   private javaLang: TreeSitter.Language | null = null;
   private grammarLoader = new GrammarLoader();
 
@@ -163,6 +162,20 @@ export class ASTParser {
     }
   }
 
+  /**
+   * Load Java grammar on demand. Downloads and caches WASM if needed.
+   */
+  private async loadJava(): Promise<void> {
+    if (this.javaLang) return;
+    try {
+      const wasmPath = await this.grammarLoader.ensureGrammar('java');
+      this.javaLang = await TreeSitter.Language.load(wasmPath);
+    } catch (err) {
+      const { logger } = await import('../utils/logger.js');
+      logger.warn('Java grammar unavailable', { detail: err instanceof Error ? err.message : String(err) });
+    }
+  }
+
   async parse(filePath: string): Promise<ParsedNode[]> {
     if (!this.tsLang) throw new Error('ASTParser not initialized. Call init() first.');
 
@@ -172,6 +185,7 @@ export class ASTParser {
     }
     if (ext === '.go') return this.parseGo(filePath);
     if (ext === '.rs') return this.parseRust(filePath);
+    if (ext === '.java') return this.parseJava(filePath);
 
     const parser = new TreeSitter.Parser();
     parser.setLanguage(this.tsLang);
@@ -673,6 +687,100 @@ export class ASTParser {
               type: 'import',
               name: arg.text,
               source: arg.text,
+              startLine: node.startPosition.row + 1,
+              endLine: node.endPosition.row + 1,
+            });
+          }
+          return;
+        }
+      }
+
+      for (const child of node.children) {
+        if (child) walk(child);
+      }
+    };
+
+    walk(tree.rootNode);
+    return nodes;
+  }
+
+  private async parseJava(filePath: string): Promise<ParsedNode[]> {
+    if (!this.javaLang) await this.loadJava();
+    if (!this.javaLang) return [];
+
+    const parser = new TreeSitter.Parser();
+    parser.setLanguage(this.javaLang);
+
+    const source = fs.readFileSync(filePath, 'utf-8');
+    const tree = parser.parse(source);
+    if (!tree) return [];
+
+    const nodes: ParsedNode[] = [];
+    const lines = source.split('\n');
+
+    const walk = (node: TreeSitter.Node): void => {
+      switch (node.type) {
+        case 'class_declaration': {
+          const nameNode = node.childForFieldName?.('name');
+          if (nameNode) {
+            // Recurse into the body to emit methods as function nodes
+            const body = node.childForFieldName?.('body');
+            const methods = (body?.children ?? [])
+              .filter((c): c is TreeSitter.Node => c !== null && c.type === 'method_declaration')
+              .map(c => c.childForFieldName?.('name')?.text ?? '')
+              .filter(Boolean);
+            nodes.push({
+              type: 'class',
+              name: nameNode.text,
+              signature: `class ${nameNode.text}`,
+              methods,
+              startLine: node.startPosition.row + 1,
+              endLine: node.endPosition.row + 1,
+            });
+            // Recurse into body to emit method_declaration nodes as function nodes
+            if (body) {
+              for (const child of body.children) {
+                if (child) walk(child);
+              }
+            }
+          }
+          return;
+        }
+        case 'interface_declaration': {
+          const nameNode = node.childForFieldName?.('name');
+          if (nameNode) {
+            nodes.push({
+              type: 'interface',
+              name: nameNode.text,
+              signature: `interface ${nameNode.text}`,
+              startLine: node.startPosition.row + 1,
+              endLine: node.endPosition.row + 1,
+            });
+          }
+          return;
+        }
+        case 'method_declaration': {
+          const nameNode = node.childForFieldName?.('name');
+          if (nameNode) {
+            nodes.push({
+              type: 'function',
+              name: nameNode.text,
+              signature: (lines[node.startPosition.row] ?? '').trim(),
+              startLine: node.startPosition.row + 1,
+              endLine: node.endPosition.row + 1,
+            });
+          }
+          return;
+        }
+        case 'import_declaration': {
+          const child = node.children.find(
+            c => c?.type === 'scoped_identifier' || c?.type === 'identifier',
+          );
+          if (child) {
+            nodes.push({
+              type: 'import',
+              name: child.text,
+              source: child.text,
               startLine: node.startPosition.row + 1,
               endLine: node.endPosition.row + 1,
             });

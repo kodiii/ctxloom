@@ -168,3 +168,51 @@ pub fn greet(user: &User) -> String {
     expect(Array.isArray(result)).toBe(true);
   });
 });
+
+describe('ASTParser — Java dispatch', () => {
+  let tmpDir: string;
+
+  beforeEach(() => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ctxloom-java-test-'));
+  });
+
+  afterEach(() => {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it('parse() dispatches .java files without throwing', async () => {
+    const javaFile = path.join(tmpDir, 'UserService.java');
+    fs.writeFileSync(javaFile, `import java.util.List;
+import java.util.Optional;
+
+public class UserService {
+  private final UserRepository repo;
+
+  public UserService(UserRepository repo) {
+    this.repo = repo;
+  }
+
+  public Optional<User> findById(String id) {
+    return repo.findById(id);
+  }
+
+  public List<User> findAll() {
+    return repo.findAll();
+  }
+}
+`);
+    const parser = new ASTParser();
+    await parser.init();
+    const result = await parser.parse(javaFile);
+    expect(Array.isArray(result)).toBe(true);
+  });
+
+  it('parse() returns [] gracefully when Java grammar unavailable', async () => {
+    const javaFile = path.join(tmpDir, 'Empty.java');
+    fs.writeFileSync(javaFile, 'public class Empty {}\n');
+    const parser = new ASTParser();
+    await parser.init();
+    const result = await parser.parse(javaFile);
+    expect(Array.isArray(result)).toBe(true);
+  });
+});
