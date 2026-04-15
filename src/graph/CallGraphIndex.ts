@@ -42,6 +42,24 @@ export class CallGraphIndex {
     });
   }
 
+  /**
+   * Remove all call edges where callerFile is the given file.
+   * Called before re-indexing a file to prevent stale edges.
+   */
+  removeEdgesForFile(callerFile: string): void {
+    const prefix = callerFile + ':';
+    for (const [callee, callerKeys] of this.bySite.entries()) {
+      for (const key of callerKeys) {
+        if (key === callerFile || key.startsWith(prefix)) {
+          callerKeys.delete(key);
+        }
+      }
+      if (callerKeys.size === 0) {
+        this.bySite.delete(callee);
+      }
+    }
+  }
+
   /** Total number of distinct caller→callee edges. */
   size(): number {
     let n = 0;

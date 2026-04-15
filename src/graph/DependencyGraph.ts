@@ -255,6 +255,8 @@ export class DependencyGraph {
 
     // 1. Remove stale edges and symbol index entries for this file
     this.removeFile(relPath);
+    // Remove stale call graph edges for this file before re-indexing
+    this.callGraphIndex.removeEdgesForFile(relPath);
     for (const [symbol, entries] of this.symbolIndex.entries()) {
       const filtered = entries.filter(e => e.filePath !== relPath);
       if (filtered.length === 0) {
@@ -292,10 +294,7 @@ export class DependencyGraph {
           }
         }
 
-        // Rebuild call graph edges for this file.
-        // Note: CallGraphIndex doesn't support per-file removal — stale entries for
-        // removed callee symbols may persist in the live index until the next full
-        // rebuild on startup. This is acceptable for Phase 1.
+        // Rebuild call graph edges for this file (stale edges were cleared above).
         const callEdges = await this.parser.parseAllCallEdges(absPath);
         for (const edge of callEdges) {
           this.callGraphIndex.addEdge({ callerFile: relPath, ...edge });
