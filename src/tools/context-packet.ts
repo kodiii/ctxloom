@@ -53,7 +53,7 @@ export function registerContextPacketTool(registry: ToolRegistry, ctx: ServerCon
         `    ${primaryContent.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')}`,
         '  </primary_context>',
         `  <dependency_skeletons count="${imports.length}">`,
-        ...skeletons.map(s => `    ${escapeXML(s)}`),
+        ...skeletons.map(s => `    ${s}`),
         '  </dependency_skeletons>',
         `  <imported_by count="${importers.length}">`,
         ...importers.map(imp => `    <importer file="${imp}" />`),

@@ -14,4 +14,8 @@ export interface ServerContext {
   getSkeletonizer: () => Promise<Skeletonizer>;
   getRuleManager: () => RuleManager;
   getPathValidator: () => PathValidator;
+  // Diagnostic — returns whether the promise has been started (not whether it resolved)
+  isStoreInitialized: () => boolean;
+  isGraphInitialized: () => boolean;
+  isParserInitialized: () => boolean;
 }
