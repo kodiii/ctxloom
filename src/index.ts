@@ -18,6 +18,7 @@ import { indexDirectory } from './indexer/embedder.js';
 import { DependencyGraph } from './graph/DependencyGraph.js';
 import { ASTParser } from './ast/ASTParser.js';
 import { runSetupWizard } from './setup/setup-wizard.js';
+import { GrammarLoader } from './grammars/GrammarLoader.js';
 
 const command = process.argv[2];
 
@@ -47,16 +48,46 @@ async function main(): Promise<void> {
       break;
     }
 
+    case 'grammars': {
+      const subCommand = process.argv[3]; // --list or undefined
+      const loader = new GrammarLoader();
+      const list = loader.listGrammars();
+      console.log('\n[ctxloom] Grammar cache status:');
+      for (const g of list) {
+        const icon = g.status === 'cached' ? '✓' : '○';
+        const location = g.cachedPath ?? '(not cached)';
+        console.log(`  ${icon} ${g.language.padEnd(10)} v${g.version}  ${g.extensions.join(', ').padEnd(12)}  ${location}`);
+      }
+      console.log('\nTo pre-download all grammars: ctxloom grammars --download');
+
+      if (subCommand === '--download') {
+        console.log('\n[ctxloom] Downloading missing grammars...');
+        for (const g of list) {
+          if (g.status === 'missing') {
+            try {
+              await loader.ensureGrammar(g.language);
+              console.log(`  ✓ ${g.language}`);
+            } catch (err) {
+              console.error(`  ✗ ${g.language}: ${err instanceof Error ? err.message : String(err)}`);
+            }
+          }
+        }
+      }
+      break;
+    }
+
     case '--help':
     case '-h': {
       console.log(`
 ctxloom — The Universal Code Context Engine
 
 Usage:
-  ctxloom          Start MCP server on Stdio transport
-  ctxloom index    Index the current directory and build dependency graph
-  ctxloom setup    Detect and configure MCP-compatible AI tools
-  ctxloom --help   Show this help
+  ctxloom                      Start MCP server on Stdio transport
+  ctxloom index                Index the current directory and build dependency graph
+  ctxloom setup                Detect and configure MCP-compatible AI tools
+  ctxloom grammars             Show grammar cache status
+  ctxloom grammars --download  Pre-download all language grammars
+  ctxloom --help               Show this help
 
 Environment Variables:
   CTXLOOM_ROOT     Project root directory (default: current working directory)
