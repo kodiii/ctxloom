@@ -1,26 +1,41 @@
 {
   "version": 1,
-  "builtAt": 1776236753224,
-  "fileCount": 24,
+  "builtAt": 1776276920049,
+  "fileCount": 45,
   "forwardEdges": {
+    "benchmarks/benchmark.ts": [
+      "src/indexer/embedder.ts",
+      "src/graph/DependencyGraph.ts",
+      "src/ast/ASTParser.ts",
+      "src/db/VectorStore.ts"
+    ],
+    "src/ast/ASTParser.ts": [
+      "src/grammars/GrammarLoader.ts"
+    ],
     "src/ast/Skeletonizer.ts": [
       "src/ast/ASTParser.ts"
     ],
     "src/db/VectorStore.ts": [
       "src/utils/logger.ts"
     ],
+    "src/grammars/GrammarLoader.ts": [
+      "src/grammars/grammar-manifest.ts",
+      "src/utils/logger.ts"
+    ],
     "src/graph/DependencyGraph.ts": [
       "src/ast/ASTParser.ts",
       "src/indexer/embedder.ts",
       "src/utils/logger.ts",
-      "src/utils/importExtractor.ts"
+      "src/utils/importExtractor.ts",
+      "src/graph/CallGraphIndex.ts"
     ],
     "src/index.ts": [
       "src/server.ts",
       "src/indexer/embedder.ts",
       "src/graph/DependencyGraph.ts",
       "src/ast/ASTParser.ts",
-      "src/setup/setup-wizard.ts"
+      "src/setup/setup-wizard.ts",
+      "src/grammars/GrammarLoader.ts"
     ],
     "src/indexer/embedder.ts": [
       "src/utils/logger.ts"
@@ -33,9 +48,10 @@
       "src/ast/ASTParser.ts",
       "src/ast/Skeletonizer.ts",
       "src/watcher/FileWatcher.ts",
-      "src/tools/findCallers.ts",
       "src/tools/ruleManager.ts",
-      "src/utils/logger.ts"
+      "src/utils/logger.ts",
+      "src/tools/index.ts",
+      "src/tools/context.ts"
     ],
     "src/setup/postinstall.ts": [
       "src/setup/clients.ts"
@@ -43,12 +59,84 @@
     "src/setup/setup-wizard.ts": [
       "src/setup/clients.ts"
     ],
+    "src/tools/blast-radius.ts": [
+      "src/graph/DependencyGraph.ts",
+      "src/tools/registry.ts",
+      "src/tools/context.ts",
+      "src/utils/logger.ts"
+    ],
+    "src/tools/bridge-nodes.ts": [
+      "src/tools/registry.ts",
+      "src/tools/context.ts"
+    ],
+    "src/tools/call-graph.ts": [
+      "src/tools/findCallers.ts",
+      "src/tools/registry.ts",
+      "src/tools/context.ts"
+    ],
+    "src/tools/context-packet.ts": [
+      "src/tools/registry.ts",
+      "src/tools/context.ts"
+    ],
+    "src/tools/context.ts": [
+      "src/security/PathValidator.ts",
+      "src/db/VectorStore.ts",
+      "src/graph/DependencyGraph.ts",
+      "src/ast/ASTParser.ts",
+      "src/ast/Skeletonizer.ts",
+      "src/tools/ruleManager.ts"
+    ],
+    "src/tools/definition.ts": [
+      "src/tools/registry.ts",
+      "src/tools/context.ts"
+    ],
+    "src/tools/file.ts": [
+      "src/tools/registry.ts",
+      "src/tools/context.ts"
+    ],
     "src/tools/findCallers.ts": [
       "src/ast/ASTParser.ts",
       "src/graph/DependencyGraph.ts"
     ],
+    "src/tools/hub-nodes.ts": [
+      "src/tools/registry.ts",
+      "src/tools/context.ts"
+    ],
+    "src/tools/index.ts": [
+      "src/tools/registry.ts",
+      "src/tools/context.ts",
+      "src/tools/search.ts",
+      "src/tools/file.ts",
+      "src/tools/context-packet.ts",
+      "src/tools/call-graph.ts",
+      "src/tools/definition.ts",
+      "src/tools/rules.ts",
+      "src/tools/similar-files.ts",
+      "src/tools/status.ts",
+      "src/tools/blast-radius.ts",
+      "src/tools/hub-nodes.ts",
+      "src/tools/bridge-nodes.ts"
+    ],
     "src/tools/ruleManager.ts": [
       "src/security/PathValidator.ts"
+    ],
+    "src/tools/rules.ts": [
+      "src/tools/registry.ts",
+      "src/tools/context.ts"
+    ],
+    "src/tools/search.ts": [
+      "src/indexer/embedder.ts",
+      "src/tools/registry.ts",
+      "src/tools/context.ts"
+    ],
+    "src/tools/similar-files.ts": [
+      "src/indexer/embedder.ts",
+      "src/tools/registry.ts",
+      "src/tools/context.ts"
+    ],
+    "src/tools/status.ts": [
+      "src/tools/registry.ts",
+      "src/tools/context.ts"
     ],
     "src/watcher/FileWatcher.ts": [
       "src/utils/logger.ts"
@@ -61,6 +149,13 @@
       "src/ast/ASTParser.ts",
       "src/ast/Skeletonizer.ts"
     ],
+    "tests/BlastRadius.test.ts": [
+      "src/tools/blast-radius.ts",
+      "src/graph/DependencyGraph.ts"
+    ],
+    "tests/CallGraphIndex.test.ts": [
+      "src/graph/CallGraphIndex.ts"
+    ],
     "tests/DependencyGraph.test.ts": [
       "src/graph/DependencyGraph.ts"
     ],
@@ -69,6 +164,16 @@
     ],
     "tests/FileWatcher.test.ts": [
       "src/watcher/FileWatcher.ts"
+    ],
+    "tests/GrammarLoader.test.ts": [
+      "src/grammars/GrammarLoader.ts"
+    ],
+    "tests/HubBridgeNodes.test.ts": [
+      "src/graph/DependencyGraph.ts",
+      "src/tools/registry.ts",
+      "src/tools/hub-nodes.ts",
+      "src/tools/bridge-nodes.ts",
+      "src/tools/context.ts"
     ],
     "tests/MCP.test.ts": [
       "src/server.ts"
@@ -82,6 +187,9 @@
     ],
     "tests/SetupWizard.test.ts": [
       "src/setup/clients.ts"
+    ],
+    "tests/ToolRegistry.test.ts": [
+      "src/tools/registry.ts"
     ],
     "tests/VectorStore.test.ts": [
       "src/db/VectorStore.ts"
@@ -98,83 +206,197 @@
     ]
   },
   "reverseEdges": {
+    "src/indexer/embedder.ts": [
+      "benchmarks/benchmark.ts",
+      "src/graph/DependencyGraph.ts",
+      "src/index.ts",
+      "src/server.ts",
+      "src/tools/search.ts",
+      "src/tools/similar-files.ts",
+      "src/workers/indexerWorker.ts",
+      "tests/Embedder.test.ts"
+    ],
+    "src/graph/DependencyGraph.ts": [
+      "benchmarks/benchmark.ts",
+      "src/index.ts",
+      "src/server.ts",
+      "src/tools/blast-radius.ts",
+      "src/tools/context.ts",
+      "src/tools/findCallers.ts",
+      "tests/BlastRadius.test.ts",
+      "tests/DependencyGraph.test.ts",
+      "tests/HubBridgeNodes.test.ts",
+      "tests/findCallers.test.ts"
+    ],
     "src/ast/ASTParser.ts": [
+      "benchmarks/benchmark.ts",
       "src/ast/Skeletonizer.ts",
       "src/graph/DependencyGraph.ts",
       "src/index.ts",
       "src/server.ts",
+      "src/tools/context.ts",
       "src/tools/findCallers.ts",
       "tests/ASTParser.test.ts"
     ],
+    "src/db/VectorStore.ts": [
+      "benchmarks/benchmark.ts",
+      "src/server.ts",
+      "src/tools/context.ts",
+      "src/workers/indexerWorker.ts",
+      "tests/VectorStore.test.ts"
+    ],
+    "src/grammars/GrammarLoader.ts": [
+      "src/ast/ASTParser.ts",
+      "src/index.ts",
+      "tests/GrammarLoader.test.ts"
+    ],
     "src/utils/logger.ts": [
       "src/db/VectorStore.ts",
+      "src/grammars/GrammarLoader.ts",
       "src/graph/DependencyGraph.ts",
       "src/indexer/embedder.ts",
       "src/server.ts",
+      "src/tools/blast-radius.ts",
       "src/watcher/FileWatcher.ts"
     ],
-    "src/indexer/embedder.ts": [
-      "src/graph/DependencyGraph.ts",
-      "src/index.ts",
-      "src/server.ts",
-      "src/workers/indexerWorker.ts",
-      "tests/Embedder.test.ts"
+    "src/grammars/grammar-manifest.ts": [
+      "src/grammars/GrammarLoader.ts"
     ],
     "src/utils/importExtractor.ts": [
       "src/graph/DependencyGraph.ts",
       "tests/importExtractor.test.ts"
     ],
+    "src/graph/CallGraphIndex.ts": [
+      "src/graph/DependencyGraph.ts",
+      "tests/CallGraphIndex.test.ts"
+    ],
     "src/server.ts": [
       "src/index.ts",
       "tests/MCP.test.ts"
-    ],
-    "src/graph/DependencyGraph.ts": [
-      "src/index.ts",
-      "src/server.ts",
-      "src/tools/findCallers.ts",
-      "tests/DependencyGraph.test.ts",
-      "tests/findCallers.test.ts"
     ],
     "src/setup/setup-wizard.ts": [
       "src/index.ts"
     ],
     "src/security/PathValidator.ts": [
       "src/server.ts",
+      "src/tools/context.ts",
       "src/tools/ruleManager.ts",
       "tests/PathValidator.test.ts",
       "tests/RuleManager.test.ts"
     ],
-    "src/db/VectorStore.ts": [
-      "src/server.ts",
-      "src/workers/indexerWorker.ts",
-      "tests/VectorStore.test.ts"
-    ],
     "src/ast/Skeletonizer.ts": [
       "src/server.ts",
+      "src/tools/context.ts",
       "tests/ASTParser.test.ts"
     ],
     "src/watcher/FileWatcher.ts": [
       "src/server.ts",
       "tests/FileWatcher.test.ts"
     ],
-    "src/tools/findCallers.ts": [
-      "src/server.ts",
-      "tests/findCallers.test.ts"
-    ],
     "src/tools/ruleManager.ts": [
       "src/server.ts",
+      "src/tools/context.ts",
       "tests/RuleManager.test.ts"
+    ],
+    "src/tools/index.ts": [
+      "src/server.ts"
+    ],
+    "src/tools/context.ts": [
+      "src/server.ts",
+      "src/tools/blast-radius.ts",
+      "src/tools/bridge-nodes.ts",
+      "src/tools/call-graph.ts",
+      "src/tools/context-packet.ts",
+      "src/tools/definition.ts",
+      "src/tools/file.ts",
+      "src/tools/hub-nodes.ts",
+      "src/tools/index.ts",
+      "src/tools/rules.ts",
+      "src/tools/search.ts",
+      "src/tools/similar-files.ts",
+      "src/tools/status.ts",
+      "tests/HubBridgeNodes.test.ts"
     ],
     "src/setup/clients.ts": [
       "src/setup/postinstall.ts",
       "src/setup/setup-wizard.ts",
       "tests/SetupWizard.test.ts"
     ],
+    "src/tools/registry.ts": [
+      "src/tools/blast-radius.ts",
+      "src/tools/bridge-nodes.ts",
+      "src/tools/call-graph.ts",
+      "src/tools/context-packet.ts",
+      "src/tools/definition.ts",
+      "src/tools/file.ts",
+      "src/tools/hub-nodes.ts",
+      "src/tools/index.ts",
+      "src/tools/rules.ts",
+      "src/tools/search.ts",
+      "src/tools/similar-files.ts",
+      "src/tools/status.ts",
+      "tests/HubBridgeNodes.test.ts",
+      "tests/ToolRegistry.test.ts"
+    ],
+    "src/tools/findCallers.ts": [
+      "src/tools/call-graph.ts",
+      "tests/findCallers.test.ts"
+    ],
+    "src/tools/search.ts": [
+      "src/tools/index.ts"
+    ],
+    "src/tools/file.ts": [
+      "src/tools/index.ts"
+    ],
+    "src/tools/context-packet.ts": [
+      "src/tools/index.ts"
+    ],
+    "src/tools/call-graph.ts": [
+      "src/tools/index.ts"
+    ],
+    "src/tools/definition.ts": [
+      "src/tools/index.ts"
+    ],
+    "src/tools/rules.ts": [
+      "src/tools/index.ts"
+    ],
+    "src/tools/similar-files.ts": [
+      "src/tools/index.ts"
+    ],
+    "src/tools/status.ts": [
+      "src/tools/index.ts"
+    ],
+    "src/tools/blast-radius.ts": [
+      "src/tools/index.ts",
+      "tests/BlastRadius.test.ts"
+    ],
+    "src/tools/hub-nodes.ts": [
+      "src/tools/index.ts",
+      "tests/HubBridgeNodes.test.ts"
+    ],
+    "src/tools/bridge-nodes.ts": [
+      "src/tools/index.ts",
+      "tests/HubBridgeNodes.test.ts"
+    ],
     "tests/fixtures/config.ts": [
       "tests/fixtures/sample.ts"
     ]
   },
   "symbolIndex": {
+    "percentile": [
+      {
+        "filePath": "benchmarks/benchmark.ts",
+        "type": "function",
+        "signature": "function percentile(sorted: number[], p: number): number {"
+      }
+    ],
+    "runBenchmarks": [
+      {
+        "filePath": "benchmarks/benchmark.ts",
+        "type": "function",
+        "signature": "async function runBenchmarks(): Promise<void> {"
+      }
+    ],
     "findWasmDir": [
       {
         "filePath": "src/ast/ASTParser.ts",
@@ -238,6 +460,55 @@
         "signature": "class VectorStore"
       }
     ],
+    "GrammarStatus": [
+      {
+        "filePath": "src/grammars/GrammarLoader.ts",
+        "type": "interface",
+        "signature": "interface GrammarStatus"
+      }
+    ],
+    "GrammarLoader": [
+      {
+        "filePath": "src/grammars/GrammarLoader.ts",
+        "type": "class",
+        "signature": "class GrammarLoader"
+      }
+    ],
+    "GrammarEntry": [
+      {
+        "filePath": "src/grammars/grammar-manifest.ts",
+        "type": "interface",
+        "signature": "interface GrammarEntry"
+      }
+    ],
+    "findGrammar": [
+      {
+        "filePath": "src/grammars/grammar-manifest.ts",
+        "type": "function",
+        "signature": "export function findGrammar(language: string): GrammarEntry | undefined {"
+      }
+    ],
+    "findGrammarByExtension": [
+      {
+        "filePath": "src/grammars/grammar-manifest.ts",
+        "type": "function",
+        "signature": "export function findGrammarByExtension(ext: string): GrammarEntry | undefined {"
+      }
+    ],
+    "CallEdge": [
+      {
+        "filePath": "src/graph/CallGraphIndex.ts",
+        "type": "interface",
+        "signature": "interface CallEdge"
+      }
+    ],
+    "CallGraphIndex": [
+      {
+        "filePath": "src/graph/CallGraphIndex.ts",
+        "type": "class",
+        "signature": "class CallGraphIndex"
+      }
+    ],
     "GraphEdge": [
       {
         "filePath": "src/graph/DependencyGraph.ts",
@@ -294,79 +565,18 @@
         "signature": "class PathValidator"
       }
     ],
-    "getPathValidator": [
+    "buildContext": [
       {
         "filePath": "src/server.ts",
         "type": "function",
-        "signature": "function getPathValidator(): PathValidator {"
-      }
-    ],
-    "getStore": [
-      {
-        "filePath": "src/server.ts",
-        "type": "function",
-        "signature": "function getStore(): Promise<VectorStore> {"
-      }
-    ],
-    "getParser": [
-      {
-        "filePath": "src/server.ts",
-        "type": "function",
-        "signature": "function getParser(): Promise<ASTParser> {"
-      }
-    ],
-    "getGraph": [
-      {
-        "filePath": "src/server.ts",
-        "type": "function",
-        "signature": "function getGraph(): Promise<DependencyGraph> {"
-      }
-    ],
-    "getSkeletonizer": [
-      {
-        "filePath": "src/server.ts",
-        "type": "function",
-        "signature": "function getSkeletonizer(): Promise<Skeletonizer> {"
-      }
-    ],
-    "getRuleManager": [
-      {
-        "filePath": "src/server.ts",
-        "type": "function",
-        "signature": "function getRuleManager(): RuleManager {"
-      }
-    ],
-    "escapeXML": [
-      {
-        "filePath": "src/server.ts",
-        "type": "function",
-        "signature": "function escapeXML(text: string): string {"
-      },
-      {
-        "filePath": "src/tools/findCallers.ts",
-        "type": "function",
-        "signature": "function escapeXML(text: string): string {"
-      }
-    ],
-    "handleCtxSearch": [
-      {
-        "filePath": "src/server.ts",
-        "type": "function",
-        "signature": "async function handleCtxSearch(query: string, limit: number): Promise<string> {"
-      }
-    ],
-    "handleCtxGetContextPacket": [
-      {
-        "filePath": "src/server.ts",
-        "type": "function",
-        "signature": "export async function handleCtxGetContextPacket("
+        "signature": "function buildContext(): ServerContext {"
       }
     ],
     "createServer": [
       {
         "filePath": "src/server.ts",
         "type": "function",
-        "signature": "export function createServer(): Server {"
+        "signature": "export function createServer(): { server: Server; ctx: ServerContext } {"
       }
     ],
     "startServer": [
@@ -488,6 +698,137 @@
         "signature": "function printNextSteps(): void {"
       }
     ],
+    "BlastRadiusOptions": [
+      {
+        "filePath": "src/tools/blast-radius.ts",
+        "type": "interface",
+        "signature": "interface BlastRadiusOptions"
+      }
+    ],
+    "BlastRadiusResult": [
+      {
+        "filePath": "src/tools/blast-radius.ts",
+        "type": "interface",
+        "signature": "interface BlastRadiusResult"
+      }
+    ],
+    "detectChangedFiles": [
+      {
+        "filePath": "src/tools/blast-radius.ts",
+        "type": "function",
+        "signature": "async function detectChangedFiles(projectRoot: string): Promise<string[]> {"
+      }
+    ],
+    "computeBlastRadius": [
+      {
+        "filePath": "src/tools/blast-radius.ts",
+        "type": "function",
+        "signature": "export async function computeBlastRadius(opts: BlastRadiusOptions): Promise<BlastRadiusResult> {"
+      }
+    ],
+    "escapeXML": [
+      {
+        "filePath": "src/tools/blast-radius.ts",
+        "type": "function",
+        "signature": "function escapeXML(text: string): string {"
+      },
+      {
+        "filePath": "src/tools/bridge-nodes.ts",
+        "type": "function",
+        "signature": "function escapeXML(text: string): string {"
+      },
+      {
+        "filePath": "src/tools/context-packet.ts",
+        "type": "function",
+        "signature": "function escapeXML(text: string): string {"
+      },
+      {
+        "filePath": "src/tools/definition.ts",
+        "type": "function",
+        "signature": "function escapeXML(text: string): string {"
+      },
+      {
+        "filePath": "src/tools/findCallers.ts",
+        "type": "function",
+        "signature": "function escapeXML(text: string): string {"
+      },
+      {
+        "filePath": "src/tools/hub-nodes.ts",
+        "type": "function",
+        "signature": "function escapeXML(text: string): string {"
+      },
+      {
+        "filePath": "src/tools/search.ts",
+        "type": "function",
+        "signature": "function escapeXML(text: string): string {"
+      },
+      {
+        "filePath": "src/tools/similar-files.ts",
+        "type": "function",
+        "signature": "function escapeXML(text: string): string {"
+      },
+      {
+        "filePath": "src/tools/status.ts",
+        "type": "function",
+        "signature": "function escapeXML(text: string): string {"
+      }
+    ],
+    "registerBlastRadiusTool": [
+      {
+        "filePath": "src/tools/blast-radius.ts",
+        "type": "function",
+        "signature": "export function registerBlastRadiusTool(registry: ToolRegistry, ctx: ServerContext): void {"
+      }
+    ],
+    "computeBetweenness": [
+      {
+        "filePath": "src/tools/bridge-nodes.ts",
+        "type": "function",
+        "signature": "function computeBetweenness("
+      }
+    ],
+    "registerBridgeNodesTool": [
+      {
+        "filePath": "src/tools/bridge-nodes.ts",
+        "type": "function",
+        "signature": "export function registerBridgeNodesTool(registry: ToolRegistry, ctx: ServerContext): void {"
+      }
+    ],
+    "registerCallGraphTool": [
+      {
+        "filePath": "src/tools/call-graph.ts",
+        "type": "function",
+        "signature": "export function registerCallGraphTool(registry: ToolRegistry, ctx: ServerContext): void {"
+      }
+    ],
+    "registerContextPacketTool": [
+      {
+        "filePath": "src/tools/context-packet.ts",
+        "type": "function",
+        "signature": "export function registerContextPacketTool(registry: ToolRegistry, ctx: ServerContext): void {"
+      }
+    ],
+    "ServerContext": [
+      {
+        "filePath": "src/tools/context.ts",
+        "type": "interface",
+        "signature": "interface ServerContext"
+      }
+    ],
+    "registerDefinitionTool": [
+      {
+        "filePath": "src/tools/definition.ts",
+        "type": "function",
+        "signature": "export function registerDefinitionTool(registry: ToolRegistry, ctx: ServerContext): void {"
+      }
+    ],
+    "registerFileTool": [
+      {
+        "filePath": "src/tools/file.ts",
+        "type": "function",
+        "signature": "export function registerFileTool(registry: ToolRegistry, ctx: ServerContext): void {"
+      }
+    ],
     "GetCallGraphOptions": [
       {
         "filePath": "src/tools/findCallers.ts",
@@ -516,6 +857,34 @@
         "signature": "export async function findCallers(opts: FindCallersOptions): Promise<string> {"
       }
     ],
+    "registerHubNodesTool": [
+      {
+        "filePath": "src/tools/hub-nodes.ts",
+        "type": "function",
+        "signature": "export function registerHubNodesTool(registry: ToolRegistry, ctx: ServerContext): void {"
+      }
+    ],
+    "createToolRegistry": [
+      {
+        "filePath": "src/tools/index.ts",
+        "type": "function",
+        "signature": "export function createToolRegistry(ctx: ServerContext): ToolRegistry {"
+      }
+    ],
+    "ToolDefinition": [
+      {
+        "filePath": "src/tools/registry.ts",
+        "type": "interface",
+        "signature": "interface ToolDefinition"
+      }
+    ],
+    "ToolRegistry": [
+      {
+        "filePath": "src/tools/registry.ts",
+        "type": "class",
+        "signature": "class ToolRegistry"
+      }
+    ],
     "RuleFile": [
       {
         "filePath": "src/tools/ruleManager.ts",
@@ -528,6 +897,34 @@
         "filePath": "src/tools/ruleManager.ts",
         "type": "class",
         "signature": "class RuleManager"
+      }
+    ],
+    "registerRulesTool": [
+      {
+        "filePath": "src/tools/rules.ts",
+        "type": "function",
+        "signature": "export function registerRulesTool(registry: ToolRegistry, ctx: ServerContext): void {"
+      }
+    ],
+    "registerSearchTool": [
+      {
+        "filePath": "src/tools/search.ts",
+        "type": "function",
+        "signature": "export function registerSearchTool(registry: ToolRegistry, ctx: ServerContext): void {"
+      }
+    ],
+    "registerSimilarFilesTool": [
+      {
+        "filePath": "src/tools/similar-files.ts",
+        "type": "function",
+        "signature": "export function registerSimilarFilesTool(registry: ToolRegistry, ctx: ServerContext): void {"
+      }
+    ],
+    "registerStatusTool": [
+      {
+        "filePath": "src/tools/status.ts",
+        "type": "function",
+        "signature": "export function registerStatusTool(registry: ToolRegistry, ctx: ServerContext): void {"
       }
     ],
     "RawImport": [
@@ -633,6 +1030,25 @@
         "filePath": "src/workers/indexerWorker.ts",
         "type": "function",
         "signature": "async function run(): Promise<void> {"
+      }
+    ],
+    "makeGraph": [
+      {
+        "filePath": "tests/BlastRadius.test.ts",
+        "type": "function",
+        "signature": "function makeGraph(): DependencyGraph {"
+      },
+      {
+        "filePath": "tests/HubBridgeNodes.test.ts",
+        "type": "function",
+        "signature": "function makeGraph(): DependencyGraph {"
+      }
+    ],
+    "makeCtx": [
+      {
+        "filePath": "tests/HubBridgeNodes.test.ts",
+        "type": "function",
+        "signature": "function makeCtx(graph: DependencyGraph): ServerContext {"
       }
     ],
     "Config": [
