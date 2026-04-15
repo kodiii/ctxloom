@@ -9,6 +9,8 @@ import { registerRulesTool } from './rules.js';
 import { registerSimilarFilesTool } from './similar-files.js';
 import { registerStatusTool } from './status.js';
 import { registerBlastRadiusTool } from './blast-radius.js';
+import { registerHubNodesTool } from './hub-nodes.js';
+import { registerBridgeNodesTool } from './bridge-nodes.js';
 
 export function createToolRegistry(ctx: ServerContext): ToolRegistry {
   const registry = new ToolRegistry();
@@ -21,5 +23,7 @@ export function createToolRegistry(ctx: ServerContext): ToolRegistry {
   registerSimilarFilesTool(registry, ctx);
   registerStatusTool(registry, ctx);
   registerBlastRadiusTool(registry, ctx);
+  registerHubNodesTool(registry, ctx);
+  registerBridgeNodesTool(registry, ctx);
   return registry;
 }
