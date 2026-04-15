@@ -1,5 +1,5 @@
 /**
- * ContextMesh MCP Server — The core server that exposes all tools
+ * ctxloom MCP Server — The core server that exposes all tools
  * via the Model Context Protocol (MCP).
  *
  * Tools exposed:
@@ -356,7 +356,7 @@ export function createServer(): Server {
       {
         name: 'ctx_status',
         description:
-          'Return the current status of the ContextMesh server: initialization state, graph size, vector store record count, and project root.',
+          'Return the current status of the ctxloom server: initialization state, graph size, vector store record count, and project root.',
         inputSchema: {
           type: 'object',
           properties: {},

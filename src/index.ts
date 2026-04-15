@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 /**
- * ContextMesh — The Universal Code Context Engine
+ * ctxloom — The Universal Code Context Engine
  *
  * A local-first MCP sidecar providing intelligent code context via
  * hybrid Vector + AST + Graph search with Skeletonization.
@@ -24,21 +24,21 @@ const command = process.argv[2];
 async function main(): Promise<void> {
   switch (command) {
     case 'index': {
-      console.log('[ContextMesh] Indexing current directory...');
+      console.log('[ctxloom] Indexing current directory...');
       const root = process.cwd();
       const result = await indexDirectory(root, (file, i, total) => {
-        process.stdout.write(`\r[ContextMesh] Indexing ${i}/${total}: ${file.slice(0, 60)}`);
+        process.stdout.write(`\r[ctxloom] Indexing ${i}/${total}: ${file.slice(0, 60)}`);
       });
-      console.log(`\n[ContextMesh] Done! Indexed ${result.indexed} files, ${result.errors} errors.`);
+      console.log(`\n[ctxloom] Done! Indexed ${result.indexed} files, ${result.errors} errors.`);
 
       // Also build the dependency graph
-      console.log('[ContextMesh] Building dependency graph...');
+      console.log('[ctxloom] Building dependency graph...');
       const parser = new ASTParser();
       await parser.init();
       const graph = new DependencyGraph();
       graph.setParser(parser);
       await graph.buildFromDirectory(root);
-      console.log(`[ContextMesh] Graph built with ${graph.edgeCount()} edges.`);
+      console.log(`[ctxloom] Graph built with ${graph.edgeCount()} edges.`);
       break;
     }
 
@@ -50,7 +50,7 @@ async function main(): Promise<void> {
     case '--help':
     case '-h': {
       console.log(`
-ContextMesh — The Universal Code Context Engine
+ctxloom — The Universal Code Context Engine
 
 Usage:
   ctxloom          Start MCP server on Stdio transport
@@ -97,6 +97,6 @@ Tools Exposed:
 }
 
 main().catch(err => {
-  console.error('[ContextMesh] Fatal error:', err);
+  console.error('[ctxloom] Fatal error:', err);
   process.exit(1);
 });

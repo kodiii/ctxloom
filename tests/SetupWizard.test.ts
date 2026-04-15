@@ -5,7 +5,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
-import { MCP_CLIENTS, detectInstalledClients, addContextMeshToConfig, removeContextMeshFromConfig, type DetectedClient } from '../src/setup/clients.js';
+import { MCP_CLIENTS, detectInstalledClients, addCtxloomToConfig, removeCtxloomFromConfig, type DetectedClient } from '../src/setup/clients.js';
 
 const HOME = os.homedir();
 
@@ -54,7 +54,7 @@ describe('detectInstalledClients', () => {
   });
 });
 
-describe('addContextMeshToConfig', () => {
+describe('addCtxloomToConfig', () => {
   const tmpDir = path.join(os.tmpdir(), 'ctxloom-test-config-' + process.pid);
 
   beforeEach(() => {
@@ -74,7 +74,7 @@ describe('addContextMeshToConfig', () => {
       alreadyConfigured: false,
     };
 
-    const result = addContextMeshToConfig(detected);
+    const result = addCtxloomToConfig(detected);
     expect(result.success).toBe(true);
 
     const written = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
@@ -99,7 +99,7 @@ describe('addContextMeshToConfig', () => {
       alreadyConfigured: false,
     };
 
-    const result = addContextMeshToConfig(detected);
+    const result = addCtxloomToConfig(detected);
     expect(result.success).toBe(true);
 
     const written = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
@@ -123,7 +123,7 @@ describe('addContextMeshToConfig', () => {
       alreadyConfigured: true,
     };
 
-    const result = addContextMeshToConfig(detected);
+    const result = addCtxloomToConfig(detected);
     expect(result.success).toBe(true);
     expect(result.message).toContain('already configured');
   });
@@ -137,7 +137,7 @@ describe('addContextMeshToConfig', () => {
       alreadyConfigured: false,
     };
 
-    const result = addContextMeshToConfig(detected);
+    const result = addCtxloomToConfig(detected);
     expect(result.success).toBe(true);
 
     const written = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
@@ -155,7 +155,7 @@ describe('addContextMeshToConfig', () => {
       alreadyConfigured: false,
     };
 
-    const result = addContextMeshToConfig(detected);
+    const result = addCtxloomToConfig(detected);
     expect(result.success).toBe(true);
 
     const written = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
@@ -164,7 +164,7 @@ describe('addContextMeshToConfig', () => {
   });
 });
 
-describe('removeContextMeshFromConfig', () => {
+describe('removeCtxloomFromConfig', () => {
   const tmpDir = path.join(os.tmpdir(), 'ctxloom-test-remove-' + process.pid);
 
   beforeEach(() => {
@@ -192,7 +192,7 @@ describe('removeContextMeshFromConfig', () => {
       alreadyConfigured: false,
     };
 
-    const result = removeContextMeshFromConfig(detected);
+    const result = removeCtxloomFromConfig(detected);
     expect(result.success).toBe(true);
 
     const written = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
@@ -208,7 +208,7 @@ describe('removeContextMeshFromConfig', () => {
       alreadyConfigured: false,
     };
 
-    const result = removeContextMeshFromConfig(detected);
+    const result = removeCtxloomFromConfig(detected);
     expect(result.success).toBe(true);
   });
 });

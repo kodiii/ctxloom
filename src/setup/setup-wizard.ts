@@ -1,8 +1,8 @@
 /**
- * setup-wizard.ts — Interactive setup wizard for ContextMesh.
+ * setup-wizard.ts — Interactive setup wizard for ctxloom.
  *
  * Detects installed MCP clients and guides the user through
- * configuring ContextMesh for each one.
+ * configuring ctxloom for each one.
  *
  * Can be run via:
  *   - `ctxloom setup` (CLI command)
@@ -15,7 +15,7 @@
  *   4. Write MCP config entries for each selected client
  *   5. Report results
  */
-import { detectInstalledClients, addContextMeshToConfig, type DetectedClient } from './clients.js';
+import { detectInstalledClients, addCtxloomToConfig, type DetectedClient } from './clients.js';
 import { createInterface } from 'node:readline';
 
 // ─── ANSI Colors ───────────────────────────────────────────────
@@ -52,8 +52,8 @@ function ask(question: string): Promise<string> {
 function printBanner(): void {
   console.log('');
   console.log(`${C.cyan}${C.bold}  ╔══════════════════════════════════════════════╗${C.reset}`);
-  console.log(`${C.cyan}${C.bold}  ║     ContextMesh — Setup Wizard              ║${C.reset}`);
-  console.log(`${C.cyan}${C.bold}  ║     The Universal Code Context Engine        ║${C.reset}`);
+  console.log(`${C.cyan}${C.bold}  ║        ctxloom — Setup Wizard               ║${C.reset}`);
+  console.log(`${C.cyan}${C.bold}  ║     The Universal Code Context Engine       ║${C.reset}`);
   console.log(`${C.cyan}${C.bold}  ╚══════════════════════════════════════════════╝${C.reset}`);
   console.log('');
   console.log(`  ${C.dim}Scanning your system for MCP-compatible AI tools...${C.reset}`);
@@ -79,7 +79,7 @@ export async function runSetupWizard(options?: { nonInteractive?: boolean }): Pr
   if (detected.length === 0) {
     console.log(`  ${ICON_NOT_FOUND} ${C.dim}No MCP-compatible AI tools detected on your system.${C.reset}`);
     console.log('');
-    console.log(`  You can manually add ContextMesh to any MCP client using this config:`);
+    console.log(`  You can manually add ctxloom to any MCP client using this config:`);
     console.log('');
     console.log(`  ${C.cyan}{${C.reset}`);
     console.log(`  ${C.cyan}  "mcpServers": {${C.reset}`);
@@ -127,7 +127,7 @@ export async function runSetupWizard(options?: { nonInteractive?: boolean }): Pr
     console.log(`  ${C.bold}Auto-configuring all detected tools...${C.reset}`);
     console.log('');
     for (const d of needsConfig) {
-      const result = addContextMeshToConfig(d);
+      const result = addCtxloomToConfig(d);
       if (result.success) {
         console.log(`  ${ICON_SUCCESS} ${result.message}`);
       } else {
@@ -180,14 +180,14 @@ export async function runSetupWizard(options?: { nonInteractive?: boolean }): Pr
   }
 
   console.log('');
-  console.log(`  ${C.bold}Configuring ContextMesh...${C.reset}`);
+  console.log(`  ${C.bold}Configuring ctxloom...${C.reset}`);
   console.log('');
 
   let successCount = 0;
   let failCount = 0;
 
   for (const d of toConfigure) {
-    const result = addContextMeshToConfig(d);
+    const result = addCtxloomToConfig(d);
     if (result.success) {
       successCount++;
       console.log(`  ${ICON_SUCCESS} ${result.message}`);
@@ -200,7 +200,7 @@ export async function runSetupWizard(options?: { nonInteractive?: boolean }): Pr
   console.log('');
 
   if (successCount > 0) {
-    console.log(`  ${C.green}${C.bold}ContextMesh configured successfully!${C.reset} (${successCount} tool${successCount > 1 ? 's' : ''})`);
+    console.log(`  ${C.green}${C.bold}ctxloom configured successfully!${C.reset} (${successCount} tool${successCount > 1 ? 's' : ''})`);
   }
   if (failCount > 0) {
     console.log(`  ${C.red}${failCount} tool${failCount > 1 ? 's' : ''} failed — see errors above.${C.reset}`);
@@ -215,7 +215,7 @@ function printNextSteps(): void {
   console.log('');
   console.log(`  1. ${C.cyan}cd /path/to/your/project${C.reset}`);
   console.log(`  2. ${C.cyan}ctxloom index${C.reset}    ${C.dim}# Index your codebase${C.reset}`);
-  console.log(`  3. ${C.dim}Open your AI tool and start coding — ContextMesh provides context automatically${C.reset}`);
+  console.log(`  3. ${C.dim}Open your AI tool and start coding — ctxloom provides context automatically${C.reset}`);
   console.log('');
   console.log(`  ${C.dim}Documentation: https://ctxloom.dev/docs${C.reset}`);
   console.log('');

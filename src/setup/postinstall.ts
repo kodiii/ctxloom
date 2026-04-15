@@ -3,7 +3,7 @@
 /**
  * postinstall.ts — Runs after npm install / npm install -g ctxloom.
  *
- * Detects installed MCP clients and offers to configure ContextMesh.
+ * Detects installed MCP clients and offers to configure ctxloom.
  *
  * This script is intentionally non-invasive:
  *   - It only DETECTS tools, never silently modifies configs
@@ -35,7 +35,7 @@ if (isCI) {
 const isInteractive = process.stdin.isTTY;
 
 console.log('');
-console.log(`  ${C.cyan}${C.bold}ContextMesh${C.reset} ${C.dim}installed successfully!${C.reset}`);
+console.log(`  ${C.cyan}${C.bold}ctxloom${C.reset} ${C.dim}installed successfully!${C.reset}`);
 
 const detected = detectInstalledClients();
 const unconfigured = detected.filter(d => !d.alreadyConfigured);
