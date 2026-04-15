@@ -40,13 +40,16 @@ export class GrammarLoader {
 
   /** List all known grammars and their cache status. */
   listGrammars(): GrammarStatus[] {
-    return GRAMMAR_MANIFEST.map(entry => ({
-      language: entry.language,
-      extensions: entry.extensions,
-      version: entry.version,
-      status: this.isCached(entry.language) ? 'cached' : 'missing',
-      cachedPath: this.getCachedPath(entry.language),
-    }));
+    return GRAMMAR_MANIFEST.map(entry => {
+      const cachedPath = this.getCachedPath(entry.language);
+      return {
+        language: entry.language,
+        extensions: entry.extensions,
+        version: entry.version,
+        status: cachedPath !== null ? ('cached' as const) : ('missing' as const),
+        cachedPath,
+      };
+    });
   }
 
   /** Returns the cached WASM path if it exists, null otherwise. */
@@ -90,7 +93,7 @@ export class GrammarLoader {
     return dest;
   }
 
-  private download(url: string, dest: string): Promise<void> {
+  private download(url: string, dest: string, redirectsLeft: number = 5): Promise<void> {
     return new Promise((resolve, reject) => {
       const tmp = dest + '.tmp';
       const file = fs.createWriteStream(tmp);
@@ -99,9 +102,11 @@ export class GrammarLoader {
         if (response.statusCode === 301 || response.statusCode === 302) {
           const location = response.headers.location;
           if (!location) { reject(new Error(`Redirect with no location from ${url}`)); return; }
+          if (redirectsLeft <= 0) { reject(new Error(`Too many redirects from ${url}`)); return; }
+          response.resume();
           file.close();
           fs.rmSync(tmp, { force: true });
-          this.download(location, dest).then(resolve).catch(reject);
+          this.download(location, dest, redirectsLeft - 1).then(resolve).catch(reject);
           return;
         }
         if (response.statusCode !== 200) {
@@ -111,8 +116,17 @@ export class GrammarLoader {
           return;
         }
         response.pipe(file);
+        response.on('error', (err) => {
+          file.destroy();
+          fs.rmSync(tmp, { force: true });
+          reject(err);
+        });
+        file.on('error', (err) => {
+          file.destroy();
+          fs.rmSync(tmp, { force: true });
+          reject(err);
+        });
         file.on('finish', () => {
-          file.close();
           fs.renameSync(tmp, dest);
           resolve();
         });
