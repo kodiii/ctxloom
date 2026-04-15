@@ -8,6 +8,7 @@ import { registerDefinitionTool } from './definition.js';
 import { registerRulesTool } from './rules.js';
 import { registerSimilarFilesTool } from './similar-files.js';
 import { registerStatusTool } from './status.js';
+import { registerBlastRadiusTool } from './blast-radius.js';
 
 export function createToolRegistry(ctx: ServerContext): ToolRegistry {
   const registry = new ToolRegistry();
@@ -19,5 +20,6 @@ export function createToolRegistry(ctx: ServerContext): ToolRegistry {
   registerRulesTool(registry, ctx);
   registerSimilarFilesTool(registry, ctx);
   registerStatusTool(registry, ctx);
+  registerBlastRadiusTool(registry, ctx);
   return registry;
 }
