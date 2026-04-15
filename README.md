@@ -14,12 +14,12 @@ No API keys. No cloud. Everything runs on your machine.
 # 1. Install globally
 npm install -g ctxloom
 
-# 2. Index your project
+# 2. Auto-configure your AI tools (one-time)
+ctxloom setup
+
+# 3. Index your project (once per project)
 cd /path/to/your/project
 ctxloom index
-
-# 3. Auto-configure your AI tools
-ctxloom setup
 ```
 
 ### Manual Configuration
