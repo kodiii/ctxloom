@@ -124,3 +124,38 @@ type User struct {
     expect(Array.isArray(result)).toBe(true);
   });
 });
+
+describe('ASTParser — Rust dispatch', () => {
+  let tmpDir: string;
+
+  beforeEach(() => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ctxloom-rs-test-'));
+  });
+
+  afterEach(() => {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it('parse() dispatches .rs files without throwing', async () => {
+    const rsFile = path.join(tmpDir, 'lib.rs');
+    fs.writeFileSync(rsFile, `pub struct User {
+  pub name: String,
+  pub age: u32,
+}
+
+impl User {
+  pub fn new(name: String, age: u32) -> Self {
+    User { name, age }
+  }
+}
+
+pub fn greet(user: &User) -> String {
+  format!("Hello, {}", user.name)
+}
+`);
+    const parser = new ASTParser();
+    await parser.init();
+    const result = await parser.parse(rsFile);
+    expect(Array.isArray(result)).toBe(true);
+  });
+});

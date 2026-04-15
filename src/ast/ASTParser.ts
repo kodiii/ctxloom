@@ -86,7 +86,6 @@ export class ASTParser {
   private tsLang: TreeSitter.Language | null = null;
   private pyLang: TreeSitter.Language | null = null;
   private goLang: TreeSitter.Language | null = null;
-  // TODO: wired in Task 3 — Rust AST support
   private rustLang: TreeSitter.Language | null = null;
   // TODO: wired in Task 4 — Java AST support
   private javaLang: TreeSitter.Language | null = null;
@@ -150,6 +149,20 @@ export class ASTParser {
     }
   }
 
+  /**
+   * Load Rust grammar on demand. Downloads and caches WASM if needed.
+   */
+  private async loadRust(): Promise<void> {
+    if (this.rustLang) return;
+    try {
+      const wasmPath = await this.grammarLoader.ensureGrammar('rust');
+      this.rustLang = await TreeSitter.Language.load(wasmPath);
+    } catch (err) {
+      const { logger } = await import('../utils/logger.js');
+      logger.warn('Rust grammar unavailable', { detail: err instanceof Error ? err.message : String(err) });
+    }
+  }
+
   async parse(filePath: string): Promise<ParsedNode[]> {
     if (!this.tsLang) throw new Error('ASTParser not initialized. Call init() first.');
 
@@ -158,6 +171,7 @@ export class ASTParser {
       return this.parsePython(filePath);
     }
     if (ext === '.go') return this.parseGo(filePath);
+    if (ext === '.rs') return this.parseRust(filePath);
 
     const parser = new TreeSitter.Parser();
     parser.setLanguage(this.tsLang);
@@ -544,6 +558,134 @@ export class ASTParser {
             }
           };
           walkImport(node);
+          return;
+        }
+      }
+
+      for (const child of node.children) {
+        if (child) walk(child);
+      }
+    };
+
+    walk(tree.rootNode);
+    return nodes;
+  }
+
+  private async parseRust(filePath: string): Promise<ParsedNode[]> {
+    if (!this.rustLang) await this.loadRust();
+    if (!this.rustLang) return [];
+
+    const parser = new TreeSitter.Parser();
+    parser.setLanguage(this.rustLang);
+
+    const source = fs.readFileSync(filePath, 'utf-8');
+    const tree = parser.parse(source);
+    if (!tree) return [];
+
+    const nodes: ParsedNode[] = [];
+    const lines = source.split('\n');
+
+    const walk = (node: TreeSitter.Node): void => {
+      switch (node.type) {
+        case 'function_item': {
+          const nameNode = node.childForFieldName?.('name');
+          if (nameNode) {
+            nodes.push({
+              type: 'function',
+              name: nameNode.text,
+              signature: (lines[node.startPosition.row] ?? '').trim(),
+              startLine: node.startPosition.row + 1,
+              endLine: node.endPosition.row + 1,
+            });
+          }
+          return;
+        }
+        case 'struct_item': {
+          const nameNode = node.childForFieldName?.('name');
+          if (nameNode) {
+            nodes.push({
+              type: 'class',
+              name: nameNode.text,
+              signature: `struct ${nameNode.text}`,
+              startLine: node.startPosition.row + 1,
+              endLine: node.endPosition.row + 1,
+            });
+          }
+          return;
+        }
+        case 'enum_item': {
+          const nameNode = node.childForFieldName?.('name');
+          if (nameNode) {
+            nodes.push({
+              type: 'class',
+              name: nameNode.text,
+              signature: `enum ${nameNode.text}`,
+              startLine: node.startPosition.row + 1,
+              endLine: node.endPosition.row + 1,
+            });
+          }
+          return;
+        }
+        case 'trait_item': {
+          const nameNode = node.childForFieldName?.('name');
+          if (nameNode) {
+            nodes.push({
+              type: 'interface',
+              name: nameNode.text,
+              signature: `trait ${nameNode.text}`,
+              startLine: node.startPosition.row + 1,
+              endLine: node.endPosition.row + 1,
+            });
+          }
+          return;
+        }
+        case 'impl_item': {
+          // `impl Foo` or `impl Trait for Foo` — index under the type name
+          const typeNode = node.childForFieldName?.('type');
+          if (typeNode) {
+            const body = node.childForFieldName?.('body');
+            const methods = (body?.children ?? [])
+              .filter((c): c is TreeSitter.Node => c !== null && c.type === 'function_item')
+              .map(c => c.childForFieldName?.('name')?.text ?? '')
+              .filter(Boolean);
+            nodes.push({
+              type: 'class',
+              name: typeNode.text,
+              signature: `impl ${typeNode.text}`,
+              methods,
+              startLine: node.startPosition.row + 1,
+              endLine: node.endPosition.row + 1,
+            });
+          }
+          return;
+        }
+        case 'mod_item': {
+          // `mod foo;` (no body) = file module declaration — emit as import
+          const body = node.childForFieldName?.('body');
+          if (body) return; // `mod foo { ... }` inline block — skip
+          const nameNode = node.childForFieldName?.('name');
+          if (nameNode) {
+            nodes.push({
+              type: 'import',
+              name: nameNode.text,
+              source: nameNode.text,
+              startLine: node.startPosition.row + 1,
+              endLine: node.endPosition.row + 1,
+            });
+          }
+          return;
+        }
+        case 'use_declaration': {
+          const arg = node.childForFieldName?.('argument');
+          if (arg) {
+            nodes.push({
+              type: 'import',
+              name: arg.text,
+              source: arg.text,
+              startLine: node.startPosition.row + 1,
+              endLine: node.endPosition.row + 1,
+            });
+          }
           return;
         }
       }
