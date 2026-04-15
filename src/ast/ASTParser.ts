@@ -640,22 +640,13 @@ export class ASTParser {
           return;
         }
         case 'impl_item': {
-          // `impl Foo` or `impl Trait for Foo` — index under the type name
-          const typeNode = node.childForFieldName?.('type');
-          if (typeNode) {
-            const body = node.childForFieldName?.('body');
-            const methods = (body?.children ?? [])
-              .filter((c): c is TreeSitter.Node => c !== null && c.type === 'function_item')
-              .map(c => c.childForFieldName?.('name')?.text ?? '')
-              .filter(Boolean);
-            nodes.push({
-              type: 'class',
-              name: typeNode.text,
-              signature: `impl ${typeNode.text}`,
-              methods,
-              startLine: node.startPosition.row + 1,
-              endLine: node.endPosition.row + 1,
-            });
+          // Recurse into the impl body so function_item children emit as function nodes
+          // Do NOT emit the impl block itself — struct_item or enum_item already registers the type
+          const body = node.childForFieldName?.('body');
+          if (body) {
+            for (const child of body.children) {
+              if (child) walk(child);
+            }
           }
           return;
         }
