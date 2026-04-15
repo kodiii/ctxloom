@@ -21,8 +21,8 @@ import { CallGraphIndex } from './CallGraphIndex.js';
 
 /** Extensions handled by the TypeScript/JS AST parser. */
 const TS_EXTENSIONS = new Set(['.ts', '.tsx', '.js', '.jsx', '.mjs']);
-/** Extensions handled by the AST parser (includes Python). */
-const AST_EXTENSIONS = new Set(['.ts', '.tsx', '.js', '.jsx', '.mjs', '.py']);
+/** Extensions handled by the AST parser (TS/JS + Python + Go + Rust + Java). */
+const AST_EXTENSIONS = new Set(['.ts', '.tsx', '.js', '.jsx', '.mjs', '.py', '.go', '.rs', '.java']);
 
 export interface GraphEdge {
   from: string;
@@ -75,18 +75,36 @@ export class DependencyGraph {
       const ext = path.extname(absPath).toLowerCase();
 
       try {
+        // Register file so allFiles() includes it even with no imports
+        if (!this.forwardEdges.has(relPath)) {
+          this.forwardEdges.set(relPath, new Set());
+        }
+
         if (AST_EXTENSIONS.has(ext)) {
-          // ── TypeScript / JavaScript / Python: full AST parse ─────────
+          // ── AST-parsed languages: symbol indexing via tree-sitter ────────
           const nodes = await this.parser.parse(absPath);
 
-          const importNodes = nodes.filter(n => n.type === 'import');
-          for (const imp of importNodes) {
-            const src = imp.source ?? '';
-            if (!src.startsWith('.')) continue; // skip node_modules
-            const resolved = this.resolveImport(absPath, src, rootDir);
-            if (resolved) this.addEdge(relPath, resolved);
+          if (TS_EXTENSIONS.has(ext)) {
+            // TypeScript/JS: AST import nodes → TS-style path resolution
+            const importNodes = nodes.filter(n => n.type === 'import');
+            for (const imp of importNodes) {
+              const src = imp.source ?? '';
+              if (!src.startsWith('.')) continue; // skip node_modules
+              const resolved = this.resolveImport(absPath, src, rootDir);
+              if (resolved) this.addEdge(relPath, resolved);
+            }
+          } else {
+            // Python / Go / Rust / Java: regex extractor handles import graph edges
+            // (TS-style resolver does not know Python/Go/Rust/Java path conventions)
+            const content = fs.readFileSync(absPath, 'utf-8');
+            const rawImports = extractImports(absPath, content);
+            for (const raw of rawImports) {
+              const resolved = resolveMultiLangImport(absPath, raw, rootDir);
+              if (resolved) this.addEdge(relPath, resolved);
+            }
           }
 
+          // Symbol indexing for all AST-parsed languages
           for (const node of nodes) {
             if (node.type === 'function' || node.type === 'class' || node.type === 'interface') {
               const existing = this.symbolIndex.get(node.name) ?? [];
@@ -99,7 +117,7 @@ export class DependencyGraph {
             }
           }
 
-          // Only build call graph edges for TypeScript/JavaScript (Python doesn't have parseAllCallEdges)
+          // Call graph edges: TypeScript/JS only
           if (TS_EXTENSIONS.has(ext)) {
             const callEdges = await this.parser.parseAllCallEdges(absPath);
             for (const edge of callEdges) {
@@ -107,7 +125,7 @@ export class DependencyGraph {
             }
           }
         } else {
-          // ── Other languages: regex-based import extraction ────────────
+          // ── Other languages (.c, .cpp, .h, .md, etc.): regex-based ──────
           const content = fs.readFileSync(absPath, 'utf-8');
           const rawImports = extractImports(absPath, content);
           for (const raw of rawImports) {
@@ -274,15 +292,24 @@ export class DependencyGraph {
     const ext = path.extname(absPath).toLowerCase();
     try {
       if (AST_EXTENSIONS.has(ext)) {
-        // TypeScript / JavaScript / Python: full AST parse
+        // TypeScript / JavaScript / Python / Go / Rust / Java: full AST parse
         const nodes = await this.parser.parse(absPath);
-        const importNodes = nodes.filter(n => n.type === 'import');
 
-        for (const importNode of importNodes) {
-          const src = importNode.source ?? '';
-          if (!src.startsWith('.')) continue;
-          const resolved = this.resolveImport(absPath, src, rootDir);
-          if (resolved) this.addEdge(relPath, resolved);
+        if (TS_EXTENSIONS.has(ext)) {
+          const importNodes = nodes.filter(n => n.type === 'import');
+          for (const importNode of importNodes) {
+            const src = importNode.source ?? '';
+            if (!src.startsWith('.')) continue;
+            const resolved = this.resolveImport(absPath, src, rootDir);
+            if (resolved) this.addEdge(relPath, resolved);
+          }
+        } else {
+          const content = fs.readFileSync(absPath, 'utf-8');
+          const rawImports = extractImports(absPath, content);
+          for (const raw of rawImports) {
+            const resolved = resolveMultiLangImport(absPath, raw, rootDir);
+            if (resolved) this.addEdge(relPath, resolved);
+          }
         }
 
         // 3. Rebuild symbol index entries from this file
@@ -298,7 +325,7 @@ export class DependencyGraph {
           }
         }
 
-        // Only rebuild call graph edges for TypeScript/JavaScript (stale edges were cleared above).
+        // Rebuild call graph edges: TypeScript/JS only (stale edges were cleared above).
         if (TS_EXTENSIONS.has(ext)) {
           const callEdges = await this.parser.parseAllCallEdges(absPath);
           for (const edge of callEdges) {
