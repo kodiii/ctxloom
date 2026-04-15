@@ -86,7 +86,9 @@ export class ASTParser {
   private tsLang: TreeSitter.Language | null = null;
   private pyLang: TreeSitter.Language | null = null;
   private goLang: TreeSitter.Language | null = null;
+  // TODO: wired in Task 3 — Rust AST support
   private rustLang: TreeSitter.Language | null = null;
+  // TODO: wired in Task 4 — Java AST support
   private javaLang: TreeSitter.Language | null = null;
   private grammarLoader = new GrammarLoader();
 
@@ -122,7 +124,7 @@ export class ASTParser {
   /**
    * Load Python grammar on demand. Downloads and caches WASM if needed.
    */
-  async loadPython(): Promise<void> {
+  private async loadPython(): Promise<void> {
     if (this.pyLang) return;
     try {
       const wasmPath = await this.grammarLoader.ensureGrammar('python');
@@ -137,7 +139,7 @@ export class ASTParser {
   /**
    * Load Go grammar on demand. Downloads and caches WASM if needed.
    */
-  async loadGo(): Promise<void> {
+  private async loadGo(): Promise<void> {
     if (this.goLang) return;
     try {
       const wasmPath = await this.grammarLoader.ensureGrammar('go');
@@ -513,8 +515,8 @@ export class ASTParser {
                   type: isInterface ? 'interface' : 'class',
                   name: nameNode.text,
                   signature: `type ${nameNode.text} ${typeNode?.type ?? ''}`.trim(),
-                  startLine: node.startPosition.row + 1,
-                  endLine: node.endPosition.row + 1,
+                  startLine: child.startPosition.row + 1,
+                  endLine: child.endPosition.row + 1,
                 });
               }
             }
