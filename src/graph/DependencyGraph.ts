@@ -17,6 +17,7 @@ import {
   extractImports,
   resolveImport as resolveMultiLangImport,
 } from '../utils/importExtractor.js';
+import { CallGraphIndex } from './CallGraphIndex.js';
 
 /** Extensions handled by the TypeScript/JS AST parser. */
 const TS_EXTENSIONS = new Set(['.ts', '.tsx', '.js', '.jsx', '.mjs']);
@@ -38,6 +39,8 @@ export class DependencyGraph {
     type: string;
     signature: string;
   }>>();
+
+  private callGraphIndex = new CallGraphIndex();
 
   private parser: ASTParser | null = null;
   private rootDir: string = '';
@@ -93,6 +96,12 @@ export class DependencyGraph {
               this.symbolIndex.set(node.name, existing);
             }
           }
+
+          // Build call graph edges for TypeScript/TSX files
+          const callEdges = await this.parser.parseAllCallEdges(absPath);
+          for (const edge of callEdges) {
+            this.callGraphIndex.addEdge({ callerFile: relPath, ...edge });
+          }
         } else {
           // ── Other languages: regex-based import extraction ────────────
           const content = fs.readFileSync(absPath, 'utf-8');
@@ -138,6 +147,24 @@ export class DependencyGraph {
    */
   lookupSymbol(name: string): Array<{ filePath: string; type: string; signature: string }> {
     return this.symbolIndex.get(name) ?? [];
+  }
+
+  /**
+   * Return all symbol names defined in a given file.
+   */
+  lookupSymbolsByFile(fileRel: string): string[] {
+    const results: string[] = [];
+    for (const [name, entries] of this.symbolIndex.entries()) {
+      if (entries.some(e => e.filePath === fileRel)) {
+        results.push(name);
+      }
+    }
+    return results;
+  }
+
+  /** Return the pre-built call graph index (TypeScript/TSX only). */
+  getCallGraphIndex(): CallGraphIndex {
+    return this.callGraphIndex;
   }
 
   /**
@@ -264,6 +291,15 @@ export class DependencyGraph {
             this.symbolIndex.set(node.name, existing);
           }
         }
+
+        // Rebuild call graph edges for this file.
+        // Note: CallGraphIndex doesn't support per-file removal — stale entries for
+        // removed callee symbols may persist in the live index until the next full
+        // rebuild on startup. This is acceptable for Phase 1.
+        const callEdges = await this.parser.parseAllCallEdges(absPath);
+        for (const edge of callEdges) {
+          this.callGraphIndex.addEdge({ callerFile: relPath, ...edge });
+        }
       } else {
         // Other languages: regex-based extraction
         const content = fs.readFileSync(absPath, 'utf-8');
@@ -335,6 +371,13 @@ export class DependencyGraph {
     const tmpPath = snapshotPath + '.tmp';
     fs.writeFileSync(tmpPath, JSON.stringify(data, null, 2));
     fs.renameSync(tmpPath, snapshotPath);
+
+    // Save call graph snapshot alongside import graph snapshot
+    const callData = this.callGraphIndex.toJSON();
+    const callPath = path.join(this.snapshotDir, 'call-graph-snapshot.json');
+    const callTmp = callPath + '.tmp';
+    fs.writeFileSync(callTmp, JSON.stringify(callData));
+    fs.renameSync(callTmp, callPath);
   }
 
   /** M-2: Validate snapshot shape before hydrating to prevent prototype pollution. */
@@ -392,6 +435,17 @@ export class DependencyGraph {
 
       if (data.symbolIndex) {
         this.symbolIndex = new Map(Object.entries(data.symbolIndex));
+      }
+
+      // Try to load call graph snapshot (non-fatal if missing)
+      const callPath = path.join(this.snapshotDir, 'call-graph-snapshot.json');
+      if (fs.existsSync(callPath)) {
+        try {
+          const callRaw = JSON.parse(fs.readFileSync(callPath, 'utf-8'));
+          this.callGraphIndex = CallGraphIndex.fromJSON(callRaw);
+        } catch {
+          this.callGraphIndex = new CallGraphIndex();
+        }
       }
 
       return true;
