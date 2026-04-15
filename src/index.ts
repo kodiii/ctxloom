@@ -49,7 +49,7 @@ async function main(): Promise<void> {
     }
 
     case 'grammars': {
-      const subCommand = process.argv[3]; // --list or undefined
+      const subCommand = process.argv[3]; // undefined or --download
       const loader = new GrammarLoader();
       const list = loader.listGrammars();
       console.log('\n[ctxloom] Grammar cache status:');
