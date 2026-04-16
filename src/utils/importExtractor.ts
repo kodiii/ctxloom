@@ -4,14 +4,27 @@
  *
  * Supported languages:
  *   Python  (.py)  — relative `from .foo import bar` statements
- *   Rust    (.rs)  — `mod foo;` declarations
- *   Go      (.go)  — `import "path"` within same module (relative paths)
- *   Java    (.java) — same-package `import` statements (file-relative only)
+ *   Rust    (.rs)  — `mod foo;` declarations + `use` declarations
+ *   Go      (.go)  — `import "path"` — relative AND module-path via GoModuleResolver
+ *   Java    (.java) — `import` statements (dot-to-slash + same-package resolution)
  *
  * Only imports that can be resolved to actual local files produce graph edges.
  */
 import fs from 'node:fs';
 import path from 'node:path';
+import { GoModuleResolver } from './GoModuleResolver.js';
+
+/** Module-level resolver cache: rootDir → GoModuleResolver */
+const goResolverCache = new Map<string, GoModuleResolver>();
+
+function getGoResolver(rootDir: string): GoModuleResolver {
+  let resolver = goResolverCache.get(rootDir);
+  if (!resolver) {
+    resolver = new GoModuleResolver(rootDir);
+    goResolverCache.set(rootDir, resolver);
+  }
+  return resolver;
+}
 
 export interface RawImport {
   specifier: string;
@@ -38,6 +51,10 @@ export function extractImports(filePath: string, content: string): RawImport[] {
  * Resolve a raw import specifier from a given source file to a relative
  * project path. Returns null if the import cannot be resolved to an
  * existing file.
+ *
+ * @param fromAbs  Absolute path of the file containing the import
+ * @param raw      The import specifier (as extracted from source)
+ * @param rootDir  Project root directory (needed for Go module resolution)
  */
 export function resolveImport(
   fromAbs: string,
@@ -49,7 +66,7 @@ export function resolveImport(
 
   if (ext === '.py') return resolvePythonImport(fromAbs, fromDir, raw, rootDir);
   if (ext === '.rs') return resolveRustModule(fromDir, raw, rootDir);
-  if (ext === '.go') return resolveGoImport(fromDir, raw, rootDir);
+  if (ext === '.go') return resolveGoImportFull(fromAbs, fromDir, raw, rootDir);
   if (ext === '.java') return resolveJavaImport(fromDir, raw, rootDir);
 
   return null;
@@ -179,24 +196,22 @@ function extractGoImports(content: string): RawImport[] {
   return results;
 }
 
-function resolveGoImport(
+function resolveGoImportFull(
+  fromAbs: string,
   fromDir: string,
   raw: RawImport,
   rootDir: string,
 ): string | null {
-  if (!raw.isRelative) return null; // non-relative Go imports are module paths
-
   // Relative Go imports: import "./sibling" or import "../pkg"
-  const candidate = path.resolve(fromDir, raw.specifier);
-  // Go packages map to directories — look for any .go file inside
-  if (fs.existsSync(candidate) && fs.statSync(candidate).isDirectory()) {
-    const goFiles = fs.readdirSync(candidate).filter(f => f.endsWith('.go'));
-    if (goFiles.length > 0) {
-      return path.relative(rootDir, path.join(candidate, goFiles[0]));
-    }
+  if (raw.isRelative) {
+    const resolver = getGoResolver(rootDir);
+    return resolver.resolveRelative(fromAbs, raw.specifier);
   }
 
-  return null;
+  // Module-path imports: github.com/myorg/myapp/internal/auth
+  // Use GoModuleResolver which reads go.mod to find the module prefix
+  const resolver = getGoResolver(rootDir);
+  return resolver.resolve(raw.specifier);
 }
 
 // ─── Java ─────────────────────────────────────────────────────────────────

@@ -17,6 +17,7 @@ import {
   extractImports,
   resolveImport as resolveMultiLangImport,
 } from '../utils/importExtractor.js';
+import { GoModuleResolver } from '../utils/GoModuleResolver.js';
 import { CallGraphIndex } from './CallGraphIndex.js';
 
 /** Extensions handled by the TypeScript/JS AST parser. */
@@ -93,14 +94,37 @@ export class DependencyGraph {
               const resolved = this.resolveImport(absPath, src, rootDir);
               if (resolved) this.addEdge(relPath, resolved);
             }
-          } else {
-            // Python / Go / Rust / Java: regex extractor handles import graph edges
-            // (TS-style resolver does not know Python/Go/Rust/Java path conventions)
-            const content = fs.readFileSync(absPath, 'utf-8');
-            const rawImports = extractImports(absPath, content);
-            for (const raw of rawImports) {
-              const resolved = resolveMultiLangImport(absPath, raw, rootDir);
+          } else if (ext === '.go') {
+            // Go: use AST import nodes + GoModuleResolver for module-path imports
+            const goResolver = new GoModuleResolver(rootDir);
+            const importNodes = nodes.filter(n => n.type === 'import');
+            for (const imp of importNodes) {
+              const spec = imp.source ?? imp.name;
+              const isRelative = spec.startsWith('.');
+              const resolved = isRelative
+                ? goResolver.resolveRelative(absPath, spec)
+                : goResolver.resolve(spec);
               if (resolved) this.addEdge(relPath, resolved);
+            }
+          } else {
+            // Python / Rust / Java: use AST import nodes (more accurate than regex)
+            // Fall back to regex extractor if AST produced no imports
+            const importNodes = nodes.filter(n => n.type === 'import');
+            if (importNodes.length > 0) {
+              for (const imp of importNodes) {
+                const specifier = imp.source ?? imp.name;
+                const isRelative = specifier.startsWith('.');
+                const resolved = resolveMultiLangImport(absPath, { specifier, isRelative }, rootDir);
+                if (resolved) this.addEdge(relPath, resolved);
+              }
+            } else {
+              // AST grammar unavailable — fall back to regex
+              const content = fs.readFileSync(absPath, 'utf-8');
+              const rawImports = extractImports(absPath, content);
+              for (const raw of rawImports) {
+                const resolved = resolveMultiLangImport(absPath, raw, rootDir);
+                if (resolved) this.addEdge(relPath, resolved);
+              }
             }
           }
 
@@ -307,12 +331,34 @@ export class DependencyGraph {
             const resolved = this.resolveImport(absPath, src, rootDir);
             if (resolved) this.addEdge(relPath, resolved);
           }
-        } else {
-          const content = fs.readFileSync(absPath, 'utf-8');
-          const rawImports = extractImports(absPath, content);
-          for (const raw of rawImports) {
-            const resolved = resolveMultiLangImport(absPath, raw, rootDir);
+        } else if (ext === '.go') {
+          const goResolver = new GoModuleResolver(rootDir);
+          const importNodes = nodes.filter(n => n.type === 'import');
+          for (const imp of importNodes) {
+            const spec = imp.source ?? imp.name;
+            const isRelative = spec.startsWith('.');
+            const resolved = isRelative
+              ? goResolver.resolveRelative(absPath, spec)
+              : goResolver.resolve(spec);
             if (resolved) this.addEdge(relPath, resolved);
+          }
+        } else {
+          // Python / Rust / Java: prefer AST import nodes, fall back to regex
+          const importNodes = nodes.filter(n => n.type === 'import');
+          if (importNodes.length > 0) {
+            for (const imp of importNodes) {
+              const specifier = imp.source ?? imp.name;
+              const isRelative = specifier.startsWith('.');
+              const resolved = resolveMultiLangImport(absPath, { specifier, isRelative }, rootDir);
+              if (resolved) this.addEdge(relPath, resolved);
+            }
+          } else {
+            const content = fs.readFileSync(absPath, 'utf-8');
+            const rawImports = extractImports(absPath, content);
+            for (const raw of rawImports) {
+              const resolved = resolveMultiLangImport(absPath, raw, rootDir);
+              if (resolved) this.addEdge(relPath, resolved);
+            }
           }
         }
 
