@@ -71,6 +71,35 @@ cat benchmarks/results.json
 
 No internet connection required after `npm install` — the embedding model runs fully locally.
 
+## Public Repo Benchmark
+
+Benchmark ctxloom against well-known open-source repos to get credible, comparable numbers:
+
+```bash
+npm run bench:repos
+```
+
+This clones (with `--depth=1`) and indexes 5 repos covering JavaScript, TypeScript, Python, and Rust:
+
+| Repo | Language | Purpose |
+|------|----------|---------|
+| expressjs/express | JavaScript | Web framework |
+| sindresorhus/got | TypeScript | HTTP client |
+| pallets/flask | Python | Web framework |
+| SergioBenitez/Rocket | Rust | Web framework |
+| fastify/fastify | JavaScript | Web framework |
+
+Results are saved to `benchmarks/public-repos-results.json` for CI history.
+
+### Metrics reported
+
+| Field | Description |
+|-------|-------------|
+| `files` | Number of source files in the target language |
+| `indexTimeMs` | Time to build full dependency graph |
+| `graphEdges` | Total import edges detected |
+| `reductionPct` | Token reduction from skeletonization (TS/JS only) |
+
 ## CI Integration
 
 The benchmark runs automatically on every pull request via
