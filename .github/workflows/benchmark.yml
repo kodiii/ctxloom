@@ -3,10 +3,15 @@ name: Benchmark
 on:
   pull_request:
     types: [opened, synchronize, reopened]
+  # Allow manual trigger from Actions tab
+  workflow_dispatch:
 
 jobs:
   benchmark:
+    name: Performance benchmarks
     runs-on: ubuntu-latest
+    timeout-minutes: 15
+
     steps:
       - uses: actions/checkout@v4
 
@@ -15,36 +20,92 @@ jobs:
           node-version: '20'
           cache: 'npm'
 
-      - run: npm ci
+      - name: Install dependencies
+        run: npm ci --ignore-scripts
 
-      - run: npm run build
+      - name: Build
+        run: npm run build
 
       - name: Run benchmarks
         run: npx tsx benchmarks/benchmark.ts --output benchmarks/results.json
-        timeout-minutes: 10
 
       - name: Post results as PR comment
+        if: github.event_name == 'pull_request'
         uses: actions/github-script@v7
         with:
           script: |
             const fs = require('fs');
             const results = JSON.parse(fs.readFileSync('benchmarks/results.json', 'utf-8'));
+
+            const gb = results.graph_build ?? {};
+            const s = results.search ?? {};
+            const c = results.compression ?? {};
+            const agg = c.aggregate ?? {};
+
+            // Build compression sample table
+            const sampleRows = (c.samples ?? []).map(r =>
+              `| \`${r.file.split('/').slice(-2).join('/')}\` | ${r.raw_tokens.toLocaleString()} | ${r.skeleton_tokens.toLocaleString()} | **${r.reduction_pct}%** |`
+            ).join('\n');
+
+            const searchSection = s.skipped
+              ? '> ⚠️ Search benchmarks skipped (no indexed DB — run `ctxloom index` first)'
+              : [
+                  '| Metric | Value |',
+                  '|--------|-------|',
+                  `| Total P50 | ${s.total?.p50_ms}ms |`,
+                  `| Total P95 | ${s.total?.p95_ms}ms |`,
+                  `| Total P99 | ${s.total?.p99_ms}ms |`,
+                  `| Embed P50 | ${s.embedding_only?.p50_ms}ms |`,
+                  `| LanceDB P50 | ${s.vector_search_only?.p50_ms}ms |`,
+                ].join('\n');
+
             const body = [
-              '## ctxloom Benchmark Results',
+              '## 📊 ctxloom Benchmark Results',
               '',
-              `**Graph build:** ${results.graph_build?.edges} edges, ${results.graph_build?.nodes} nodes (${results.graph_build?.duration_ms}ms)`,
-              `**Search P50:** ${results.search?.p50_ms}ms | **P95:** ${results.search?.p95_ms}ms | **P99:** ${results.search?.p99_ms}ms`,
+              '### Graph Build (cold)',
+              `**${gb.nodes} nodes, ${gb.edges} edges** built in **${gb.duration_ms}ms** (${gb.edges_per_second} edges/sec)`,
               '',
-              `_Run at: ${results.timestamp}_`,
+              '### Vector Search Latency',
+              searchSection,
+              '',
+              '### Skeletonization Compression',
+              `**${agg.overall_reduction_pct}% token reduction** across ${c.samples?.length ?? 0} sample files`,
+              `(${(agg.total_raw_tokens ?? 0).toLocaleString()} raw tokens → ${(agg.total_skeleton_tokens ?? 0).toLocaleString()} skeleton tokens)`,
+              '',
+              '| File | Raw tokens | Skeleton tokens | Reduction |',
+              '|------|-----------|-----------------|-----------|',
+              sampleRows,
+              '',
+              `_Timestamp: ${results.timestamp} · Node: ${results.node_version}_`,
             ].join('\n');
-            github.rest.issues.createComment({
-              issue_number: context.issue.number,
+
+            // Find and update existing comment, or create new one
+            const { data: comments } = await github.rest.issues.listComments({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              body,
+              issue_number: context.issue.number,
             });
 
-      - uses: actions/upload-artifact@v4
+            const existing = comments.find(c => c.body?.startsWith('## 📊 ctxloom Benchmark Results'));
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existing.id,
+                body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                issue_number: context.issue.number,
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                body,
+              });
+            }
+
+      - name: Upload benchmark artifact
+        uses: actions/upload-artifact@v4
         with:
           name: benchmark-results
           path: benchmarks/results.json
+          retention-days: 30
