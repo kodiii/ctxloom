@@ -62,6 +62,7 @@ export function collectFiles(dir: string, results: string[] = []): string[] {
     '.py', '.rs', '.go', '.java', '.cs', '.rb', '.kt', '.kts', '.swift',
     '.c', '.cpp', '.h',
     '.md', '.json', '.yaml', '.yml', '.toml',
+    '.ipynb',
   ]);
 
   const entries = fs.readdirSync(dir, { withFileTypes: true });
