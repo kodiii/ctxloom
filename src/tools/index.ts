@@ -21,6 +21,11 @@ import { registerGitDiffReviewTool } from './git-diff-review.js';
 import { registerRefactorPreviewTool } from './refactor-preview.js';
 import { registerExecutionFlowTool } from './execution-flow.js';
 import { registerCrossRepoSearchTool } from './cross-repo-search.js';
+import { registerApplyRefactorTool } from './apply-refactor.js';
+import { registerDetectChangesTool } from './detect-changes.js';
+import { registerFullTextSearchTool } from './full-text-search.js';
+import { registerSuggestedQuestionsTool } from './suggested-questions.js';
+import { registerGetWorkflowTool } from './get-workflow.js';
 
 export function createToolRegistry(ctx: ServerContext): ToolRegistry {
   const registry = new ToolRegistry();
@@ -45,5 +50,10 @@ export function createToolRegistry(ctx: ServerContext): ToolRegistry {
   registerRefactorPreviewTool(registry, ctx);
   registerExecutionFlowTool(registry, ctx);
   registerCrossRepoSearchTool(registry, ctx);
+  registerApplyRefactorTool(registry, ctx);
+  registerDetectChangesTool(registry, ctx);
+  registerFullTextSearchTool(registry, ctx);
+  registerSuggestedQuestionsTool(registry, ctx);
+  registerGetWorkflowTool(registry, ctx);
   return registry;
 }

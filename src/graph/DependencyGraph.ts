@@ -249,6 +249,22 @@ export class DependencyGraph {
   }
 
   /**
+   * Add a symbol to the index (primarily used for testing and incremental updates).
+   */
+  addSymbol(
+    filePath: string,
+    symbol: { type: string; name: string; signature: string; startLine?: number; endLine?: number },
+  ): void {
+    const existing = this.symbolIndex.get(symbol.name) ?? [];
+    existing.push({ filePath, type: symbol.type, signature: symbol.signature });
+    this.symbolIndex.set(symbol.name, existing);
+    // Ensure file is registered in forward edges so allFiles() includes it
+    if (!this.forwardEdges.has(filePath)) {
+      this.forwardEdges.set(filePath, new Set());
+    }
+  }
+
+  /**
    * Add a directed edge: fromFile imports toFile.
    */
   addEdge(fromFile: string, toFile: string): void {
