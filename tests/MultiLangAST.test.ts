@@ -243,3 +243,29 @@ describe('PHP parsing', () => {
     }
   });
 });
+
+describe('Dart parsing', () => {
+  it('parses class declarations', async () => {
+    const tmp = path.join(os.tmpdir(), 'test.dart');
+    fs.writeFileSync(tmp, `class UserService {\n  String getName() => 'Alice';\n  void save(User user) {}\n}\n`);
+    const parser = new ASTParser();
+    await parser.init();
+    const nodes = await parser.parse(tmp);
+    fs.unlinkSync(tmp);
+    if (nodes.length > 0) {
+      expect(nodes.some(n => n.type === 'class' && n.name === 'UserService')).toBe(true);
+    }
+  });
+
+  it('parses function declarations', async () => {
+    const tmp = path.join(os.tmpdir(), 'test.dart');
+    fs.writeFileSync(tmp, `String greet(String name) => 'Hello \$name';\nvoid main() { print(greet('world')); }\n`);
+    const parser = new ASTParser();
+    await parser.init();
+    const nodes = await parser.parse(tmp);
+    fs.unlinkSync(tmp);
+    if (nodes.length > 0) {
+      expect(nodes.some(n => n.type === 'function' && n.name === 'main')).toBe(true);
+    }
+  });
+});

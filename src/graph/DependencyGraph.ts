@@ -23,7 +23,7 @@ import { CallGraphIndex } from './CallGraphIndex.js';
 /** Extensions handled by the TypeScript/JS AST parser. */
 const TS_EXTENSIONS = new Set(['.ts', '.tsx', '.js', '.jsx', '.mjs']);
 /** Extensions handled by the AST parser (TS/JS + Python + Go + Rust + Java). */
-const AST_EXTENSIONS = new Set(['.ts', '.tsx', '.js', '.jsx', '.mjs', '.py', '.go', '.rs', '.java', '.ipynb', '.php']);
+const AST_EXTENSIONS = new Set(['.ts', '.tsx', '.js', '.jsx', '.mjs', '.py', '.go', '.rs', '.java', '.ipynb', '.php', '.dart']);
 
 export interface GraphEdge {
   from: string;
