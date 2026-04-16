@@ -15,6 +15,8 @@ import { registerCommunityListTool } from './community-list.js';
 import { registerArchitectureOverviewTool } from './architecture-overview.js';
 import { registerKnowledgeGapsTool } from './knowledge-gaps.js';
 import { registerSurprisingConnectionsTool } from './surprising-connections.js';
+import { registerWikiGenerateTool } from './wiki-generate.js';
+import { registerGraphExportTool } from './graph-export.js';
 
 export function createToolRegistry(ctx: ServerContext): ToolRegistry {
   const registry = new ToolRegistry();
@@ -33,5 +35,7 @@ export function createToolRegistry(ctx: ServerContext): ToolRegistry {
   registerArchitectureOverviewTool(registry, ctx);
   registerKnowledgeGapsTool(registry, ctx);
   registerSurprisingConnectionsTool(registry, ctx);
+  registerWikiGenerateTool(registry, ctx);
+  registerGraphExportTool(registry, ctx);
   return registry;
 }
