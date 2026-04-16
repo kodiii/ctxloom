@@ -126,6 +126,7 @@ Tools Exposed:
   ctx_graph_export           Export graph: GraphML (Gephi), DOT (Graphviz), Obsidian vault
   ctx_git_diff_review        All-in-one code review packet: diffs + skeletons + blast radius
   ctx_refactor_preview       Read-only symbol rename diff preview across definition files and importers
+  ctx_execution_flow         DFS call graph traversal from entry point with cycle detection
 `);
       break;
     }

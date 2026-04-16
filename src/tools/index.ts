@@ -19,6 +19,7 @@ import { registerWikiGenerateTool } from './wiki-generate.js';
 import { registerGraphExportTool } from './graph-export.js';
 import { registerGitDiffReviewTool } from './git-diff-review.js';
 import { registerRefactorPreviewTool } from './refactor-preview.js';
+import { registerExecutionFlowTool } from './execution-flow.js';
 
 export function createToolRegistry(ctx: ServerContext): ToolRegistry {
   const registry = new ToolRegistry();
@@ -41,5 +42,6 @@ export function createToolRegistry(ctx: ServerContext): ToolRegistry {
   registerGraphExportTool(registry, ctx);
   registerGitDiffReviewTool(registry, ctx);
   registerRefactorPreviewTool(registry, ctx);
+  registerExecutionFlowTool(registry, ctx);
   return registry;
 }
