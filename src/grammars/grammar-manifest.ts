@@ -57,6 +57,30 @@ export const GRAMMAR_MANIFEST: GrammarEntry[] = [
     wasmFile: 'wasm/tree-sitter-c-sharp.wasm',
     sha256: null,
   },
+  {
+    language: 'ruby',
+    extensions: ['.rb'],
+    npmPackage: 'tree-sitter-ruby',
+    version: '0.23.1',
+    wasmFile: 'tree-sitter-ruby.wasm',
+    sha256: null,
+  },
+  {
+    language: 'kotlin',
+    extensions: ['.kt', '.kts'],
+    npmPackage: 'tree-sitter-kotlin',
+    version: '0.3.8',
+    wasmFile: 'tree-sitter-kotlin.wasm',
+    sha256: null,
+  },
+  {
+    language: 'swift',
+    extensions: ['.swift'],
+    npmPackage: 'tree-sitter-swift',
+    version: '0.7.1',
+    wasmFile: 'tree-sitter-swift.wasm',
+    sha256: null,
+  },
 ];
 
 export function findGrammar(language: string): GrammarEntry | undefined {
