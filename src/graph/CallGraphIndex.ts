@@ -9,29 +9,41 @@
  *   Call graph:   symbol-level "which functions call which"
  */
 
+export type EdgeConfidence = 'extracted' | 'inferred' | 'ambiguous';
+
 export interface CallEdge {
   callerFile: string;    // relative path
   callerSymbol: string;  // enclosing function/class containing the call, or '' for top-level
   calleeSymbol: string;  // name of the called symbol
-  line: number;
+  line?: number;
+  confidence: EdgeConfidence;
 }
 
-type Serialized = { bySite: Record<string, string[]> };
+export interface CallerEntry {
+  file: string;
+  symbol: string;
+  callerSymbol: string;
+  confidence: EdgeConfidence;
+}
+
+type SerializedEdge = { callerKey: string; confidence: EdgeConfidence };
+type Serialized = { bySite: Record<string, SerializedEdge[]> };
 
 export class CallGraphIndex {
-  /** calleeSymbol → Set<"callerFile:callerSymbol"> (reverse lookup) */
-  private bySite = new Map<string, Set<string>>();
+  /** calleeSymbol → Map<"callerFile:callerSymbol", EdgeConfidence> (reverse lookup) */
+  private bySite = new Map<string, Map<string, EdgeConfidence>>();
   /** "callerFile:callerSymbol" → Set<calleeSymbol> (forward lookup) */
   private byCallerKey = new Map<string, Set<string>>();
 
-  addEdge(edge: CallEdge): void {
+  addEdge(edge: Omit<CallEdge, 'confidence'> & { confidence?: EdgeConfidence }): void {
     const { callerFile, callerSymbol, calleeSymbol } = edge;
+    const confidence: EdgeConfidence = edge.confidence ?? 'extracted';
 
-    // Reverse index: callee → callers
+    // Reverse index: callee → callers with confidence
     if (!this.bySite.has(calleeSymbol)) {
-      this.bySite.set(calleeSymbol, new Set());
+      this.bySite.set(calleeSymbol, new Map());
     }
-    this.bySite.get(calleeSymbol)!.add(`${callerFile}:${callerSymbol}`);
+    this.bySite.get(calleeSymbol)!.set(`${callerFile}:${callerSymbol}`, confidence);
 
     // Forward index: caller → callees
     const callerKey = `${callerFile}:${callerSymbol}`;
@@ -67,14 +79,23 @@ export class CallGraphIndex {
 
   /**
    * Returns all callers of the given symbol across all indexed files.
+   * Optionally filters by confidence tier.
    */
-  getCallers(symbol: string): Array<{ file: string; symbol: string }> {
-    return Array.from(this.bySite.get(symbol) ?? []).map(key => {
+  getCallers(symbol: string, confidenceFilter?: EdgeConfidence): CallerEntry[] {
+    const callerMap = this.bySite.get(symbol);
+    if (!callerMap) return [];
+
+    const results: CallerEntry[] = [];
+    for (const [key, confidence] of callerMap.entries()) {
+      if (confidenceFilter !== undefined && confidence !== confidenceFilter) {
+        continue;
+      }
       const idx = key.indexOf(':');
-      return idx >= 0
-        ? { file: key.slice(0, idx), symbol: key.slice(idx + 1) }
-        : { file: key, symbol: '' };
-    });
+      const file = idx >= 0 ? key.slice(0, idx) : key;
+      const symbol_ = idx >= 0 ? key.slice(idx + 1) : '';
+      results.push({ file, symbol: symbol_, callerSymbol: symbol_, confidence });
+    }
+    return results;
   }
 
   /**
@@ -85,13 +106,13 @@ export class CallGraphIndex {
     const prefix = callerFile + ':';
 
     // Clean reverse index
-    for (const [callee, callerKeys] of this.bySite.entries()) {
-      for (const key of callerKeys) {
+    for (const [callee, callerMap] of this.bySite.entries()) {
+      for (const key of callerMap.keys()) {
         if (key === callerFile || key.startsWith(prefix)) {
-          callerKeys.delete(key);
+          callerMap.delete(key);
         }
       }
-      if (callerKeys.size === 0) {
+      if (callerMap.size === 0) {
         this.bySite.delete(callee);
       }
     }
@@ -107,14 +128,17 @@ export class CallGraphIndex {
   /** Total number of distinct caller→callee edges. */
   size(): number {
     let n = 0;
-    for (const s of this.bySite.values()) n += s.size;
+    for (const m of this.bySite.values()) n += m.size;
     return n;
   }
 
   toJSON(): Serialized {
     return {
       bySite: Object.fromEntries(
-        Array.from(this.bySite.entries()).map(([k, v]) => [k, Array.from(v)])
+        Array.from(this.bySite.entries()).map(([callee, callerMap]) => [
+          callee,
+          Array.from(callerMap.entries()).map(([callerKey, confidence]) => ({ callerKey, confidence })),
+        ])
       ),
     };
   }
@@ -124,11 +148,32 @@ export class CallGraphIndex {
     if (!data || typeof data !== 'object') return idx;
     const { bySite } = data as Partial<Serialized>;
     if (!bySite || typeof bySite !== 'object') return idx;
-    for (const [callee, callerKeys] of Object.entries(bySite)) {
-      if (Array.isArray(callerKeys) && callerKeys.every(k => typeof k === 'string')) {
-        idx.bySite.set(callee, new Set(callerKeys));
-        // Reconstruct forward index from serialized reverse index
-        for (const callerKey of callerKeys) {
+
+    for (const [callee, edges] of Object.entries(bySite)) {
+      if (!Array.isArray(edges)) continue;
+
+      for (const edge of edges) {
+        // Support both new format ({ callerKey, confidence }) and
+        // legacy format (plain string) for backward compatibility.
+        if (typeof edge === 'string') {
+          // Legacy: plain "callerFile:callerSymbol" string, no confidence stored
+          if (!idx.bySite.has(callee)) {
+            idx.bySite.set(callee, new Map());
+          }
+          idx.bySite.get(callee)!.set(edge, 'extracted');
+          if (!idx.byCallerKey.has(edge)) {
+            idx.byCallerKey.set(edge, new Set());
+          }
+          idx.byCallerKey.get(edge)!.add(callee);
+        } else if (edge && typeof edge === 'object' && 'callerKey' in edge) {
+          const { callerKey, confidence } = edge as SerializedEdge;
+          if (typeof callerKey !== 'string') continue;
+          const resolvedConfidence: EdgeConfidence =
+            confidence === 'inferred' || confidence === 'ambiguous' ? confidence : 'extracted';
+          if (!idx.bySite.has(callee)) {
+            idx.bySite.set(callee, new Map());
+          }
+          idx.bySite.get(callee)!.set(callerKey, resolvedConfidence);
           if (!idx.byCallerKey.has(callerKey)) {
             idx.byCallerKey.set(callerKey, new Set());
           }
