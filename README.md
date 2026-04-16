@@ -190,6 +190,21 @@ npx tsx benchmarks/benchmark.ts
 
 See [`benchmarks/README.md`](benchmarks/README.md) for methodology and how to reproduce results independently.
 
+## Token reduction benchmarks
+
+Measured on real open-source repos with realistic review scenarios (skeletonization applies to JS/TS files; Python and Rust show graph indexing metrics only):
+
+| Repository | Language | Files | Raw tokens | Skeleton tokens | Reduction |
+|---|---|---|---|---|---|
+| expressjs/express | JavaScript | 141 | ~4,646 | ~390 | **92%** |
+| sindresorhus/got | TypeScript | 71 | ~10,807 | ~742 | **93%** |
+| pallets/flask | Python | 83 | n/a | n/a | n/a |
+| SergioBenitez/Rocket | Rust | 495 | ~1,281 | ~90 | **93%** |
+| fastify/fastify | JavaScript | 258 | ~2,136 | ~202 | **91%** |
+| **Average (JS/TS/RS)** | | | | | **92%** |
+
+Token counts use the standard 4 chars/token approximation. Results saved in [`benchmarks/public-repos-results.json`](benchmarks/public-repos-results.json). Run `npm run bench:repos` to reproduce.
+
 ---
 
 ## Security
