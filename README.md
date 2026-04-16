@@ -62,7 +62,7 @@ ctxloom index
 
 ---
 
-## Tools — 22 total
+## Tools — 27 total
 
 ### Search & Context
 
@@ -136,6 +136,10 @@ ctxloom --help               Show help
 | Rust | ✅ `mod` resolution | ✅ | ✅ |
 | Go | ✅ Relative paths | ✅ | ✅ |
 | Java | ✅ Dot-to-slash | ✅ | ✅ |
+| C# | ✅ Namespace resolution | ✅ | ✅ |
+| Ruby | ✅ Relative paths | ✅ | ✅ |
+| Kotlin | ✅ Package imports | ✅ | ✅ |
+| Swift | ✅ Module imports | ✅ | ✅ |
 
 ---
 
@@ -146,7 +150,7 @@ ctxloom --help               Show help
 │                      MCP Interface                       │
 │                   (Stdio transport)                      │
 ├──────────────────────────────────────────────────────────┤
-│                    22 Tools (ToolRegistry)                │
+│                    27 Tools (ToolRegistry)                │
 │  Search · Graph Intelligence · Navigation · Review       │
 ├──────────────────────────────────────────────────────────┤
 │                    Context Engine                         │
