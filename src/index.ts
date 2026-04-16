@@ -19,6 +19,9 @@ import { DependencyGraph } from './graph/DependencyGraph.js';
 import { ASTParser } from './ast/ASTParser.js';
 import { runSetupWizard } from './setup/setup-wizard.js';
 import { GrammarLoader } from './grammars/GrammarLoader.js';
+import { RepoRegistry } from './tools/cross-repo-search.js';
+import os from 'node:os';
+import path from 'node:path';
 
 const command = process.argv[2];
 
@@ -45,6 +48,38 @@ async function main(): Promise<void> {
 
     case 'setup': {
       await runSetupWizard();
+      break;
+    }
+
+    case 'register': {
+      const repoPath = process.argv[3];
+      if (!repoPath) {
+        console.error('[ctxloom] Usage: ctxloom register <path>');
+        process.exit(1);
+      }
+      const absPath = path.resolve(repoPath);
+      const dbPath = path.join(absPath, '.ctxloom', 'vectors.lancedb');
+      const registryPath = path.join(os.homedir(), '.ctxloom', 'repos.json');
+      const reg = new RepoRegistry(registryPath);
+      reg.register(absPath, dbPath);
+      console.log(`[ctxloom] Registered repo: ${absPath}`);
+      console.log(`[ctxloom] LanceDB path: ${dbPath}`);
+      console.log(`[ctxloom] Registry: ${registryPath}`);
+      break;
+    }
+
+    case 'repos': {
+      const registryPath = path.join(os.homedir(), '.ctxloom', 'repos.json');
+      const reg = new RepoRegistry(registryPath);
+      const repos = reg.list();
+      if (repos.length === 0) {
+        console.log('[ctxloom] No repos registered. Run: ctxloom register <path>');
+      } else {
+        console.log(`\n[ctxloom] Registered repos (${repos.length}):`);
+        for (const r of repos) {
+          console.log(`  ${r.name.padEnd(20)} ${r.root}`);
+        }
+      }
       break;
     }
 
@@ -87,6 +122,8 @@ Usage:
   ctxloom setup                Detect and configure MCP-compatible AI tools
   ctxloom grammars             Show grammar cache status
   ctxloom grammars --download  Pre-download all language grammars
+  ctxloom register <path>      Register a repo for cross-repo search
+  ctxloom repos                List all registered repos
   ctxloom --help               Show this help
 
 Environment Variables:
@@ -127,6 +164,7 @@ Tools Exposed:
   ctx_git_diff_review        All-in-one code review packet: diffs + skeletons + blast radius
   ctx_refactor_preview       Read-only symbol rename diff preview across definition files and importers
   ctx_execution_flow         DFS call graph traversal from entry point with cycle detection
+  ctx_cross_repo_search      Federated semantic search across all registered repos
 `);
       break;
     }
