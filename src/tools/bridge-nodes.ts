@@ -17,6 +17,9 @@ const Schema = z.object({
   sample: z.number().min(10).max(1000).optional().default(200).describe(
     'Max source nodes for BFS sampling (default: 200). Lower = faster but approximate.',
   ),
+  detail_level: z.enum(['standard', 'minimal']).default('standard').describe(
+    '"standard" (default) returns full per-file listings. "minimal" returns counts only — ~60% fewer tokens.',
+  ),
 });
 
 function escapeXML(text: string): string {
@@ -101,11 +104,16 @@ export function registerBridgeNodesTool(registry: ToolRegistry, ctx: ServerConte
             type: 'number',
             description: 'Max source nodes for BFS sampling (default: 200). Lower = faster, approximate.',
           },
+          detail_level: {
+            type: 'string',
+            enum: ['standard', 'minimal'],
+            description: '"standard" returns full listings. "minimal" returns counts only (saves ~60% tokens).',
+          },
         },
       },
     },
     async (args) => {
-      const { limit, sample } = Schema.parse(args);
+      const { limit, sample, detail_level } = Schema.parse(args);
       const graph = await ctx.getGraph();
       const files = graph.allFiles();
 
@@ -125,6 +133,10 @@ export function registerBridgeNodesTool(registry: ToolRegistry, ctx: ServerConte
         .filter(([, score]) => score > 0)
         .sort((a, b) => b[1] - a[1])
         .slice(0, limit);
+
+      if (detail_level === 'minimal') {
+        return `<bridge_nodes count="${bridges.length}" detail_level="minimal" />`;
+      }
 
       const sampled = files.length > sample;
       const lines = [

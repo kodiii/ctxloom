@@ -18,6 +18,9 @@ const Schema = z.object({
   max_cross: z.number().min(1).max(200).optional().default(50).describe(
     'Max cross-community imports to report (default: 50)',
   ),
+  detail_level: z.enum(['standard', 'minimal']).default('standard').describe(
+    '"standard" (default) returns full per-item listings. "minimal" returns counts only — ~60% fewer tokens.',
+  ),
 });
 
 const TEST_PATTERN = /(\.test\.|\.spec\.|\/tests\/|\/test\/|\/spec\/|__tests__)/;
@@ -104,11 +107,16 @@ export function registerSurprisingConnectionsTool(registry: ToolRegistry, ctx: S
             type: 'number',
             description: 'Max cross-community imports to report (default: 50)',
           },
+          detail_level: {
+            type: 'string',
+            enum: ['standard', 'minimal'],
+            description: '"standard" returns full listings. "minimal" returns counts only (saves ~60% tokens).',
+          },
         },
       },
     },
     async (args) => {
-      const { max_cycles, max_cross } = Schema.parse(args);
+      const { max_cycles, max_cross, detail_level } = Schema.parse(args);
       const graph = await ctx.getGraph();
       const files = graph.allFiles();
 
@@ -151,6 +159,11 @@ export function registerSurprisingConnectionsTool(registry: ToolRegistry, ctx: S
       }
 
       // ── Build XML ─────────────────────────────────────────────────────────
+      if (detail_level === 'minimal') {
+        const totalCount = cycles.length + prodImportsTest.length + crossImports.length;
+        return `<surprising_connections count="${totalCount}" detail_level="minimal" />`;
+      }
+
       const lines = [
         `<surprising_connections total_files="${files.length}">`,
         `  <circular_dependencies count="${cycles.length}">`,

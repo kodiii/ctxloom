@@ -12,6 +12,9 @@ import type { ServerContext } from './context.js';
 const Schema = z.object({
   limit: z.number().min(1).max(100).optional().default(20).describe('Number of hub nodes to return (default: 20)'),
   min_degree: z.number().min(0).optional().default(2).describe('Minimum total degree to include (default: 2)'),
+  detail_level: z.enum(['standard', 'minimal']).default('standard').describe(
+    '"standard" (default) returns full per-file listings. "minimal" returns counts only — ~60% fewer tokens.',
+  ),
 });
 
 function escapeXML(text: string): string {
@@ -32,11 +35,16 @@ export function registerHubNodesTool(registry: ToolRegistry, ctx: ServerContext)
         properties: {
           limit: { type: 'number', description: 'Number of hub nodes to return (default: 20, max: 100)' },
           min_degree: { type: 'number', description: 'Minimum total degree to include (default: 2)' },
+          detail_level: {
+            type: 'string',
+            enum: ['standard', 'minimal'],
+            description: '"standard" returns full listings. "minimal" returns counts only (saves ~60% tokens).',
+          },
         },
       },
     },
     async (args) => {
-      const { limit, min_degree } = Schema.parse(args);
+      const { limit, min_degree, detail_level } = Schema.parse(args);
       const graph = await ctx.getGraph();
       const files = graph.allFiles();
 
@@ -50,6 +58,10 @@ export function registerHubNodesTool(registry: ToolRegistry, ctx: ServerContext)
         .filter(h => h.totalDegree >= min_degree)
         .sort((a, b) => b.totalDegree - a.totalDegree)
         .slice(0, limit);
+
+      if (detail_level === 'minimal') {
+        return `<hub_nodes count="${hubs.length}" detail_level="minimal" />`;
+      }
 
       const lines = [
         `<hub_nodes total_files="${files.length}" showing="${hubs.length}" min_degree="${min_degree}">`,

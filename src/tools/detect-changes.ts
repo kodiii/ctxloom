@@ -20,6 +20,9 @@ const Schema = z.object({
   changed_files: z.array(z.string()).optional(),
   use_git: z.boolean().optional().default(true),
   depth: z.number().min(1).max(10).optional().default(3),
+  detail_level: z.enum(['standard', 'minimal']).default('standard').describe(
+    '"standard" (default) returns full per-file risk details. "minimal" returns counts only — ~60% fewer tokens.',
+  ),
 });
 
 type RiskLevel = 'critical' | 'high' | 'medium' | 'low';
@@ -101,11 +104,16 @@ export function registerDetectChangesTool(registry: ToolRegistry, ctx: ServerCon
           },
           use_git: { type: 'boolean', description: 'Auto-detect from git diff HEAD~1 (default: true)' },
           depth: { type: 'number', description: 'Blast radius traversal depth (default: 3)' },
+          detail_level: {
+            type: 'string',
+            enum: ['standard', 'minimal'],
+            description: '"standard" returns full risk details. "minimal" returns counts only (saves ~60% tokens).',
+          },
         },
       },
     },
     async (args) => {
-      const { changed_files, use_git } = Schema.parse(args);
+      const { changed_files, use_git, detail_level } = Schema.parse(args);
 
       let files = changed_files ?? [];
       if (files.length === 0 && use_git) {
@@ -122,6 +130,12 @@ export function registerDetectChangesTool(registry: ToolRegistry, ctx: ServerCon
 
       const criticalCount = scored.filter(s => s.level === 'critical').length;
       const highCount = scored.filter(s => s.level === 'high').length;
+      const mediumCount = scored.filter(s => s.level === 'medium').length;
+      const lowCount = scored.filter(s => s.level === 'low').length;
+
+      if (detail_level === 'minimal') {
+        return `<detect_changes count="${scored.length}" critical="${criticalCount}" high="${highCount}" medium="${mediumCount}" low="${lowCount}" detail_level="minimal" />`;
+      }
 
       const xml = [
         `<detect_changes count="${scored.length}" critical="${criticalCount}" high="${highCount}">`,

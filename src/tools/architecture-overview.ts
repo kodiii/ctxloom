@@ -13,6 +13,9 @@ const Schema = z.object({
   hub_limit: z.number().min(1).max(10).optional().default(3).describe(
     'Number of top hub files to show per community (default: 3)',
   ),
+  detail_level: z.enum(['standard', 'minimal']).default('standard').describe(
+    '"standard" (default) returns full per-community listings. "minimal" returns counts only — ~60% fewer tokens.',
+  ),
 });
 
 function escapeXML(text: string): string {
@@ -35,11 +38,16 @@ export function registerArchitectureOverviewTool(registry: ToolRegistry, ctx: Se
             type: 'number',
             description: 'Number of top hub files to show per community (default: 3, max: 10)',
           },
+          detail_level: {
+            type: 'string',
+            enum: ['standard', 'minimal'],
+            description: '"standard" returns full listings. "minimal" returns counts only (saves ~60% tokens).',
+          },
         },
       },
     },
     async (args) => {
-      const { hub_limit } = Schema.parse(args);
+      const { hub_limit, detail_level } = Schema.parse(args);
       const graph = await ctx.getGraph();
       const files = graph.allFiles();
 
@@ -49,6 +57,10 @@ export function registerArchitectureOverviewTool(registry: ToolRegistry, ctx: Se
 
       const detector = new CommunityDetector(graph);
       const communities = detector.detect();
+
+      if (detail_level === 'minimal') {
+        return `<architecture_overview communities="${communities.length}" files="${files.length}" detail_level="minimal" />`;
+      }
 
       // Build file → community id map for cross-community coupling
       const fileToComm = new Map<string, number>();
