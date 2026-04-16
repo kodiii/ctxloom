@@ -370,7 +370,7 @@ function extractPhpImports(content: string): RawImport[] {
   const results: RawImport[] = [];
 
   // require/require_once/include/include_once with relative paths
-  const requireRe = /(?:require|require_once|include|include_once)\s+['"](\.[^'"]+\.php)['"]/gm;
+  const requireRe = /(?:require|require_once|include|include_once)\s*\(?['"](\.[^'"]+\.php)['"]\)?/gm;
   let m: RegExpExecArray | null;
   while ((m = requireRe.exec(content)) !== null) {
     results.push({ specifier: m[1], isRelative: true });
@@ -395,6 +395,8 @@ function resolvePhpImport(
 
   if (raw.isRelative) {
     const candidate = path.resolve(fromDir, raw.specifier);
+    const rootResolved = path.resolve(rootDir);
+    if (!candidate.startsWith(rootResolved + path.sep) && candidate !== rootResolved) return null;
     if (fs.existsSync(candidate)) return path.relative(rootDir, candidate);
     return null;
   }
