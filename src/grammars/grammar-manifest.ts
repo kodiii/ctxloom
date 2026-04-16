@@ -49,6 +49,14 @@ export const GRAMMAR_MANIFEST: GrammarEntry[] = [
     wasmFile: 'tree-sitter-java.wasm',
     sha256: null,
   },
+  {
+    language: 'csharp',
+    extensions: ['.cs'],
+    npmPackage: '@vscode/tree-sitter-wasm',
+    version: '0.3.1',
+    wasmFile: 'wasm/tree-sitter-c-sharp.wasm',
+    sha256: null,
+  },
 ];
 
 export function findGrammar(language: string): GrammarEntry | undefined {

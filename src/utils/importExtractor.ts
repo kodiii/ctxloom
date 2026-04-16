@@ -43,6 +43,7 @@ export function extractImports(filePath: string, content: string): RawImport[] {
     case '.rs':   return extractRustModules(content);
     case '.go':   return extractGoImports(content);
     case '.java': return extractJavaImports(content);
+    case '.cs':   return extractCSharpImports(content);
     default:      return [];
   }
 }
@@ -68,6 +69,7 @@ export function resolveImport(
   if (ext === '.rs') return resolveRustModule(fromDir, raw, rootDir);
   if (ext === '.go') return resolveGoImportFull(fromAbs, fromDir, raw, rootDir);
   if (ext === '.java') return resolveJavaImport(fromDir, raw, rootDir);
+  if (ext === '.cs') return resolveCSharpImport(fromDir, raw, rootDir);
 
   return null;
 }
@@ -247,5 +249,32 @@ function resolveJavaImport(
     return path.relative(rootDir, localPath);
   }
 
+  return null;
+}
+
+// ─── C# ───────────────────────────────────────────────────────────────────
+
+function extractCSharpImports(content: string): RawImport[] {
+  const results: RawImport[] = [];
+  const usingRe = /^using\s+(?:static\s+)?([\w.]+)\s*;/gm;
+  let m: RegExpExecArray | null;
+  while ((m = usingRe.exec(content)) !== null) {
+    results.push({ specifier: m[1], isRelative: false });
+  }
+  return results;
+}
+
+function resolveCSharpImport(
+  fromDir: string,
+  raw: RawImport,
+  rootDir: string,
+): string | null {
+  // using Company.Project.Auth → try rootDir/Company/Project/Auth.cs
+  const filePath = path.join(rootDir, raw.specifier.replace(/\./g, path.sep) + '.cs');
+  if (fs.existsSync(filePath)) return path.relative(rootDir, filePath);
+  // Same-directory fallback: last segment only
+  const className = raw.specifier.split('.').pop() ?? raw.specifier;
+  const local = path.join(fromDir, className + '.cs');
+  if (fs.existsSync(local)) return path.relative(rootDir, local);
   return null;
 }
