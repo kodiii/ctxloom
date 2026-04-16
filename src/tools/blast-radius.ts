@@ -18,6 +18,9 @@ const Schema = z.object({
   changed_files: z.array(z.string()).optional().describe('Changed file paths (relative). Defaults to git diff HEAD~1.'),
   depth: z.number().min(1).max(10).optional().default(3).describe('Traversal depth (default: 3)'),
   use_git: z.boolean().optional().default(true).describe('Auto-detect changed files from git diff HEAD~1'),
+  detail_level: z.enum(['standard', 'minimal']).default('standard').describe(
+    '"standard" (default) returns full per-file listings. "minimal" returns counts only — ~60% fewer tokens.',
+  ),
 });
 
 export interface BlastRadiusOptions {
@@ -100,6 +103,43 @@ function escapeXML(text: string): string {
   return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
+export function buildBlastRadiusXml(
+  result: BlastRadiusResult,
+  depth: number,
+  detailLevel: 'standard' | 'minimal',
+): string {
+  const graphType = result.callSites.length > 0 ? 'import+call' : 'import';
+
+  if (detailLevel === 'minimal') {
+    return [
+      `<blast_radius changed="${result.changedFiles.length}" direct_importers="${result.directImporters.length}"`,
+      ` transitive_importers="${result.transitiveImporters.length}" call_sites="${result.callSites.length}"`,
+      ` depth="${depth}" graph_type="${graphType}" detail_level="minimal" />`,
+    ].join('');
+  }
+
+  // Standard mode — full per-file XML
+  const lines = [
+    `<blast_radius changed_files="${result.changedFiles.length}" depth="${depth}" graph_type="${graphType}">`,
+    `  <changed count="${result.changedFiles.length}">`,
+    ...result.changedFiles.map(f => `    <file path="${escapeXML(f)}" />`),
+    '  </changed>',
+    `  <direct_importers count="${result.directImporters.length}">`,
+    ...result.directImporters.map(f => `    <file path="${escapeXML(f)}" />`),
+    '  </direct_importers>',
+    `  <transitive_importers count="${result.transitiveImporters.length}">`,
+    ...result.transitiveImporters.map(f => `    <file path="${escapeXML(f)}" />`),
+    '  </transitive_importers>',
+    `  <call_sites count="${result.callSites.length}">`,
+    ...result.callSites.map(s =>
+      `    <call_site file="${escapeXML(s.file)}" caller="${escapeXML(s.callerSymbol)}" callee="${escapeXML(s.calleeSymbol)}" />`,
+    ),
+    '  </call_sites>',
+    '</blast_radius>',
+  ];
+  return lines.join('\n');
+}
+
 export function registerBlastRadiusTool(registry: ToolRegistry, ctx: ServerContext): void {
   registry.register(
     'ctx_blast_radius',
@@ -118,11 +158,16 @@ export function registerBlastRadiusTool(registry: ToolRegistry, ctx: ServerConte
           },
           depth: { type: 'number', description: 'Traversal depth (default: 3, max: 10)' },
           use_git: { type: 'boolean', description: 'Auto-detect from git diff HEAD~1 (default: true)' },
+          detail_level: {
+            type: 'string',
+            enum: ['standard', 'minimal'],
+            description: '"standard" returns full listings. "minimal" returns counts only (saves ~60% tokens).',
+          },
         },
       },
     },
     async (args) => {
-      const { changed_files, depth, use_git } = Schema.parse(args);
+      const { changed_files, depth, use_git, detail_level } = Schema.parse(args);
 
       let files = changed_files ?? [];
       if (files.length === 0 && use_git) {
@@ -136,26 +181,7 @@ export function registerBlastRadiusTool(registry: ToolRegistry, ctx: ServerConte
       const graph = await ctx.getGraph();
       const result = await computeBlastRadius({ changedFiles: files, depth, projectRoot: ctx.projectRoot, graph });
 
-      const graphType = result.callSites.length > 0 ? 'import+call' : 'import';
-      const lines = [
-        `<blast_radius changed_files="${result.changedFiles.length}" depth="${depth}" graph_type="${graphType}">`,
-        `  <changed count="${result.changedFiles.length}">`,
-        ...result.changedFiles.map(f => `    <file path="${escapeXML(f)}" />`),
-        '  </changed>',
-        `  <direct_importers count="${result.directImporters.length}">`,
-        ...result.directImporters.map(f => `    <file path="${escapeXML(f)}" />`),
-        '  </direct_importers>',
-        `  <transitive_importers count="${result.transitiveImporters.length}">`,
-        ...result.transitiveImporters.map(f => `    <file path="${escapeXML(f)}" />`),
-        '  </transitive_importers>',
-        `  <call_sites count="${result.callSites.length}">`,
-        ...result.callSites.map(s =>
-          `    <call_site file="${escapeXML(s.file)}" caller="${escapeXML(s.callerSymbol)}" callee="${escapeXML(s.calleeSymbol)}" />`,
-        ),
-        '  </call_sites>',
-        '</blast_radius>',
-      ];
-      return lines.join('\n');
+      return buildBlastRadiusXml(result, depth, detail_level);
     },
   );
 }

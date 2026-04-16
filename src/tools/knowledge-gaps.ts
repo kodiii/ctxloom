@@ -18,6 +18,9 @@ const Schema = z.object({
   limit: z.number().min(1).max(100).optional().default(20).describe(
     'Max entries per category (default: 20)',
   ),
+  detail_level: z.enum(['standard', 'minimal']).default('standard').describe(
+    '"standard" (default) returns full per-file listings. "minimal" returns counts only — ~60% fewer tokens.',
+  ),
 });
 
 const TEST_PATTERN = /(\.test\.|\.spec\.|\/tests\/|\/test\/|\/spec\/|__tests__)/;
@@ -47,11 +50,16 @@ export function registerKnowledgeGapsTool(registry: ToolRegistry, ctx: ServerCon
             type: 'number',
             description: 'Max results per category (default: 20)',
           },
+          detail_level: {
+            type: 'string',
+            enum: ['standard', 'minimal'],
+            description: '"standard" returns full listings. "minimal" returns counts only (saves ~60% tokens).',
+          },
         },
       },
     },
     async (args) => {
-      const { min_importers, limit } = Schema.parse(args);
+      const { min_importers, limit, detail_level } = Schema.parse(args);
       const graph = await ctx.getGraph();
       const files = graph.allFiles();
 
@@ -96,6 +104,12 @@ export function registerKnowledgeGapsTool(registry: ToolRegistry, ctx: ServerCon
       }
 
       untestedHubs.sort((a, b) => b.importers - a.importers);
+
+      const totalGaps = isolated.length + untestedHubs.length + deadCode.length;
+
+      if (detail_level === 'minimal') {
+        return `<knowledge_gaps count="${totalGaps}" detail_level="minimal" />`;
+      }
 
       const lines = [
         `<knowledge_gaps total_files="${files.length}">`,
