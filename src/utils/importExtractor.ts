@@ -50,6 +50,7 @@ export function extractImports(filePath: string, content: string): RawImport[] {
     case '.kts': return extractKotlinImports(content);
     case '.swift': return extractSwiftImports(content);
     case '.php':   return extractPhpImports(content);
+    case '.dart':  return extractDartImports(content);
     case '.ipynb': return extractNotebookImports(filePath, content);
     default:      return [];
   }
@@ -81,6 +82,7 @@ export function resolveImport(
   if (ext === '.kt' || ext === '.kts') return resolveKotlinImport(fromDir, raw, rootDir);
   if (ext === '.swift') return resolveSwiftImport(fromDir, raw, rootDir);
   if (ext === '.php') return resolvePhpImport(fromAbs, fromDir, raw, rootDir);
+  if (ext === '.dart') return resolveDartImport(fromAbs, fromDir, raw, rootDir);
   if (ext === '.ipynb') return resolvePythonImport(fromAbs, fromDir, raw, rootDir);
 
   return null;
@@ -411,6 +413,39 @@ function resolvePhpImport(
   for (const c of candidates) {
     if (fs.existsSync(c)) return path.relative(rootDir, c);
   }
+  return null;
+}
+
+// ─── Dart ─────────────────────────────────────────────────────────────────
+
+function extractDartImports(content: string): RawImport[] {
+  const results: RawImport[] = [];
+  // Only relative imports (starting with . or ..); skip package: and dart: which are library imports
+  const importRe = /^import\s+['"](\.[^'"]+\.dart)['"]/gm;
+  let m: RegExpExecArray | null;
+  while ((m = importRe.exec(content)) !== null) {
+    results.push({ specifier: m[1], isRelative: true });
+  }
+  return results;
+}
+
+function resolveDartImport(
+  fromAbs: string,
+  fromDir: string,
+  raw: RawImport,
+  rootDir: string,
+): string | null {
+  void fromAbs;
+
+  const candidate = path.resolve(fromDir, raw.specifier);
+  // *** IMPORTANT: bound to rootDir — prevent path traversal ***
+  const rootResolved = path.resolve(rootDir);
+  if (!candidate.startsWith(rootResolved + path.sep) && candidate !== rootResolved) return null;
+  if (fs.existsSync(candidate)) return path.relative(rootDir, candidate);
+  // Also try without explicit .dart extension
+  const withoutExt = path.resolve(fromDir, raw.specifier.replace(/\.dart$/, ''));
+  const withExt = withoutExt + '.dart';
+  if (fs.existsSync(withExt)) return path.relative(rootDir, withExt);
   return null;
 }
 

@@ -94,6 +94,7 @@ export class ASTParser {
   private kotlinLang: TreeSitter.Language | null = null;
   private swiftLang: TreeSitter.Language | null = null;
   private phpLang: TreeSitter.Language | null = null;
+  private dartLang: TreeSitter.Language | null = null;
   private grammarLoader = new GrammarLoader();
 
   async init(): Promise<void> {
@@ -237,6 +238,17 @@ export class ASTParser {
     }
   }
 
+  private async loadDart(): Promise<void> {
+    if (this.dartLang) return;
+    try {
+      const wasmPath = await this.grammarLoader.ensureGrammar('dart');
+      this.dartLang = await TreeSitter.Language.load(wasmPath);
+    } catch (err) {
+      const { logger } = await import('../utils/logger.js');
+      logger.warn('Dart grammar unavailable', { detail: err instanceof Error ? err.message : String(err) });
+    }
+  }
+
   async parse(filePath: string): Promise<ParsedNode[]> {
     if (!this.tsLang) throw new Error('ASTParser not initialized. Call init() first.');
 
@@ -253,6 +265,7 @@ export class ASTParser {
     if (ext === '.kt' || ext === '.kts') return this.parseKotlin(filePath);
     if (ext === '.swift') return this.parseSwift(filePath);
     if (ext === '.php') return this.parsePhp(filePath);
+    if (ext === '.dart') return this.parseDart(filePath);
 
     const parser = new TreeSitter.Parser();
     parser.setLanguage(this.tsLang);
@@ -1266,6 +1279,59 @@ export class ASTParser {
           if (nameNode) {
             nodes.push({ type: 'interface', name: nameNode.text, signature: `interface ${nameNode.text}`,
               startLine: node.startPosition.row + 1, endLine: node.endPosition.row + 1 });
+          }
+          return;
+        }
+      }
+      for (const child of node.children) {
+        if (child) walk(child);
+      }
+    };
+
+    walk(tree.rootNode);
+    return nodes;
+  }
+
+  private async parseDart(filePath: string): Promise<ParsedNode[]> {
+    if (!this.dartLang) await this.loadDart();
+    if (!this.dartLang) return [];
+
+    const parser = new TreeSitter.Parser();
+    parser.setLanguage(this.dartLang);
+
+    const source = fs.readFileSync(filePath, 'utf-8');
+    const tree = parser.parse(source);
+    if (!tree) return [];
+
+    const nodes: ParsedNode[] = [];
+    const lines = source.split('\n');
+
+    const walk = (node: TreeSitter.Node): void => {
+      switch (node.type) {
+        case 'import_or_export': {
+          const uriNode = node.children.find(c => c?.type === 'uri');
+          const uri = uriNode?.text?.replace(/['"]/g, '') ?? '';
+          if (uri.startsWith('.')) {
+            nodes.push({ type: 'import', name: uri, source: uri,
+              startLine: node.startPosition.row + 1, endLine: node.endPosition.row + 1 });
+          }
+          return;
+        }
+        case 'function_signature':
+        case 'function_declaration': {
+          const nameNode = node.childForFieldName?.('name') ?? node.children.find(c => c?.type === 'identifier');
+          if (nameNode) {
+            nodes.push({ type: 'function', name: nameNode.text,
+              signature: (lines[node.startPosition.row] ?? '').trim(),
+              startLine: node.startPosition.row + 1, endLine: node.endPosition.row + 1 });
+          }
+          return;
+        }
+        case 'class_definition': {
+          const nameNode = node.childForFieldName?.('name') ?? node.children.find(c => c?.type === 'identifier');
+          if (nameNode) {
+            nodes.push({ type: 'class', name: nameNode.text, signature: `class ${nameNode.text}`,
+              methods: [], startLine: node.startPosition.row + 1, endLine: node.endPosition.row + 1 });
           }
           return;
         }

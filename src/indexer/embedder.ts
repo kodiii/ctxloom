@@ -59,7 +59,7 @@ export function collectFiles(dir: string, results: string[] = []): string[] {
 
   const SUPPORTED_EXTENSIONS = new Set([
     '.ts', '.tsx', '.js', '.jsx', '.mjs',
-    '.py', '.rs', '.go', '.java', '.cs', '.rb', '.kt', '.kts', '.swift', '.php',
+    '.py', '.rs', '.go', '.java', '.cs', '.rb', '.kt', '.kts', '.swift', '.php', '.dart',
     '.c', '.cpp', '.h',
     '.md', '.json', '.yaml', '.yml', '.toml',
     '.ipynb',

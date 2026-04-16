@@ -160,6 +160,15 @@ describe('resolveImport()', () => {
     });
   });
 
+  describe('Dart imports', () => {
+    it('extracts relative import paths', () => {
+      const content = `import 'package:flutter/material.dart';\nimport './models/user.dart';\nimport '../utils/helpers.dart';\n`;
+      const result = extractImports('/project/lib/main.dart', content);
+      expect(result.some(r => r.isRelative && r.specifier.includes('user.dart'))).toBe(true);
+      expect(result.some(r => r.isRelative && r.specifier.includes('helpers.dart'))).toBe(true);
+    });
+  });
+
   describe('Rust resolution', () => {
     it('should resolve mod foo to foo.rs', () => {
       fs.writeFileSync(path.join(tempDir, 'utils.rs'), '');
