@@ -124,6 +124,7 @@ Tools Exposed:
   ctx_surprising_connections Circular deps, cross-community imports, prod→test violations
   ctx_wiki_generate          Generate .ctxloom/wiki/ — one Markdown page per community
   ctx_graph_export           Export graph: GraphML (Gephi), DOT (Graphviz), Obsidian vault
+  ctx_git_diff_review        All-in-one code review packet: diffs + skeletons + blast radius
 `);
       break;
     }
