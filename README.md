@@ -1,12 +1,10 @@
 # ctxloom — The Universal Code Context Engine
 
-A local-first MCP server that gives AI coding assistants deep understanding of your codebase through hybrid **Vector + AST + Graph** search, with **Skeletonization** for 70-90% token reduction.
+A local-first MCP server that gives AI coding assistants deep structural understanding of your codebase through hybrid **Vector + AST + Graph** search, with **Skeletonization** for 70–90% token reduction.
 
-No API keys. No cloud. Everything runs on your machine.
+No API keys. No cloud. No Python. Everything runs on your machine.
 
 ## Quick Start
-
-### Install from npm
 
 **Prerequisites:** Node.js 20+ and an MCP-compatible AI tool (Claude Code, Cursor, Windsurf, etc.)
 
@@ -24,8 +22,6 @@ ctxloom index
 
 ### Manual Configuration
 
-Add ctxloom to your MCP client config:
-
 ```jsonc
 // ~/.claude/claude_desktop_config.json  (or equivalent)
 {
@@ -38,69 +34,7 @@ Add ctxloom to your MCP client config:
 }
 ```
 
-> If installed globally, use `"command": "ctxloom"` with `"args": []` instead.
-
-### Auto-Setup — `ctxloom setup`
-
-The interactive wizard detects all installed MCP-compatible tools and configures them with a single confirmation. Supports **13 clients**:
-
-| Client | Detection Method | Config Format |
-|--------|-----------------|---------------|
-| Claude Desktop | Config + App Bundle | `mcpServers` |
-| Claude Code | Config + CLI (`claude`) | `mcpServers` |
-| Cursor | Config + CLI + App Bundle | `mcpServers` |
-| VS Code | Config + CLI + App Bundle | `servers` |
-| Windsurf | Config + CLI + App Bundle | `mcpServers` |
-| Augment Code | Config + CLI | `mcpServers` |
-| Kilo Code | Config + CLI | `mcpServers` |
-| Continue.dev | Config + CLI | `experimental.mcpServers` |
-| Aider | Config + CLI | `mcpServers` |
-| Codex CLI | Config + CLI | `mcpServers` |
-| Kimi | Config + CLI | `mcpServers` |
-| Qwen Code | Config + CLI | `mcpServers` |
-| JetBrains AI | Config + App Bundle | `mcpServers` |
-
-**Detection methods:**
-- **Config files** — Checks common config paths (`~/.claude/mcp.json`, VS Code settings, etc.)
-- **CLI binaries** — Runs `which`/`where` to find installed commands
-- **App bundles** — Checks `/Applications/` on macOS
-
-**Safety:** The wizard never silently modifies configs — it shows what it found and asks for explicit confirmation before writing anything.
-
-**Postinstall:** After `npm install -g ctxloom`, a lightweight notification shows detected tools and suggests running `ctxloom setup`. Skipped automatically in CI/CD environments.
-
----
-
-## CLI Commands
-
-```
-ctxloom              Start MCP server on Stdio transport
-ctxloom index        Index the current directory and build the dependency graph
-ctxloom setup        Detect and configure MCP-compatible AI tools (interactive)
-ctxloom --help       Show help
-```
-
-## Environment Variables
-
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `CTXLOOM_ROOT` | Project root directory to index | Current working directory |
-| `LOG_LEVEL` | Logging verbosity: `debug`, `info`, `warn`, `error` | `info` |
-
----
-
-## Tools
-
-| Tool | Description |
-|------|-------------|
-| `ctx_search` | Hybrid semantic + graph search over the codebase (limit 1–100) |
-| `ctx_get_file` | Safe file read with path traversal protection (5 MB max) |
-| `ctx_get_context_packet` | Smart multi-file context: primary file + dependency skeletons + reverse importers |
-| `ctx_get_call_graph` | Bidirectional call graph traversal with configurable depth (max 10) |
-| `ctx_get_definition` | Symbol definition lookup via AST index |
-| `ctx_get_rules` | Project rule injection from `.cursorrules`, `CLAUDE.md`, `CONTEXT.md`, `.ctxloomrc` |
-| `ctx_similar_files` | Find semantically similar files using vector embeddings (limit 1–100) |
-| `ctx_status` | Server status: graph size, vector store record count, initialization state |
+> If installed globally: `"command": "ctxloom"` with `"args": []`.
 
 ---
 
@@ -111,137 +45,245 @@ ctxloom --help       Show help
 | Zero Python dependencies | ✅ Pure JS/TS | ❌ Python required | varies |
 | Local-first (no cloud) | ✅ | ✅ | varies |
 | Blast radius analysis | ✅ `ctx_blast_radius` | ✅ | ❌ |
-| Community detection | 🔜 Phase 2 | ✅ | ❌ |
-| Tree-sitter AST | ✅ TypeScript + Python | ✅ Multi-language | varies |
-| Vector semantic search | ✅ | ✅ | varies |
-| Token reduction (skeletonization) | ✅ ~80% | ✅ | ❌ |
-| Grammar size (npm install) | ✅ <5MB (lazy-loaded) | ❌ Large | varies |
+| Community / cluster detection | ✅ Louvain (pure JS) | ✅ Leiden (Python) | ❌ |
+| Architecture overview | ✅ `ctx_architecture_overview` | ✅ | ❌ |
+| Execution flow tracing | ✅ `ctx_execution_flow` | ❌ | ❌ |
+| Refactor rename preview | ✅ `ctx_refactor_preview` | ❌ | ❌ |
+| Wiki generation (no LLM) | ✅ `ctx_wiki_generate` | ✅ | ❌ |
+| Graph export (Gephi/Obsidian) | ✅ `ctx_graph_export` | ✅ | ❌ |
+| Cross-repo search | ✅ `ctx_cross_repo_search` | ✅ | ❌ |
+| All-in-one code review packet | ✅ `ctx_git_diff_review` | ✅ | ❌ |
+| Tree-sitter AST | ✅ TS/JS + Python | ✅ Multi-language | varies |
+| Token reduction (skeletonization) | ✅ **~80% measured** | ✅ | ❌ |
+| npm install size | ✅ <5 MB (lazy grammars) | ❌ Large | varies |
 | MCP protocol native | ✅ | ✅ | varies |
 
-*Being honest about what's missing builds trust. Community detection is coming in Phase 2.*
+> Token reduction is measured, not estimated. See [`benchmarks/README.md`](benchmarks/README.md).
+
+---
+
+## Tools — 22 total
+
+### Search & Context
+
+| Tool | Description |
+|------|-------------|
+| `ctx_search` | Hybrid semantic + graph search (vector similarity + import graph expansion) |
+| `ctx_get_file` | Safe file read with path traversal protection (5 MB max) |
+| `ctx_get_context_packet` | Smart multi-file context: primary file + dependency skeletons + reverse importers |
+| `ctx_similar_files` | Find semantically similar files via vector embeddings |
+| `ctx_cross_repo_search` | Federated semantic search across all registered repos |
+
+### Graph Intelligence
+
+| Tool | Description |
+|------|-------------|
+| `ctx_blast_radius` | "What breaks if I change this?" — import + call graph traversal |
+| `ctx_hub_nodes` | Top-N files by import degree (architectural chokepoints) |
+| `ctx_bridge_nodes` | Top-N files by betweenness centrality (graph connectors) |
+| `ctx_community_list` | Louvain community detection — cluster files into architectural modules |
+| `ctx_architecture_overview` | High-level summary: communities, hub files, cross-community coupling |
+| `ctx_knowledge_gaps` | Isolated files, untested hubs, dead code candidates |
+| `ctx_surprising_connections` | Circular deps, cross-community imports, prod→test violations |
+
+### Code Navigation
+
+| Tool | Description |
+|------|-------------|
+| `ctx_get_call_graph` | Bidirectional call graph traversal with configurable depth |
+| `ctx_get_definition` | Symbol definition lookup via AST index |
+| `ctx_execution_flow` | DFS call graph traversal from entry point with cycle detection |
+| `ctx_refactor_preview` | Read-only symbol rename diff preview — see every change before applying |
+
+### Review & Export
+
+| Tool | Description |
+|------|-------------|
+| `ctx_git_diff_review` | All-in-one code review packet: git diffs + skeletons + blast radius |
+| `ctx_wiki_generate` | Generate `.ctxloom/wiki/` — one Markdown page per community (no LLM needed) |
+| `ctx_graph_export` | Export graph to GraphML (Gephi/yEd), DOT (Graphviz), or Obsidian vault |
+
+### Utilities
+
+| Tool | Description |
+|------|-------------|
+| `ctx_get_rules` | Inject project rules from `.cursorrules`, `CLAUDE.md`, `CONTEXT.md`, `.ctxloomrc` |
+| `ctx_status` | Server status: graph size, vector store count, initialization state |
+
+---
+
+## CLI Commands
+
+```
+ctxloom                      Start MCP server (Stdio transport)
+ctxloom index                Index current directory + build dependency graph
+ctxloom setup                Detect and configure MCP-compatible AI tools (interactive)
+ctxloom register <path>      Register a repo for cross-repo search
+ctxloom repos                List all registered repos
+ctxloom grammars             Show grammar cache status
+ctxloom grammars --download  Pre-download all language grammars
+ctxloom --help               Show help
+```
 
 ---
 
 ## Language Support
 
-ctxloom builds dependency graphs for **5 language families**:
-
-| Language | Import Style | Resolution |
-|----------|-------------|------------|
-| TypeScript / JavaScript | `import … from './foo'` | Full AST parse (tree-sitter) |
-| Python | `from .bar import Baz` | Relative dot-notation |
-| Rust | `mod utils;` | `foo.rs` or `foo/mod.rs` |
-| Go | `import "./pkg"` | Relative path → directory |
-| Java | `import com.example.Foo;` | Dot-to-slash mapping |
+| Language | Import Graph | Symbol Index | Skeletonization |
+|----------|-------------|--------------|-----------------|
+| TypeScript / JavaScript | ✅ Full AST | ✅ | ✅ |
+| Python | ✅ Relative imports | ✅ | ✅ |
+| Rust | ✅ `mod` resolution | ✅ | ✅ |
+| Go | ✅ Relative paths | ✅ | ✅ |
+| Java | ✅ Dot-to-slash | ✅ | ✅ |
 
 ---
 
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────────────┐
-│                   MCP Interface                      │
-│               (Stdio transport)                      │
-├─────────────────────────────────────────────────────┤
-│               Context Engine                         │
-│  ┌──────────┐  ┌──────────┐  ┌──────────────────┐  │
-│  │ In-Memory │  │ VectorDB │  │   Skeletonizer   │  │
-│  │   Graph   │  │(LanceDB) │  │  (tree-sitter)   │  │
-│  └──────────┘  └──────────┘  └──────────────────┘  │
-├─────────────────────────────────────────────────────┤
-│              File Watcher (chokidar)                 │
-│           200ms debounce + incremental               │
-│        graph updates + re-embedding                  │
-├─────────────────────────────────────────────────────┤
-│              Snapshot Manager                        │
-│         (.ctxloom/graph-snapshot.json)               │
-│    Atomic write + schema validation on load          │
-└─────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────┐
+│                      MCP Interface                       │
+│                   (Stdio transport)                      │
+├──────────────────────────────────────────────────────────┤
+│                    22 Tools (ToolRegistry)                │
+│  Search · Graph Intelligence · Navigation · Review       │
+├──────────────────────────────────────────────────────────┤
+│                    Context Engine                         │
+│  ┌────────────┐  ┌──────────────┐  ┌─────────────────┐  │
+│  │ Dependency │  │  VectorDB    │  │  Skeletonizer   │  │
+│  │   Graph    │  │  (LanceDB)   │  │  (tree-sitter)  │  │
+│  └────────────┘  └──────────────┘  └─────────────────┘  │
+│  ┌────────────┐  ┌──────────────┐  ┌─────────────────┐  │
+│  │ CallGraph  │  │  Community   │  │  WikiGenerator  │  │
+│  │   Index    │  │  Detector    │  │  GraphExporter  │  │
+│  └────────────┘  └──────────────┘  └─────────────────┘  │
+├──────────────────────────────────────────────────────────┤
+│           File Watcher (chokidar, 200ms debounce)        │
+│         Incremental graph updates + re-embedding         │
+├──────────────────────────────────────────────────────────┤
+│              Snapshot Manager (atomic writes)            │
+│    .ctxloom/graph-snapshot.json + call-graph-snapshot    │
+└──────────────────────────────────────────────────────────┘
 ```
 
-### How the search works
+### How search works
 
-1. **Vector search** — your query is embedded using `sentence-transformers/all-MiniLM-L6-v2` (local, 384-dim) and matched against pre-indexed file embeddings in LanceDB.
-2. **Graph expansion** — results are expanded via the dependency graph: files that import or are imported by a match are surfaced with a small score penalty.
-3. **Re-ranking** — results are combined (60% vector similarity, 40% graph proximity) and returned ranked.
-4. **Skeletonization** — when returning context packets, dependency files are reduced to signature-only views (functions, classes, exports) cutting token usage by 70-90%.
+1. **Embed** — query is embedded with `sentence-transformers/all-MiniLM-L6-v2` (local, 384-dim)
+2. **Vector search** — ANN query against pre-indexed file embeddings in LanceDB
+3. **Graph expansion** — results expanded via import graph (importers + imports get a small score boost)
+4. **Skeletonize** — dependency files reduced to signature-only views (functions, classes, exports) cutting token usage by ~80%
+
+---
+
+## Performance
+
+Benchmarks run on every PR. To run locally:
+
+```bash
+npx tsx benchmarks/benchmark.ts
+```
+
+See [`benchmarks/README.md`](benchmarks/README.md) for methodology and how to reproduce results independently.
 
 ---
 
 ## Security
 
-ctxloom is designed with defence-in-depth:
+- **Path traversal prevention** — all file inputs validated against project root (CWE-22), symlink-aware
+- **Shell injection prevention** — `execFileSync` with argument arrays; no shell string interpolation
+- **XML injection prevention** — all user-controlled strings escaped before XML output
+- **File size limits** — files over 5 MB rejected by `PathValidator` and skipped by indexer
+- **Input bounds** — `limit` capped at 100, `depth` capped at 20 across all tools
+- **Atomic snapshot writes** — written to `.tmp` then renamed; prevents torn reads
+- **Snapshot schema validation** — validated before hydration; prevents prototype pollution
 
-- **Path traversal prevention** — All file path inputs validated against the project root (CWE-22). Symlink-aware via `fs.realpathSync`. Applied on every file read and FileWatcher event.
-- **Shell injection prevention** — `execFileSync` with argument arrays used throughout; no shell string interpolation.
-- **XML injection prevention** — All user-controlled strings (symbol names, file paths, query text) are escaped before being embedded in XML output.
-- **File size limits** — Files over 5 MB are rejected by `PathValidator.readFile()` and skipped by the indexer.
-- **Input bounds** — `limit` capped at 100, `depth` capped at 10 on all schema inputs.
-- **Atomic snapshot writes** — Graph snapshot written to a `.tmp` file then renamed, preventing torn reads.
-- **Snapshot schema validation** — Loaded snapshots are validated against an expected shape before hydration, preventing prototype pollution.
-- **ReDoS mitigation** — Go block-import regex bounded to 4096 characters; content truncated at 512 KB before matching.
-- **Structured logging** — All output goes to stderr as JSON-lines (`LOG_LEVEL` controlled). Canonical paths are never leaked in error messages.
+---
+
+## Environment Variables
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `CTXLOOM_ROOT` | Project root directory | Current working directory |
+| `LOG_LEVEL` | Logging verbosity: `debug` / `info` / `warn` / `error` | `info` |
+| `CTXLOOM_GRAMMAR_CDN` | CDN base URL for grammar downloads (air-gapped environments) | Built-in |
 
 ---
 
 ## Build from Source
 
 ```bash
-git clone https://github.com/kodiii/ctxLOOM.git
-cd ctxLOOM
+git clone https://github.com/kodiii/ctxloom.git
+cd ctxloom
 npm install
 npm run build
-
-# Index and start
 ctxloom index
 node dist/index.js
 ```
 
-**MCP config (from source):**
-
-```json
-{
-  "mcpServers": {
-    "ctxloom": {
-      "command": "node",
-      "args": ["/path/to/ctxLOOM/dist/index.js"]
-    }
-  }
-}
-```
+---
 
 ## Project Structure
 
 ```
 src/
-├── index.ts               # CLI entry point (index, setup, server)
-├── server.ts              # MCP server + all 8 tool handlers
-├── security/
-│   └── PathValidator.ts   # Path traversal protection (CWE-22)
-├── db/
-│   └── VectorStore.ts     # LanceDB vector storage
-├── indexer/
-│   └── embedder.ts        # HuggingFace embeddings + parallel file collection
-├── ast/
-│   ├── ASTParser.ts       # tree-sitter parser
-│   └── Skeletonizer.ts    # Signature-only code view
+├── index.ts                   # CLI entry point
+├── server.ts                  # MCP server (Stdio transport)
+├── tools/
+│   ├── registry.ts            # ToolRegistry: register/dispatch
+│   ├── search.ts              # ctx_search
+│   ├── file.ts                # ctx_get_file
+│   ├── context-packet.ts      # ctx_get_context_packet
+│   ├── call-graph.ts          # ctx_get_call_graph
+│   ├── definition.ts          # ctx_get_definition
+│   ├── rules.ts               # ctx_get_rules
+│   ├── similar-files.ts       # ctx_similar_files
+│   ├── status.ts              # ctx_status
+│   ├── blast-radius.ts        # ctx_blast_radius
+│   ├── hub-nodes.ts           # ctx_hub_nodes
+│   ├── bridge-nodes.ts        # ctx_bridge_nodes
+│   ├── community-list.ts      # ctx_community_list
+│   ├── architecture-overview.ts # ctx_architecture_overview
+│   ├── knowledge-gaps.ts      # ctx_knowledge_gaps
+│   ├── surprising-connections.ts # ctx_surprising_connections
+│   ├── wiki-generate.ts       # ctx_wiki_generate
+│   ├── graph-export.ts        # ctx_graph_export
+│   ├── git-diff-review.ts     # ctx_git_diff_review
+│   ├── refactor-preview.ts    # ctx_refactor_preview
+│   ├── execution-flow.ts      # ctx_execution_flow
+│   └── cross-repo-search.ts   # ctx_cross_repo_search
 ├── graph/
-│   └── DependencyGraph.ts # In-memory graph + snapshot + multi-language
+│   ├── DependencyGraph.ts     # In-memory graph + snapshot + multi-language
+│   ├── CallGraphIndex.ts      # Symbol-level call edges (TypeScript/JS)
+│   ├── CommunityDetector.ts   # Louvain clustering (graphology)
+│   ├── WikiGenerator.ts       # Hash-cached community Markdown wiki
+│   └── GraphExporter.ts       # GraphML / DOT / Obsidian export
+├── ast/
+│   ├── ASTParser.ts           # tree-sitter multi-language parser
+│   └── Skeletonizer.ts        # Signature-only code views
+├── db/
+│   └── VectorStore.ts         # LanceDB vector storage
+├── indexer/
+│   └── embedder.ts            # HuggingFace embeddings + file collection
+├── grammars/
+│   └── GrammarLoader.ts       # Lazy grammar download + SHA-256 verify
+├── security/
+│   └── PathValidator.ts       # Path traversal protection (CWE-22)
 ├── watcher/
-│   └── FileWatcher.ts     # chokidar file watcher (200ms debounce)
-├── utils/
-│   ├── logger.ts          # Structured JSON-lines logger (stderr)
-│   └── importExtractor.ts # Regex import extraction (Python, Rust, Go, Java)
+│   └── FileWatcher.ts         # chokidar (200ms debounce, incremental)
 ├── setup/
-│   ├── clients.ts         # 13-client registry + detection + config read/write
-│   ├── setup-wizard.ts    # Interactive CLI wizard
-│   └── postinstall.ts     # Post-install notification
-├── workers/
-│   └── indexerWorker.ts   # Worker thread (reserved)
-└── tools/
-    ├── findCallers.ts     # Call graph traversal
-    └── ruleManager.ts     # Rule file loader
+│   ├── clients.ts             # 13-client registry + detection
+│   └── setup-wizard.ts        # Interactive setup CLI
+└── utils/
+    ├── logger.ts              # Structured JSON-lines logger (stderr)
+    └── importExtractor.ts     # Regex import extraction (Python/Rust/Go/Java)
+
+benchmarks/
+├── benchmark.ts               # Benchmark suite (graph build + search + compression)
+└── README.md                  # Methodology and reproducibility guide
 ```
+
+---
 
 ## License
 
