@@ -6,6 +6,8 @@
  *   dot      — Graphviz directed graph language
  *   obsidian — One Markdown file per node with [[wikilinks]] for edges;
  *              compatible with Obsidian's graph view
+ *   svg      — Inline SVG (no dependencies)
+ *   html     — Interactive D3.js force-directed graph (browser)
  *
  * All output is written to .ctxloom/export/ (created on demand).
  * For 'obsidian', each node file is named by slugifying its path
@@ -212,6 +214,10 @@ export class GraphExporter {
 <div id="tooltip"></div>
 <svg id="graph"></svg>
 <script>
+function escapeHTML(s) {
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
 const nodes = ${nodesJson};
 const links = ${linksJson};
 
@@ -244,7 +250,7 @@ const node = g.append('g').selectAll('circle')
   .attr('fill', d => d.importers >= 5 ? '#f59e0b' : '#4f6ef7')
   .attr('opacity', 0.85)
   .on('mouseover', (e, d) => {
-    tooltip.style('opacity', 1).html('<strong>' + d.path + '</strong><br>' + d.importers + ' importers');
+    tooltip.style('opacity', 1).html('<strong>' + escapeHTML(d.path) + '</strong><br>' + d.importers + ' importers');
   })
   .on('mousemove', e => tooltip.style('left', (e.clientX + 12) + 'px').style('top', (e.clientY - 24) + 'px'))
   .on('mouseout', () => tooltip.style('opacity', 0))
