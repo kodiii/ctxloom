@@ -380,10 +380,20 @@ function extractPhpImports(content: string): RawImport[] {
     results.push({ specifier: m[1], isRelative: true });
   }
 
-  // use Namespace\ClassName; — absolute namespace import
+  // use Namespace\ClassName; — simple import
   const useRe = /^use\s+([\w\\]+)(?:\s+as\s+\w+)?\s*;/gm;
   while ((m = useRe.exec(content)) !== null) {
     results.push({ specifier: m[1], isRelative: false });
+  }
+
+  // use Namespace\{ClassA, ClassB}; — grouped imports (PHP 7+)
+  const groupedRe = /^use\s+([\w\\]+)\\{([^}]+)}/gm;
+  while ((m = groupedRe.exec(content)) !== null) {
+    const prefix = m[1];
+    for (const part of m[2].split(',')) {
+      const name = part.trim().replace(/\s+as\s+\w+$/, '');
+      if (name) results.push({ specifier: `${prefix}\\${name}`, isRelative: false });
+    }
   }
 
   return results;

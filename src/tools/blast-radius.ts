@@ -113,7 +113,7 @@ export function buildBlastRadiusXml(
 
   if (detailLevel === 'minimal') {
     return [
-      `<blast_radius changed="${result.changedFiles.length}" direct_importers="${result.directImporters.length}"`,
+      `<blast_radius changed_files="${result.changedFiles.length}" direct_importers="${result.directImporters.length}"`,
       ` transitive_importers="${result.transitiveImporters.length}" call_sites="${result.callSites.length}"`,
       ` depth="${depth}" graph_type="${graphType}" detail_level="minimal" />`,
     ].join('');

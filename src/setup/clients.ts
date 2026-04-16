@@ -47,15 +47,17 @@ export const CTXLOOM_SERVER: MCPServerEntry = {
   env: {},
 };
 
-// If installed globally, use direct command instead of npx
+// If installed globally, use direct command instead of npx.
+// Cached after first check — result is stable for the lifetime of the process.
+let _serverEntry: MCPServerEntry | undefined;
 function getServerEntry(): MCPServerEntry {
-  try {
-    execFileSync('ctxloom', ['--version'], { stdio: 'ignore', timeout: 3000 });
-    return { command: 'ctxloom', args: [], env: {} };
-  } catch {
-    // Not installed globally, use npx
-  }
-  return CTXLOOM_SERVER;
+  if (_serverEntry) return _serverEntry;
+  // Use `which`/`where` to check existence — never run ctxloom directly here,
+  // since it starts an MCP server instead of exiting (no --version flag).
+  _serverEntry = commandExists('ctxloom')
+    ? { command: 'ctxloom', args: [], env: {} }
+    : CTXLOOM_SERVER;
+  return _serverEntry;
 }
 
 // ─── Client Definitions ───────────────────────────────────────
@@ -412,7 +414,7 @@ function commandExists(cmd: string): boolean {
     // Use execFileSync (not execSync) to avoid shell injection via cmd interpolation
     const result = execFileSync(checkCmd, [cmd], {
       encoding: 'utf-8',
-      timeout: 3000,
+      timeout: 500,
       stdio: 'pipe',
     });
     return result.trim().length > 0;

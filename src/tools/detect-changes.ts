@@ -138,7 +138,7 @@ export function registerDetectChangesTool(registry: ToolRegistry, ctx: ServerCon
       }
 
       const xml = [
-        `<detect_changes count="${scored.length}" critical="${criticalCount}" high="${highCount}">`,
+        `<detect_changes count="${scored.length}" critical="${criticalCount}" high="${highCount}" medium="${mediumCount}" low="${lowCount}">`,
       ];
 
       for (const s of scored) {
