@@ -52,6 +52,7 @@ export function extractImports(filePath: string, content: string): RawImport[] {
     case '.php':   return extractPhpImports(content);
     case '.dart':  return extractDartImports(content);
     case '.ipynb': return extractNotebookImports(filePath, content);
+    case '.vue':   return extractVueImports(content);
     default:      return [];
   }
 }
@@ -84,6 +85,7 @@ export function resolveImport(
   if (ext === '.php') return resolvePhpImport(fromAbs, fromDir, raw, rootDir);
   if (ext === '.dart') return resolveDartImport(fromAbs, fromDir, raw, rootDir);
   if (ext === '.ipynb') return resolvePythonImport(fromAbs, fromDir, raw, rootDir);
+  if (ext === '.vue') return resolveVueImport(fromAbs, fromDir, raw, rootDir);
 
   return null;
 }
@@ -456,4 +458,50 @@ function extractNotebookImports(filePath: string, content: string): RawImport[] 
   const pythonSource = extractNotebookPythonSource(content);
   if (!pythonSource) return [];
   return extractPythonImports(pythonSource);
+}
+
+// ─── Vue SFC ──────────────────────────────────────────────────────────────
+
+function extractVueScriptContent(content: string): string {
+  const match = content.match(/<script(?:\s[^>]*)?>([^]*?)<\/script>/i);
+  return match?.[1] ?? '';
+}
+
+function extractVueImports(content: string): RawImport[] {
+  const scriptContent = extractVueScriptContent(content);
+  if (!scriptContent.trim()) return [];
+
+  const results: RawImport[] = [];
+
+  // Static imports: import X from './path' or import { X } from './path'
+  const staticImport = /import\s+(?:[^'"]*from\s+)?['"](\.[^'"]+)['"]/gm;
+  let m: RegExpExecArray | null;
+  while ((m = staticImport.exec(scriptContent)) !== null) {
+    results.push({ specifier: m[1], isRelative: true });
+  }
+
+  return results;
+}
+
+function resolveVueImport(
+  fromAbs: string,
+  fromDir: string,
+  raw: RawImport,
+  rootDir: string,
+): string | null {
+  void fromAbs;
+
+  // Root confinement — same pattern as PHP/Dart
+  const direct = path.resolve(fromDir, raw.specifier);
+  const rootResolved = path.resolve(rootDir);
+  if (!direct.startsWith(rootResolved + path.sep) && direct !== rootResolved) return null;
+  if (fs.existsSync(direct)) return path.relative(rootDir, direct);
+
+  // Try adding common extensions if no extension given
+  for (const ext of ['.ts', '.tsx', '.js', '.jsx', '.vue', '/index.ts', '/index.js']) {
+    const candidate = path.resolve(fromDir, raw.specifier.replace(/\.js$/, '') + ext);
+    if (!candidate.startsWith(rootResolved + path.sep)) continue; // keep confinement
+    if (fs.existsSync(candidate)) return path.relative(rootDir, candidate);
+  }
+  return null;
 }

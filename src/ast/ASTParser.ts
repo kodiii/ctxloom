@@ -266,6 +266,7 @@ export class ASTParser {
     if (ext === '.swift') return this.parseSwift(filePath);
     if (ext === '.php') return this.parsePhp(filePath);
     if (ext === '.dart') return this.parseDart(filePath);
+    if (ext === '.vue') return this.parseVue(filePath);
 
     const parser = new TreeSitter.Parser();
     parser.setLanguage(this.tsLang);
@@ -274,8 +275,11 @@ export class ASTParser {
     const tree = parser.parse(source);
     if (!tree) return [];
 
+    return this.extractTSNodes(tree.rootNode, filePath, source.split('\n'));
+  }
+
+  private extractTSNodes(rootNode: TreeSitter.Node, _filePath: string, lines: string[]): ParsedNode[] {
     const nodes: ParsedNode[] = [];
-    const lines = source.split('\n');
     // Track processed node IDs to prevent duplicates from export_statement
     const processedIds = new Set<number>();
 
@@ -471,8 +475,22 @@ export class ASTParser {
       }
     };
 
-    walk(tree.rootNode);
+    walk(rootNode);
     return nodes;
+  }
+
+  private async parseVue(filePath: string): Promise<ParsedNode[]> {
+    let source: string;
+    try { source = fs.readFileSync(filePath, 'utf-8'); } catch { return []; }
+    const match = source.match(/<script(?:\s[^>]*)?>([^]*?)<\/script>/i);
+    if (!match?.[1]?.trim()) return [];
+    const scriptContent = match[1];
+    if (!this.tsLang) return [];
+    const parser = new TreeSitter.Parser();
+    parser.setLanguage(this.tsLang);
+    const tree = parser.parse(scriptContent);
+    if (!tree) return [];
+    return this.extractTSNodes(tree.rootNode, filePath, scriptContent.split('\n'));
   }
 
   private async parsePython(filePath: string): Promise<ParsedNode[]> {

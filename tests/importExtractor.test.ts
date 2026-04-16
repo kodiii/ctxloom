@@ -103,6 +103,21 @@ describe('extractImports()', () => {
   });
 });
 
+describe('Vue SFC imports', () => {
+  it('extracts imports from script block', () => {
+    const content = `<template><div>Hello</div></template>\n<script lang="ts">\nimport { ref } from 'vue';\nimport UserCard from './components/UserCard.vue';\nimport { useStore } from '../store/index.ts';\n</script>\n`;
+    const result = extractImports('/project/src/App.vue', content);
+    expect(result.some(r => r.specifier.includes('UserCard.vue') && r.isRelative)).toBe(true);
+    expect(result.some(r => r.specifier.includes('store') && r.isRelative)).toBe(true);
+  });
+
+  it('returns empty for vue files with no script block', () => {
+    const content = `<template><div>Hello</div></template>\n<style scoped>\n.foo { color: red; }\n</style>\n`;
+    const result = extractImports('/project/src/NoScript.vue', content);
+    expect(result).toEqual([]);
+  });
+});
+
 describe('resolveImport()', () => {
   let tempDir: string;
 
