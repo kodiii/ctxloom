@@ -26,6 +26,8 @@ import { registerDetectChangesTool } from './detect-changes.js';
 import { registerFullTextSearchTool } from './full-text-search.js';
 import { registerSuggestedQuestionsTool } from './suggested-questions.js';
 import { registerGetWorkflowTool } from './get-workflow.js';
+import { registerGraphSnapshotTool } from './graph-snapshot.js';
+import { registerGraphDiffTool } from './graph-diff.js';
 
 export function createToolRegistry(ctx: ServerContext): ToolRegistry {
   const registry = new ToolRegistry();
@@ -55,5 +57,7 @@ export function createToolRegistry(ctx: ServerContext): ToolRegistry {
   registerFullTextSearchTool(registry, ctx);
   registerSuggestedQuestionsTool(registry, ctx);
   registerGetWorkflowTool(registry, ctx);
+  registerGraphSnapshotTool(registry, ctx);
+  registerGraphDiffTool(registry, ctx);
   return registry;
 }
