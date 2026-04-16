@@ -11,6 +11,10 @@ import { registerStatusTool } from './status.js';
 import { registerBlastRadiusTool } from './blast-radius.js';
 import { registerHubNodesTool } from './hub-nodes.js';
 import { registerBridgeNodesTool } from './bridge-nodes.js';
+import { registerCommunityListTool } from './community-list.js';
+import { registerArchitectureOverviewTool } from './architecture-overview.js';
+import { registerKnowledgeGapsTool } from './knowledge-gaps.js';
+import { registerSurprisingConnectionsTool } from './surprising-connections.js';
 
 export function createToolRegistry(ctx: ServerContext): ToolRegistry {
   const registry = new ToolRegistry();
@@ -25,5 +29,9 @@ export function createToolRegistry(ctx: ServerContext): ToolRegistry {
   registerBlastRadiusTool(registry, ctx);
   registerHubNodesTool(registry, ctx);
   registerBridgeNodesTool(registry, ctx);
+  registerCommunityListTool(registry, ctx);
+  registerArchitectureOverviewTool(registry, ctx);
+  registerKnowledgeGapsTool(registry, ctx);
+  registerSurprisingConnectionsTool(registry, ctx);
   return registry;
 }
