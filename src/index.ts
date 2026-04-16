@@ -118,6 +118,10 @@ Tools Exposed:
   ctx_blast_radius       Blast radius of changed files: importers + call sites
   ctx_hub_nodes          Top-N files by import degree (architectural chokepoints)
   ctx_bridge_nodes       Top-N files by betweenness centrality (graph connectors)
+  ctx_community_list         Louvain communities — cluster files into architectural modules
+  ctx_architecture_overview  High-level structural summary: communities, hubs, coupling
+  ctx_knowledge_gaps         Isolated files, untested hubs, dead code candidates
+  ctx_surprising_connections Circular deps, cross-community imports, prod→test violations
 `);
       break;
     }
