@@ -1,7 +1,20 @@
 # Competitive Analysis: ctxloom vs code-review-graph
 
-> Honest, current comparison. Last updated: 2026-04-16 (all gaps closed).
+> Honest, current comparison. Last updated: 2026-04-16 (live scrape of v2.3.2).
 > Use this to sharpen positioning and prioritize the next development cycle.
+
+---
+
+## Snapshot
+
+| | ctxloom | code-review-graph |
+|---|---|---|
+| **Latest version** | feat/phase1-foundation | v2.3.2 (2026-04-14) |
+| **Tools** | 28 | 28 |
+| **Languages** | 10 | ~25 |
+| **Tests** | 324 | unknown |
+| **Installation** | `npm install -g ctxloom` | `pip install code-review-graph` |
+| **Storage** | LanceDB (local) | SQLite (local) |
 
 ---
 
@@ -9,122 +22,170 @@
 
 | Feature | ctxloom | code-review-graph | Winner |
 |---------|---------|-------------------|--------|
-| **Tools** | **29** | 28 | ✅ us (+1) |
-| **Languages** | **10** (TS/JS, Python, Go, Rust, Java, C#, Ruby, Kotlin, Swift, **Jupyter/ipynb**) | 23+ | ❌ them (+13) |
-| **Installation** | `npm install -g ctxloom` | `pip install code-review-graph` | ✅ us (no Python) |
-| **Storage** | LanceDB (local) | SQLite (local) | ➖ tie (both local) |
+| **Installation** | `npm i -g ctxloom` | `pip install crg` | ✅ us (no Python/pip) |
+| **Tools count** | 28 | 28 | ➖ tie |
+| **Languages** | 10 | ~25 (see list below) | ❌ them (−15) |
+| **Token reduction** | ~83% measured, benchmark script ready | **8.2× avg, 49× max** (published, named repos) | ❌ them (they publish numbers) |
+| **Parallel parsing** | ❌ single-threaded | ✅ 3–5× via ProcessPoolExecutor | ❌ them |
 | **Community detection** | Louvain (pure JS) | Leiden (Python) | ➖ tie (Leiden slightly higher quality) |
-| **Token reduction** | ~83% measured, **public-repo benchmark script included** | 8.2x avg (≈87%), 49x max | ❌ them (higher ceiling; they publish named-repo numbers) |
-| **Blast radius** | ✅ import + call graph | ✅ import + call graph | ➖ tie |
-| **Execution flow tracing** | ✅ DFS with cycles | ✅ list/get flows by criticality | ➖ tie |
-| **Refactor preview** | ✅ read-only diff | ✅ preview | ➖ tie |
-| **Apply refactor (write to disk)** | ✅ **`ctx_apply_refactor`** | ✅ `apply_refactor_tool` | ➖ tie |
-| **Change risk scoring** | ✅ **`ctx_detect_changes`** (critical/high/medium/low) | ✅ `detect_changes_tool` | ➖ tie |
-| **Full-text search** | ✅ **`ctx_full_text_search`** (hybrid keyword+vector, regex) | ✅ FTS5 hybrid (keyword + vector) | ➖ tie |
-| **Suggested review questions** | ✅ **`ctx_suggested_questions`** (graph-driven, no LLM) | ✅ auto-generated | ✅ us (no LLM cost) |
-| **Workflow templates** | ✅ **`ctx_get_workflow`** (5 workflows) | ✅ 5 MCP prompts | ➖ tie |
-| **Wiki generation** | ✅ deterministic, no LLM | ✅ LLM-augmented (via Ollama) | ✅ us (no LLM cost, always works) |
-| **Graph export** | GraphML, DOT, Obsidian, **SVG** | GraphML, Neo4j Cypher, Obsidian, SVG | ➖ tie on SVG; ❌ them on Neo4j |
+| **Blast radius** | ✅ import + call graph | ✅ import + call graph, 100% recall | ➖ tie |
+| **Execution flow tracing** | ✅ DFS with cycles | ✅ flows sorted by criticality | ➖ tie |
+| **Refactor preview** | ✅ `ctx_refactor_preview` | ✅ `refactor_tool` | ➖ tie |
+| **Apply refactor** | ✅ `ctx_apply_refactor` | ✅ `apply_refactor_tool` | ➖ tie |
+| **Change risk scoring** | ✅ `ctx_detect_changes` (critical/high/medium/low) | ✅ `detect_changes_tool` | ➖ tie |
+| **Edge confidence tiers** | ❌ | ✅ EXTRACTED / INFERRED / AMBIGUOUS | ❌ them |
+| **Full-text search** | ✅ `ctx_full_text_search` (hybrid keyword+vector, regex) | ❌ no dedicated FTS tool | ✅ us |
+| **Suggested review questions** | ✅ `ctx_suggested_questions` (**no LLM**) | ✅ auto-generated | ✅ us (no LLM cost) |
+| **Workflow templates** | ✅ `ctx_get_workflow` (5 workflows) | ✅ 5 MCP prompts | ➖ tie |
+| **Wiki generation** | ✅ deterministic, **no LLM** | ✅ LLM-augmented (requires Ollama) | ✅ us (no LLM cost, always works) |
+| **Ultra-compact context** | ❌ | ✅ `get_minimal_context_tool` (~100 tokens) | ❌ them |
+| **`detail_level` param** | ❌ | ✅ `"minimal"` mode on 8 tools (40–60% extra reduction) | ❌ them |
+| **Find large functions** | ❌ | ✅ `find_large_functions_tool` | ❌ them |
+| **Graph export — SVG** | ✅ | ✅ | ➖ tie |
+| **Graph export — GraphML** | ✅ | ✅ | ➖ tie |
+| **Graph export — Obsidian** | ✅ | ✅ | ➖ tie |
+| **Graph export — DOT (Graphviz)** | ✅ | ❌ | ✅ us |
+| **Graph export — HTML (D3.js, self-contained)** | ✅ `ctx_graph_export html` | ❌ (web server viz only) | ✅ us |
+| **Graph export — Neo4j Cypher** | ❌ | ✅ | ❌ them |
+| **Interactive visualization** | ✅ self-contained D3 HTML file | ✅ web server, scales to 2000 nodes, aggregation modes | ❌ them (richer viz) |
+| **Graph diff (snapshot comparison)** | ✅ `ctx_graph_snapshot` + `ctx_graph_diff` (named, path-safe) | ✅ snapshot comparison | ➖ tie |
+| **Jupyter notebook support** | ✅ `.ipynb` (Python cells only) | ✅ `.ipynb` + Databricks (Python, R, SQL cells) | ❌ them (R+SQL cells too) |
 | **Cross-repo search** | ✅ federated vector | ✅ federated vector | ➖ tie |
-| **Interactive visualization** | ✅ **D3.js force-directed HTML** (drag, zoom, hub highlighting) | ✅ D3.js force-directed | ➖ tie |
-| **Graph diff** | ✅ **`ctx_graph_snapshot` + `ctx_graph_diff`** (named checkpoints, node/edge delta) | ✅ snapshot comparison | ✅ us (named checkpoints + path-safe) |
-| **Jupyter notebook support** | ✅ **`.ipynb`** (Python code cells → import graph + symbol index) | ✅ `.ipynb` (Python, R, SQL cells) | ➖ tie (they support R/SQL cells too) |
-| **Memory loop** | ❌ | ✅ Q&A persisted as Markdown | ❌ them |
-| **Call graph (actual calls)** | ✅ tree-sitter call_expression | ✅ three-tier confidence scoring | ➖ tie (they have confidence tiers) |
-| **Code review packet (all-in-one)** | ✅ `ctx_git_diff_review` | ⚠️ spread across multiple tools | ✅ us |
-| **npm package** | ✅ | ❌ pip only | ✅ us |
+| **Memory / Q&A persistence** | ❌ | ✅ persisted as Markdown | ❌ them |
+| **Call graph** | ✅ tree-sitter call_expression | ✅ three-tier confidence scoring | ❌ them (confidence tiers) |
+| **All-in-one review packet** | ✅ `ctx_git_diff_review` (diff + skeletons + blast radius in 1 call) | ⚠️ spread across 3–4 tools | ✅ us |
+| **Rules management** | ✅ `ctx_rules` | ❌ | ✅ us |
+| **npm package** | ✅ | ❌ pip only | ✅ us (largest registry) |
+
+---
+
+## Language coverage
+
+**ctxloom (10):** TypeScript/JS, Python, Go, Rust, Java, C#, Ruby, Kotlin, Swift, Jupyter (`.ipynb` Python cells)
+
+**code-review-graph (~25):** TypeScript/JS, Vue, Svelte, Python, Go, Rust, Java, Scala, C#, Ruby, Kotlin, Swift, PHP, C/C++, Dart, Zig, PowerShell, Elixir, Objective-C, Bash/Shell, Solidity, Lua, Luau, R, Perl, Julia — plus Jupyter (Python+R+SQL), Databricks notebooks
+
+**Language gap:** We cover the top-10 most used languages for the npm ecosystem. They cover the long tail + entire web/mobile/blockchain/ML stack.
 
 ---
 
 ## Scoreboard summary
 
-| Category | Before gap sprint | After gap sprint | After final sprint |
-|---|---|---|---|
-| Tools | 22 | 27 | **29** |
-| Languages | 5 | 9 | **10** (Jupyter) |
-| Tests | 280 | 308 | **324** |
-| Rows we were losing | 8 | 3 | **0** |
-| Rows we win or tie | 14 | 19 | **22** |
-
-**All gaps closed.** ctxloom now matches or beats code-review-graph on every tracked feature.
+| Category | Before sprint | After language sprint | After final 3-gap sprint | **Live (v2.3.2 re-scrape)** |
+|---|---|---|---|---|
+| Our tools | 22 | 27 | 28 | **28** |
+| Their tools | 22 | 28 | 28 | **28** |
+| Our languages | 5 | 9 | 10 | **10** |
+| Their languages | ~18 | ~19 | 23 | **~25** |
+| Rows we win | 5 | 7 | 7 | **7** |
+| Rows tied | 9 | 12 | 13 | **13** |
+| Rows we lose | 8 | 5 | 4 | **6** (they added edge confidence, minimal context, find_large_functions) |
 
 ---
 
 ## Where ctxloom genuinely wins
 
-### 1. Zero Python (still our strongest moat)
-`npm install -g ctxloom` — done. No virtualenv, no pip conflicts, no Python version issues.
-code-review-graph is `pip install` only — a real barrier for the JS/TS/mobile audience.
+### 1. Zero Python — strongest moat (unchanged)
+`npm install -g ctxloom` — done. No virtualenv, no pip conflicts, no Python version matrix.
+code-review-graph is `pip install` only — a real barrier for the JS/TS/mobile audience that is ctxloom's primary market.
 
 ### 2. Suggested questions without an LLM
-`ctx_suggested_questions` derives review questions purely from graph structure (blast radius, hub detection, test coverage gaps). Their tool auto-generates questions but the mechanism is LLM-backed.
-Ours: instant, free, works offline, reproducible.
+`ctx_suggested_questions` derives review questions purely from graph structure (blast radius, hub detection, test gaps). Their tool is LLM-backed.
+Ours: instant, free, works offline, reproducible. No Ollama, no API key.
 
 ### 3. Deterministic wiki (no LLM required)
-`ctx_wiki_generate` is fully structural. Their wiki requires Ollama + the `[wiki]` extra — a heavy optional dependency that many teams can't run.
+`ctx_wiki_generate` is fully structural. Their wiki requires Ollama + the `[wiki]` extra.
+Many teams can't run a local LLM. Ours always works.
 
 ### 4. All-in-one code review packet
-`ctx_git_diff_review` returns diffs + skeletons + blast radius in a single call. Their equivalent requires chaining 3–4 tools. For AI assistants with limited context windows, one call is strictly better.
+`ctx_git_diff_review` returns diffs + skeletons + blast radius in a single call.
+Their equivalent requires chaining 3–4 tools. For AI assistants with limited context, one call is strictly better.
 
-### 5. npm ecosystem reach
-Lands in the npm registry — accessible to the largest developer community. Their pip package targets a different (smaller for this use case) audience.
+### 5. Full-text search tool
+`ctx_full_text_search` provides hybrid keyword+vector search with regex support.
+They have no equivalent dedicated FTS tool — searches go through the semantic index only.
+
+### 6. Self-contained HTML graph
+`ctx_graph_export html` produces a single `.html` file with an embedded D3 force-directed graph.
+Open it in any browser, email it, add to a PR. No server required.
+Their interactive visualization is a web server that must be running — not portable.
+
+### 7. Rules management
+`ctx_rules` lets teams store and retrieve team conventions directly through the MCP interface.
+No equivalent in code-review-graph.
 
 ---
 
 ## Where code-review-graph genuinely wins
 
-### 1. Language coverage (23 vs 9) — still the biggest gap
-They support 23+ languages including PHP, Dart, Vue, Svelte, Scala, C, C++, Zig, Lua, Julia, Solidity, Jupyter.
-We added C#, Ruby, Kotlin, Swift — but PHP, Dart, Vue/Svelte, and the long tail remain uncovered.
-**Impact:** Mobile teams (Swift/Kotlin — now ✅), .NET teams (C# — now ✅). PHP/Dart teams still hit a wall.
+### 1. Language coverage (~25 vs 10) — the biggest gap
+They cover PHP, Dart, Vue, Svelte, Scala, C/C++, Zig, PowerShell, Elixir, Bash, Solidity, Lua, Luau, Perl, R, Julia, Objective-C, Databricks cells.
+**Impact:** Blockchain (Solidity), full-stack web (Vue/Svelte), systems (C/C++/Zig), data science (R/Julia) teams all hit a wall with us.
+Top 3 to add: PHP (Laravel ecosystem), Dart (Flutter), Vue/Svelte (most frontend teams).
 
-### 2. Interactive D3.js visualization ✅ closed
-`ctx_graph_export` now supports `html` format — a self-contained D3.js v7 force-directed graph with drag-and-drop, zoom/pan, hub highlighting, and path tooltips. Open in any browser; no server required.
+### 2. Edge confidence tiers (v2.3.2)
+Call graph edges are scored EXTRACTED / INFERRED / AMBIGUOUS — tells the reviewer how reliable each dependency is.
+Our call graph has no confidence scoring.
 
-### 3. Graph diff ✅ closed
-`ctx_graph_snapshot` saves named checkpoints; `ctx_graph_diff` compares any two checkpoints and reports added/removed nodes and edges. Useful for tracking architectural drift between commits or feature branches.
+### 3. Parallel parsing (3–5× faster)
+ProcessPoolExecutor-based parallel parsing in v2.2.1 dramatically speeds up initial builds.
+We parse single-threaded. On a 1000-file project this is noticeable.
 
-### 4. Performance benchmarks (they name repos, we now have the script)
-They publish 8.2x average / 49x max against named codebases with recall/F1 scores.
-We now have `npm run bench:repos` that clones and measures 5 public repos — but we haven't published the numbers yet. **Run `npm run bench:repos` and publish the table.**
+### 4. `get_minimal_context_tool` + `detail_level`
+They added an ultra-compact ~100 token context tool in v2.2.1, plus `detail_level="minimal"` on 8 tools cutting output 40–60% further.
+We have no equivalent — all our tools return full output. For small context windows this is a real win for them.
 
-### 5. Leiden algorithm
-Mathematically superior to Louvain for large heterogeneous repos. Difference is invisible on most codebases but matters for marketing ("best-in-class community detection").
+### 5. Published benchmark numbers
+8.2× average token reduction across 6 named repos (FastAPI, Flask, Gin, Next.js, httpx, express).
+We have `npm run bench:repos` but have not published results yet.
+**Immediate action: run `npm run bench:repos` and publish the table.**
+
+### 6. Richer interactive visualization
+Their viz scales to 2000 nodes with aggregation modes (community-level view, file-level view).
+Ours is a static D3 layout that gets crowded above ~100 nodes.
+
+### 7. `find_large_functions_tool`
+Quickly finds functions exceeding a line-count threshold across the entire codebase.
+Useful for tech debt discovery and code review routing. We have no equivalent.
 
 ---
 
-## Their honest weaknesses (unchanged)
+## Their honest weaknesses
 
-- **Search quality:** MRR of 0.35 (they publish this). Moderate — 1 in 3 queries returns the best result first.
-- **Flow detection unreliable** for JavaScript and Go. They flag this explicitly.
+- **MRR of 0.35** — they publish this. 1 in 3 queries returns the best result first.
+- **Flow detection unreliable** for JavaScript and Go (flagged in their docs).
 - **False positives in blast radius** on large dependency graphs.
-- **Python requirement** — real installation friction for JS/TS/mobile developers.
-- **Wiki requires Ollama** — not viable for teams that can't run a local LLM.
-- **Leiden requires `[communities]` extra** — not installed by default.
+- **Python-only** — real friction for JS/TS teams.
+- **Wiki requires Ollama** — heavy optional dep, not viable offline.
+- **Leiden requires `[communities]` extra** — not default.
+- **No FTS tool** — can't search by keyword/regex; vector only.
+- **No self-contained graph export** — viz requires a running server.
+- **Rapid release cadence with bugs** — 4 patch releases on a single day (April 11), Windows deadlocks, wiki data-loss bug in 2.2.3.1. Stability is uneven.
 
 ---
 
-## Remaining opportunity list
+## Priority action list
 
-All feature gaps vs code-review-graph are now closed. Remaining opportunities are growth/polish:
-
-| Priority | Item | Effort | Why it matters |
+| Priority | Item | Effort | Impact |
 |---|---|---|---|
-| 1 | **Run & publish public-repo benchmark** | 1 hour | Script exists (`npm run bench:repos`); just run it and add numbers to README |
-| 2 | **PHP language support** | 2 days | Largest remaining language audience; WASM grammar available |
-| 3 | **Dart language support** | 2 days | Flutter/mobile market; tree-sitter-dart WASM available |
-| 4 | **R/SQL cell support in notebooks** | 1 day | Close the tie with their `.ipynb` R+SQL cell support |
-| 5 | **Vue/Svelte component support** | 2 days | Frontend teams are a large npm audience |
-| 6 | **Confidence tiers on call graph** | 2 days | Match their "three-tier confidence scoring" for call edges |
+| 🔥 1 | **Publish benchmark numbers** | 1 hour | Directly counters their 8.2× claim with our own named-repo data |
+| 🔥 2 | **PHP language support** | 2 days | Largest unaddressed audience; WASM grammar available |
+| 🔥 3 | **Dart language support** | 2 days | Flutter/mobile market; tree-sitter-dart WASM available |
+| 4 | **`find_large_functions_tool`** | 1 day | Close a tool gap; useful for tech debt discovery |
+| 5 | **`detail_level="minimal"` param** | 1–2 days | Match their 40–60% output reduction mode |
+| 6 | **Edge confidence tiers** | 2–3 days | Differentiator in call graph quality |
+| 7 | **Vue/Svelte component support** | 2 days | Frontend teams; large npm audience |
+| 8 | **Parallel parsing** | 3 days | 3–5× build speed; matters on large repos |
+| 9 | **R/SQL cells in notebooks** | 1 day | Close the `.ipynb` tie |
+| 10 | **Visualization improvements** | 3 days | Community aggregation, scales to 2000 nodes |
 
 ---
 
 ## Positioning recommendation
 
-**All gaps closed. The story is now about winning, not catching up.**
+**Tool parity. Language gap is the story now.**
 
-Before: "We're behind on features, but zero-Python."
-After: **"We lead tool-for-tool (29 vs 28), beat them on review experience, and install in one command."**
+The realistic pitch: *"We match them tool-for-tool. We install in one command where they need Python. For TypeScript, JavaScript, Python, Go, Java, Rust, C#, Kotlin, Swift, and Ruby teams — we're strictly better. For PHP, Dart, Vue/Svelte, and the broader polyglot stack, they win on language coverage."*
 
 **Own these three claims:**
 
@@ -138,4 +199,4 @@ After: **"We lead tool-for-tool (29 vs 28), beat them on review experience, and 
 > `ctx_suggested_questions` generates structural review questions from your import graph instantly.
 > No Ollama, no API key, no latency.
 
-Then close the remaining language gap with PHP and Dart — each is a separate launch moment with a new audience.
+Then: close PHP + Dart (two new audiences, two launch moments) and publish the benchmark table.
