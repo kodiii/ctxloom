@@ -24,11 +24,19 @@ export interface GraphDiffResult {
 }
 
 function loadSnapshot(name: string, rootDir: string): SnapshotData {
-  const snapshotPath = path.join(rootDir, '.ctxloom', 'snapshots', `${name}.json`);
+  const snapshotsDir = path.resolve(rootDir, '.ctxloom', 'snapshots');
+  const snapshotPath = path.resolve(snapshotsDir, `${name}.json`);
+  if (!snapshotPath.startsWith(snapshotsDir + path.sep)) {
+    throw new Error(`Invalid snapshot name: "${name}"`);
+  }
   if (!fs.existsSync(snapshotPath)) {
     throw new Error(`Snapshot "${name}" not found. Run ctx_graph_snapshot first.`);
   }
-  return JSON.parse(fs.readFileSync(snapshotPath, 'utf-8')) as SnapshotData;
+  try {
+    return JSON.parse(fs.readFileSync(snapshotPath, 'utf-8')) as SnapshotData;
+  } catch (e) {
+    throw new Error(`Snapshot "${name}" is corrupted: ${e instanceof Error ? e.message : String(e)}`);
+  }
 }
 
 /** Compare two snapshots. Exported for testing. */
@@ -46,19 +54,19 @@ export function diffSnapshots(
   const addedNodes = [...currentNodes].filter(n => !baselineNodes.has(n));
   const removedNodes = [...baselineNodes].filter(n => !currentNodes.has(n));
 
-  // Build edge sets as "from→to" strings for set arithmetic
+  // Build edge sets as "from\x00to" strings for set arithmetic
   const baselineEdges = new Set<string>();
   for (const [from, tos] of Object.entries(baseline.forwardEdges)) {
-    for (const to of tos) baselineEdges.add(`${from}\u2192${to}`);
+    for (const to of tos) baselineEdges.add(`${from}\x00${to}`);
   }
 
   const currentEdges = new Set<string>();
   for (const [from, tos] of Object.entries(current.forwardEdges)) {
-    for (const to of tos) currentEdges.add(`${from}\u2192${to}`);
+    for (const to of tos) currentEdges.add(`${from}\x00${to}`);
   }
 
   const parseEdge = (e: string): { from: string; to: string } => {
-    const idx = e.indexOf('\u2192');
+    const idx = e.indexOf('\x00');
     return { from: e.slice(0, idx), to: e.slice(idx + 1) };
   };
 
@@ -72,25 +80,31 @@ export function registerGraphDiffTool(registry: ToolRegistry, ctx: ServerContext
   registry.register(
     'ctx_graph_diff',
     {
-      type: 'object',
-      properties: {
-        baseline: {
-          type: 'string',
-          description: 'Name of the baseline snapshot (the "before" state).',
+      name: 'ctx_graph_diff',
+      description:
+        'Compare two named graph snapshots and report structural changes: ' +
+        'added/removed nodes (files) and added/removed edges (import relationships).',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          baseline: {
+            type: 'string',
+            description: 'Name of the baseline snapshot (the "before" state).',
+          },
+          current: {
+            type: 'string',
+            description: 'Name of the current snapshot (the "after" state).',
+          },
         },
-        current: {
-          type: 'string',
-          description: 'Name of the current snapshot (the "after" state).',
-        },
+        required: ['baseline', 'current'],
       },
-      required: ['baseline', 'current'],
     },
     async (args: unknown) => {
       const { baseline, current } = schema.parse(args);
 
       let diff: GraphDiffResult;
       try {
-        diff = diffSnapshots(baseline, current, ctx.rootDir);
+        diff = diffSnapshots(baseline, current, ctx.projectRoot);
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         return `<ctx_graph_diff error="${msg}" />`;
