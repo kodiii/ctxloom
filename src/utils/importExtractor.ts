@@ -13,6 +13,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { GoModuleResolver } from './GoModuleResolver.js';
+import { extractNotebookPythonSource } from './notebookExtractor.js';
 
 /** Module-level resolver cache: rootDir → GoModuleResolver */
 const goResolverCache = new Map<string, GoModuleResolver>();
@@ -48,6 +49,7 @@ export function extractImports(filePath: string, content: string): RawImport[] {
     case '.kt':
     case '.kts': return extractKotlinImports(content);
     case '.swift': return extractSwiftImports(content);
+    case '.ipynb': return extractNotebookImports(filePath, content);
     default:      return [];
   }
 }
@@ -77,6 +79,7 @@ export function resolveImport(
   if (ext === '.rb') return resolveRubyImport(fromDir, raw, rootDir);
   if (ext === '.kt' || ext === '.kts') return resolveKotlinImport(fromDir, raw, rootDir);
   if (ext === '.swift') return resolveSwiftImport(fromDir, raw, rootDir);
+  if (ext === '.ipynb') return resolvePythonImport(fromAbs, fromDir, raw, rootDir);
 
   return null;
 }
@@ -357,4 +360,13 @@ function resolveSwiftImport(
   _rootDir: string,
 ): string | null {
   return null;
+}
+
+// ─── Jupyter Notebook ─────────────────────────────────────────────────────
+
+function extractNotebookImports(filePath: string, content: string): RawImport[] {
+  void filePath;
+  const pythonSource = extractNotebookPythonSource(content);
+  if (!pythonSource) return [];
+  return extractPythonImports(pythonSource);
 }

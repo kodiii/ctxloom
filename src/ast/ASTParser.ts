@@ -18,6 +18,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
 import { GrammarLoader } from '../grammars/GrammarLoader.js';
+import { extractNotebookPythonSource } from '../utils/notebookExtractor.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -228,6 +229,7 @@ export class ASTParser {
     if (!this.tsLang) throw new Error('ASTParser not initialized. Call init() first.');
 
     const ext = path.extname(filePath).toLowerCase();
+    if (ext === '.ipynb') return this.parseNotebook(filePath);
     if (ext === '.py') {
       return this.parsePython(filePath);
     }
@@ -458,13 +460,35 @@ export class ASTParser {
     const tree = parser.parse(source);
     if (!tree) return [];
 
+    return this.extractPythonNodes(tree.rootNode, filePath, source);
+  }
+
+  private async parseNotebook(filePath: string): Promise<ParsedNode[]> {
+    if (!this.pyLang) await this.loadPython();
+    if (!this.pyLang) return [];
+    try {
+      const raw = fs.readFileSync(filePath, 'utf-8');
+      const pythonSource = extractNotebookPythonSource(raw);
+      if (!pythonSource.trim()) return [];
+      const parser = new TreeSitter.Parser();
+      parser.setLanguage(this.pyLang);
+      const tree = parser.parse(pythonSource);
+      if (!tree) return [];
+      return this.extractPythonNodes(tree.rootNode, filePath, pythonSource);
+    } catch {
+      return [];
+    }
+  }
+
+  private extractPythonNodes(rootNode: TreeSitter.Node, filePath: string, source: string): ParsedNode[] {
     const nodes: ParsedNode[] = [];
     const lines = source.split('\n');
+    // suppress unused variable warning
+    void filePath;
 
     const walk = (node: TreeSitter.Node): void => {
       switch (node.type) {
         case 'import_statement': {
-          // import foo, import foo as bar
           const nameNode = node.children.find(c => c?.type === 'dotted_name' || c?.type === 'aliased_import');
           if (nameNode) {
             nodes.push({
@@ -478,7 +502,6 @@ export class ASTParser {
           return;
         }
         case 'import_from_statement': {
-          // from foo import bar
           const moduleNode = node.children.find(c => c?.type === 'dotted_name' || c?.type === 'relative_import');
           nodes.push({
             type: 'import',
@@ -501,7 +524,7 @@ export class ASTParser {
               endLine: node.endPosition.row + 1,
             });
           }
-          return; // don't recurse into function body
+          return;
         }
         case 'class_definition': {
           const nameNode = node.childForFieldName?.('name');
@@ -521,10 +544,9 @@ export class ASTParser {
               endLine: node.endPosition.row + 1,
             });
           }
-          return; // don't recurse into class body
+          return;
         }
         case 'decorated_definition': {
-          // @decorator\ndef foo(): ...  →  recurse into the inner definition
           const inner = node.children.find(
             c => c?.type === 'function_definition' || c?.type === 'class_definition',
           );
@@ -538,7 +560,7 @@ export class ASTParser {
       }
     };
 
-    walk(tree.rootNode);
+    walk(rootNode);
     return nodes;
   }
 
