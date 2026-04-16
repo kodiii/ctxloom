@@ -122,6 +122,8 @@ Tools Exposed:
   ctx_architecture_overview  High-level structural summary: communities, hubs, coupling
   ctx_knowledge_gaps         Isolated files, untested hubs, dead code candidates
   ctx_surprising_connections Circular deps, cross-community imports, prod→test violations
+  ctx_wiki_generate          Generate .ctxloom/wiki/ — one Markdown page per community
+  ctx_graph_export           Export graph: GraphML (Gephi), DOT (Graphviz), Obsidian vault
 `);
       break;
     }

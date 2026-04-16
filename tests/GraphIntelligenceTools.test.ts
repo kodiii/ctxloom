@@ -1,10 +1,15 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import fs from 'node:fs';
+import path from 'node:path';
+import os from 'node:os';
 import { DependencyGraph } from '../src/graph/DependencyGraph.js';
 import { ToolRegistry } from '../src/tools/registry.js';
 import { registerCommunityListTool } from '../src/tools/community-list.js';
 import { registerArchitectureOverviewTool } from '../src/tools/architecture-overview.js';
 import { registerKnowledgeGapsTool } from '../src/tools/knowledge-gaps.js';
 import { registerSurprisingConnectionsTool } from '../src/tools/surprising-connections.js';
+import { registerWikiGenerateTool } from '../src/tools/wiki-generate.js';
+import { registerGraphExportTool } from '../src/tools/graph-export.js';
 import type { ServerContext } from '../src/tools/context.js';
 
 function makeGraph(): DependencyGraph {
@@ -22,14 +27,19 @@ function makeGraph(): DependencyGraph {
   return g;
 }
 
-function makeCtx(graph: DependencyGraph): ServerContext {
+function makeCtx(graph: DependencyGraph, projectRoot = '/fake'): ServerContext {
   return {
-    projectRoot: '/fake',
-    dbPath: '/fake/.ctxloom/vectors.lancedb',
+    projectRoot,
+    dbPath: `${projectRoot}/.ctxloom/vectors.lancedb`,
     getStore: () => Promise.reject(new Error('not needed')),
     getGraph: () => Promise.resolve(graph),
     getParser: () => Promise.reject(new Error('not needed')),
-    getSkeletonizer: () => Promise.reject(new Error('not needed')),
+    getSkeletonizer: async () => {
+      const { Skeletonizer } = await import('../src/ast/Skeletonizer.js');
+      const sk = new Skeletonizer();
+      await sk.init();
+      return sk;
+    },
     getRuleManager: () => { throw new Error('not needed'); },
     getPathValidator: () => { throw new Error('not needed'); },
     isStoreInitialized: () => false,
@@ -201,5 +211,124 @@ describe('ctx_surprising_connections', () => {
     registerSurprisingConnectionsTool(registry, makeCtx(new DependencyGraph()));
     const result = await registry.dispatch('ctx_surprising_connections', {});
     expect(result).toContain('<surprising_connections');
+  });
+});
+
+// ─── ctx_wiki_generate ─────────────────────────────────────────────────────
+
+describe('ctx_wiki_generate', () => {
+  let tmpDir: string;
+
+  beforeEach(() => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ctxloom-wiki-tool-test-'));
+  });
+
+  afterEach(() => {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it('returns XML with wiki_generate element', async () => {
+    const registry = new ToolRegistry();
+    registerWikiGenerateTool(registry, makeCtx(makeGraph(), tmpDir));
+    const result = await registry.dispatch('ctx_wiki_generate', {});
+    expect(result).toContain('<wiki_generate');
+    expect(result).toContain('</wiki_generate>');
+  });
+
+  it('includes written and skipped counts', async () => {
+    const registry = new ToolRegistry();
+    registerWikiGenerateTool(registry, makeCtx(makeGraph(), tmpDir));
+    const result = await registry.dispatch('ctx_wiki_generate', {});
+    expect(result).toMatch(/written="\d+"/);
+    expect(result).toMatch(/skipped="\d+"/);
+  });
+
+  it('second call skips all pages (cache hit)', async () => {
+    const ctx = makeCtx(makeGraph(), tmpDir);
+    const r1 = new ToolRegistry();
+    registerWikiGenerateTool(r1, ctx);
+    await r1.dispatch('ctx_wiki_generate', {});
+
+    const r2 = new ToolRegistry();
+    registerWikiGenerateTool(r2, ctx);
+    const second = await r2.dispatch('ctx_wiki_generate', {});
+    expect(second).toContain('written="0"');
+  });
+
+  it('force=true rewrites all pages', async () => {
+    const ctx = makeCtx(makeGraph(), tmpDir);
+    const r1 = new ToolRegistry();
+    registerWikiGenerateTool(r1, ctx);
+    const first = await r1.dispatch('ctx_wiki_generate', {});
+    const firstWritten = Number((first.match(/written="(\d+)"/) ?? [])[1] ?? 0);
+
+    const r2 = new ToolRegistry();
+    registerWikiGenerateTool(r2, ctx);
+    const second = await r2.dispatch('ctx_wiki_generate', { force: true });
+    expect(second).toContain(`written="${firstWritten}"`);
+    expect(second).toContain('skipped="0"');
+  });
+
+  it('handles empty graph', async () => {
+    const registry = new ToolRegistry();
+    registerWikiGenerateTool(registry, makeCtx(new DependencyGraph(), tmpDir));
+    const result = await registry.dispatch('ctx_wiki_generate', {});
+    expect(result).toContain('written="0"');
+  });
+});
+
+// ─── ctx_graph_export ──────────────────────────────────────────────────────
+
+describe('ctx_graph_export', () => {
+  let tmpDir: string;
+
+  beforeEach(() => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ctxloom-export-tool-test-'));
+  });
+
+  afterEach(() => {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it('graphml: returns XML with graph_export element', async () => {
+    const registry = new ToolRegistry();
+    registerGraphExportTool(registry, makeCtx(makeGraph(), tmpDir));
+    const result = await registry.dispatch('ctx_graph_export', { format: 'graphml' });
+    expect(result).toContain('<graph_export');
+    expect(result).toContain('format="graphml"');
+    expect(result).toMatch(/nodes="\d+"/);
+    expect(result).toMatch(/edges="\d+"/);
+  });
+
+  it('graphml: writes graph.graphml to .ctxloom/export/', async () => {
+    const registry = new ToolRegistry();
+    registerGraphExportTool(registry, makeCtx(makeGraph(), tmpDir));
+    await registry.dispatch('ctx_graph_export', { format: 'graphml' });
+    expect(fs.existsSync(path.join(tmpDir, '.ctxloom', 'export', 'graph.graphml'))).toBe(true);
+  });
+
+  it('dot: writes graph.dot to .ctxloom/export/', async () => {
+    const registry = new ToolRegistry();
+    registerGraphExportTool(registry, makeCtx(makeGraph(), tmpDir));
+    await registry.dispatch('ctx_graph_export', { format: 'dot' });
+    expect(fs.existsSync(path.join(tmpDir, '.ctxloom', 'export', 'graph.dot'))).toBe(true);
+  });
+
+  it('obsidian: writes one .md per node to .ctxloom/export/obsidian/', async () => {
+    const registry = new ToolRegistry();
+    const graph = makeGraph();
+    registerGraphExportTool(registry, makeCtx(graph, tmpDir));
+    await registry.dispatch('ctx_graph_export', { format: 'obsidian' });
+    const obsidianDir = path.join(tmpDir, '.ctxloom', 'export', 'obsidian');
+    const files = fs.readdirSync(obsidianDir).filter(f => f.endsWith('.md'));
+    expect(files.length).toBe(graph.allFiles().length);
+  });
+
+  it('handles empty graph', async () => {
+    const registry = new ToolRegistry();
+    registerGraphExportTool(registry, makeCtx(new DependencyGraph(), tmpDir));
+    const result = await registry.dispatch('ctx_graph_export', { format: 'graphml' });
+    expect(result).toContain('nodes="0"');
+    expect(result).toContain('edges="0"');
   });
 });
