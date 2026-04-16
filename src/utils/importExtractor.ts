@@ -44,6 +44,10 @@ export function extractImports(filePath: string, content: string): RawImport[] {
     case '.go':   return extractGoImports(content);
     case '.java': return extractJavaImports(content);
     case '.cs':   return extractCSharpImports(content);
+    case '.rb':   return extractRubyImports(content);
+    case '.kt':
+    case '.kts': return extractKotlinImports(content);
+    case '.swift': return extractSwiftImports(content);
     default:      return [];
   }
 }
@@ -70,6 +74,9 @@ export function resolveImport(
   if (ext === '.go') return resolveGoImportFull(fromAbs, fromDir, raw, rootDir);
   if (ext === '.java') return resolveJavaImport(fromDir, raw, rootDir);
   if (ext === '.cs') return resolveCSharpImport(fromDir, raw, rootDir);
+  if (ext === '.rb') return resolveRubyImport(fromDir, raw, rootDir);
+  if (ext === '.kt' || ext === '.kts') return resolveKotlinImport(fromDir, raw, rootDir);
+  if (ext === '.swift') return resolveSwiftImport(fromDir, raw, rootDir);
 
   return null;
 }
@@ -276,5 +283,78 @@ function resolveCSharpImport(
   const className = raw.specifier.split('.').pop() ?? raw.specifier;
   const local = path.join(fromDir, className + '.cs');
   if (fs.existsSync(local)) return path.relative(rootDir, local);
+  return null;
+}
+
+// ─── Ruby ─────────────────────────────────────────────────────────────────
+
+function extractRubyImports(content: string): RawImport[] {
+  const results: RawImport[] = [];
+  // Only require_relative resolves to local files; plain require is gems
+  const relRe = /require_relative\s+['"]([^'"]+)['"]/gm;
+  let m: RegExpExecArray | null;
+  while ((m = relRe.exec(content)) !== null) {
+    results.push({ specifier: m[1], isRelative: true });
+  }
+  return results;
+}
+
+function resolveRubyImport(
+  fromDir: string,
+  raw: RawImport,
+  rootDir: string,
+): string | null {
+  const candidates = [
+    path.join(fromDir, raw.specifier + '.rb'),
+    path.join(fromDir, raw.specifier),
+  ];
+  for (const c of candidates) {
+    if (fs.existsSync(c)) return path.relative(rootDir, c);
+  }
+  return null;
+}
+
+// ─── Kotlin ───────────────────────────────────────────────────────────────
+
+function extractKotlinImports(content: string): RawImport[] {
+  const results: RawImport[] = [];
+  const importRe = /^import\s+([\w.]+)/gm;
+  let m: RegExpExecArray | null;
+  while ((m = importRe.exec(content)) !== null) {
+    results.push({ specifier: m[1], isRelative: false });
+  }
+  return results;
+}
+
+function resolveKotlinImport(
+  fromDir: string,
+  raw: RawImport,
+  rootDir: string,
+): string | null {
+  // import com.example.Foo → rootDir/com/example/Foo.kt
+  const asPath = raw.specifier.replace(/\./g, path.sep);
+  for (const ext of ['.kt', '.kts']) {
+    const candidate = path.join(rootDir, asPath + ext);
+    if (fs.existsSync(candidate)) return path.relative(rootDir, candidate);
+  }
+  const className = raw.specifier.split('.').pop() ?? raw.specifier;
+  const local = path.join(fromDir, className + '.kt');
+  if (fs.existsSync(local)) return path.relative(rootDir, local);
+  return null;
+}
+
+// ─── Swift ────────────────────────────────────────────────────────────────
+
+function extractSwiftImports(_content: string): RawImport[] {
+  // Swift uses module imports (import Foundation), not file imports
+  // No local file resolution possible without Swift Package Manager metadata
+  return [];
+}
+
+function resolveSwiftImport(
+  _fromDir: string,
+  _raw: RawImport,
+  _rootDir: string,
+): string | null {
   return null;
 }

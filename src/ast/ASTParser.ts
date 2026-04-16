@@ -89,6 +89,9 @@ export class ASTParser {
   private rustLang: TreeSitter.Language | null = null;
   private javaLang: TreeSitter.Language | null = null;
   private csLang: TreeSitter.Language | null = null;
+  private rubyLang: TreeSitter.Language | null = null;
+  private kotlinLang: TreeSitter.Language | null = null;
+  private swiftLang: TreeSitter.Language | null = null;
   private grammarLoader = new GrammarLoader();
 
   async init(): Promise<void> {
@@ -188,6 +191,39 @@ export class ASTParser {
     }
   }
 
+  private async loadRuby(): Promise<void> {
+    if (this.rubyLang) return;
+    try {
+      const wasmPath = await this.grammarLoader.ensureGrammar('ruby');
+      this.rubyLang = await TreeSitter.Language.load(wasmPath);
+    } catch (err) {
+      const { logger } = await import('../utils/logger.js');
+      logger.warn('Ruby grammar unavailable', { detail: err instanceof Error ? err.message : String(err) });
+    }
+  }
+
+  private async loadKotlin(): Promise<void> {
+    if (this.kotlinLang) return;
+    try {
+      const wasmPath = await this.grammarLoader.ensureGrammar('kotlin');
+      this.kotlinLang = await TreeSitter.Language.load(wasmPath);
+    } catch (err) {
+      const { logger } = await import('../utils/logger.js');
+      logger.warn('Kotlin grammar unavailable', { detail: err instanceof Error ? err.message : String(err) });
+    }
+  }
+
+  private async loadSwift(): Promise<void> {
+    if (this.swiftLang) return;
+    try {
+      const wasmPath = await this.grammarLoader.ensureGrammar('swift');
+      this.swiftLang = await TreeSitter.Language.load(wasmPath);
+    } catch (err) {
+      const { logger } = await import('../utils/logger.js');
+      logger.warn('Swift grammar unavailable', { detail: err instanceof Error ? err.message : String(err) });
+    }
+  }
+
   async parse(filePath: string): Promise<ParsedNode[]> {
     if (!this.tsLang) throw new Error('ASTParser not initialized. Call init() first.');
 
@@ -199,6 +235,9 @@ export class ASTParser {
     if (ext === '.rs') return this.parseRust(filePath);
     if (ext === '.java') return this.parseJava(filePath);
     if (ext === '.cs') return this.parseCSharp(filePath);
+    if (ext === '.rb') return this.parseRuby(filePath);
+    if (ext === '.kt' || ext === '.kts') return this.parseKotlin(filePath);
+    if (ext === '.swift') return this.parseSwift(filePath);
 
     const parser = new TreeSitter.Parser();
     parser.setLanguage(this.tsLang);
@@ -905,6 +944,222 @@ export class ASTParser {
               type: 'interface',
               name: nameNode.text,
               signature: `interface ${nameNode.text}`,
+              startLine: node.startPosition.row + 1,
+              endLine: node.endPosition.row + 1,
+            });
+          }
+          return;
+        }
+      }
+      for (const child of node.children) {
+        if (child) walk(child);
+      }
+    };
+
+    walk(tree.rootNode);
+    return nodes;
+  }
+
+  private async parseRuby(filePath: string): Promise<ParsedNode[]> {
+    if (!this.rubyLang) await this.loadRuby();
+    if (!this.rubyLang) return [];
+
+    const parser = new TreeSitter.Parser();
+    parser.setLanguage(this.rubyLang);
+
+    const source = fs.readFileSync(filePath, 'utf-8');
+    const tree = parser.parse(source);
+    if (!tree) return [];
+
+    const nodes: ParsedNode[] = [];
+    const lines = source.split('\n');
+
+    const walk = (node: TreeSitter.Node): void => {
+      switch (node.type) {
+        case 'method':
+        case 'singleton_method': {
+          const nameNode = node.childForFieldName?.('name') ?? node.children.find(c => c?.type === 'identifier');
+          if (nameNode) {
+            nodes.push({
+              type: 'function',
+              name: nameNode.text,
+              signature: (lines[node.startPosition.row] ?? '').trim(),
+              startLine: node.startPosition.row + 1,
+              endLine: node.endPosition.row + 1,
+            });
+          }
+          return;
+        }
+        case 'class': {
+          const nameNode = node.childForFieldName?.('name') ?? node.children.find(c => c?.type === 'constant');
+          if (nameNode) {
+            const body = node.childForFieldName?.('body');
+            const methods = (body?.children ?? [])
+              .filter((c): c is TreeSitter.Node => c !== null && (c.type === 'method' || c.type === 'singleton_method'))
+              .map(c => (c.childForFieldName?.('name') ?? c.children.find(ch => ch?.type === 'identifier'))?.text ?? '')
+              .filter(Boolean);
+            nodes.push({
+              type: 'class',
+              name: nameNode.text,
+              signature: `class ${nameNode.text}`,
+              methods,
+              startLine: node.startPosition.row + 1,
+              endLine: node.endPosition.row + 1,
+            });
+          }
+          return;
+        }
+        case 'module': {
+          const nameNode = node.childForFieldName?.('name') ?? node.children.find(c => c?.type === 'constant');
+          if (nameNode) {
+            nodes.push({
+              type: 'class',
+              name: nameNode.text,
+              signature: `module ${nameNode.text}`,
+              startLine: node.startPosition.row + 1,
+              endLine: node.endPosition.row + 1,
+            });
+          }
+          return;
+        }
+      }
+      for (const child of node.children) {
+        if (child) walk(child);
+      }
+    };
+
+    walk(tree.rootNode);
+    return nodes;
+  }
+
+  private async parseKotlin(filePath: string): Promise<ParsedNode[]> {
+    if (!this.kotlinLang) await this.loadKotlin();
+    if (!this.kotlinLang) return [];
+
+    const parser = new TreeSitter.Parser();
+    parser.setLanguage(this.kotlinLang);
+
+    const source = fs.readFileSync(filePath, 'utf-8');
+    const tree = parser.parse(source);
+    if (!tree) return [];
+
+    const nodes: ParsedNode[] = [];
+    const lines = source.split('\n');
+
+    const walk = (node: TreeSitter.Node): void => {
+      switch (node.type) {
+        case 'function_declaration': {
+          const nameNode = node.children.find(c => c?.type === 'simple_identifier');
+          if (nameNode) {
+            nodes.push({
+              type: 'function',
+              name: nameNode.text,
+              signature: (lines[node.startPosition.row] ?? '').trim(),
+              startLine: node.startPosition.row + 1,
+              endLine: node.endPosition.row + 1,
+            });
+          }
+          return;
+        }
+        case 'class_declaration':
+        case 'object_declaration': {
+          const nameNode = node.children.find(c => c?.type === 'type_identifier' || c?.type === 'simple_identifier');
+          if (nameNode) {
+            nodes.push({
+              type: 'class',
+              name: nameNode.text,
+              signature: `class ${nameNode.text}`,
+              startLine: node.startPosition.row + 1,
+              endLine: node.endPosition.row + 1,
+            });
+          }
+          return;
+        }
+        case 'import_header': {
+          const identifier = node.children.find(c => c?.type === 'identifier');
+          if (identifier) {
+            nodes.push({
+              type: 'import',
+              name: identifier.text,
+              source: identifier.text,
+              startLine: node.startPosition.row + 1,
+              endLine: node.endPosition.row + 1,
+            });
+          }
+          return;
+        }
+      }
+      for (const child of node.children) {
+        if (child) walk(child);
+      }
+    };
+
+    walk(tree.rootNode);
+    return nodes;
+  }
+
+  private async parseSwift(filePath: string): Promise<ParsedNode[]> {
+    if (!this.swiftLang) await this.loadSwift();
+    if (!this.swiftLang) return [];
+
+    const parser = new TreeSitter.Parser();
+    parser.setLanguage(this.swiftLang);
+
+    const source = fs.readFileSync(filePath, 'utf-8');
+    const tree = parser.parse(source);
+    if (!tree) return [];
+
+    const nodes: ParsedNode[] = [];
+    const lines = source.split('\n');
+
+    const walk = (node: TreeSitter.Node): void => {
+      switch (node.type) {
+        case 'function_declaration': {
+          const nameNode = node.childForFieldName?.('name') ?? node.children.find(c => c?.type === 'simple_identifier');
+          if (nameNode) {
+            nodes.push({
+              type: 'function',
+              name: nameNode.text,
+              signature: (lines[node.startPosition.row] ?? '').trim(),
+              startLine: node.startPosition.row + 1,
+              endLine: node.endPosition.row + 1,
+            });
+          }
+          return;
+        }
+        case 'class_declaration': {
+          const nameNode = node.childForFieldName?.('name') ?? node.children.find(c => c?.type === 'type_identifier');
+          if (nameNode) {
+            nodes.push({
+              type: 'class',
+              name: nameNode.text,
+              signature: `class ${nameNode.text}`,
+              startLine: node.startPosition.row + 1,
+              endLine: node.endPosition.row + 1,
+            });
+          }
+          return;
+        }
+        case 'protocol_declaration': {
+          const nameNode = node.childForFieldName?.('name') ?? node.children.find(c => c?.type === 'type_identifier');
+          if (nameNode) {
+            nodes.push({
+              type: 'interface',
+              name: nameNode.text,
+              signature: `protocol ${nameNode.text}`,
+              startLine: node.startPosition.row + 1,
+              endLine: node.endPosition.row + 1,
+            });
+          }
+          return;
+        }
+        case 'import_declaration': {
+          const nameNode = node.children.find(c => c?.type === 'identifier');
+          if (nameNode) {
+            nodes.push({
+              type: 'import',
+              name: nameNode.text,
+              source: nameNode.text,
               startLine: node.startPosition.row + 1,
               endLine: node.endPosition.row + 1,
             });
