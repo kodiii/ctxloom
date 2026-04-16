@@ -18,6 +18,7 @@ import { registerSurprisingConnectionsTool } from './surprising-connections.js';
 import { registerWikiGenerateTool } from './wiki-generate.js';
 import { registerGraphExportTool } from './graph-export.js';
 import { registerGitDiffReviewTool } from './git-diff-review.js';
+import { registerRefactorPreviewTool } from './refactor-preview.js';
 
 export function createToolRegistry(ctx: ServerContext): ToolRegistry {
   const registry = new ToolRegistry();
@@ -39,5 +40,6 @@ export function createToolRegistry(ctx: ServerContext): ToolRegistry {
   registerWikiGenerateTool(registry, ctx);
   registerGraphExportTool(registry, ctx);
   registerGitDiffReviewTool(registry, ctx);
+  registerRefactorPreviewTool(registry, ctx);
   return registry;
 }
