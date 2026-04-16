@@ -1,0 +1,52 @@
+[
+  {
+    "name": "expressjs/express",
+    "lang": "js",
+    "files": 141,
+    "indexTimeMs": 866,
+    "graphEdges": 0,
+    "rawChars": 18583,
+    "skeletonChars": 1560,
+    "reductionPct": 92
+  },
+  {
+    "name": "sindresorhus/got",
+    "lang": "ts",
+    "files": 71,
+    "indexTimeMs": 717,
+    "graphEdges": 143,
+    "rawChars": 43226,
+    "skeletonChars": 2966,
+    "reductionPct": 93
+  },
+  {
+    "name": "pallets/flask",
+    "lang": "py",
+    "files": 83,
+    "indexTimeMs": 133,
+    "graphEdges": 93,
+    "rawChars": 0,
+    "skeletonChars": 0,
+    "reductionPct": 0
+  },
+  {
+    "name": "SergioBenitez/Rocket",
+    "lang": "rs",
+    "files": 495,
+    "indexTimeMs": 618,
+    "graphEdges": 294,
+    "rawChars": 5122,
+    "skeletonChars": 361,
+    "reductionPct": 93
+  },
+  {
+    "name": "fastify/fastify",
+    "lang": "js",
+    "files": 258,
+    "indexTimeMs": 2336,
+    "graphEdges": 26,
+    "rawChars": 8542,
+    "skeletonChars": 809,
+    "reductionPct": 91
+  }
+]
