@@ -15,7 +15,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import type { DependencyGraph } from './DependencyGraph.js';
 
-export type ExportFormat = 'graphml' | 'dot' | 'obsidian' | 'svg';
+export type ExportFormat = 'graphml' | 'dot' | 'obsidian' | 'svg' | 'html';
 
 export interface ExportResult {
   format: ExportFormat;
@@ -156,6 +156,120 @@ export class GraphExporter {
     return lines.join('\n');
   }
 
+  toHTML(): string {
+    const files = this.graph.allFiles();
+    if (files.length === 0) {
+      return '<!DOCTYPE html><html><body><p>No nodes in graph</p></body></html>';
+    }
+
+    const nodeIndex = new Map<string, number>();
+    files.forEach((f, i) => nodeIndex.set(f, i));
+
+    const nodesJson = JSON.stringify(
+      files.map(f => ({
+        id: nodeIndex.get(f),
+        label: f.split('/').pop()?.replace(/\.[^.]+$/, '') ?? f,
+        path: f,
+        importers: this.graph.getImporters(f).length,
+      })),
+    );
+
+    const linksJson = JSON.stringify(
+      files.flatMap(f =>
+        this.graph.getImports(f)
+          .filter(t => nodeIndex.has(t))
+          .map(t => ({ source: nodeIndex.get(f)!, target: nodeIndex.get(t)! }))
+      ),
+    );
+
+    return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ctxloom — Import Graph</title>
+  <script src="https://unpkg.com/d3@7/dist/d3.min.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: #0f172a; color: #e2e8f0; font-family: monospace; overflow: hidden; }
+    #info { position: fixed; top: 12px; left: 12px; background: #1e293b; padding: 10px 14px;
+            border-radius: 8px; font-size: 12px; opacity: 0.9; max-width: 260px; z-index: 10; }
+    #info strong { color: #7dd3fc; }
+    #tooltip { position: fixed; background: #1e293b; color: #f8fafc; padding: 8px 12px;
+               border-radius: 6px; font-size: 11px; pointer-events: none; opacity: 0;
+               transition: opacity 0.15s; max-width: 320px; word-break: break-all; z-index: 20; }
+    line { stroke: #334155; }
+    circle { cursor: pointer; }
+  </style>
+</head>
+<body>
+<div id="info">
+  <strong>ctxloom</strong> — Import Graph<br>
+  ${files.length} nodes · Drag to reposition · Scroll to zoom<br>
+  <span style="color:#f59e0b">●</span> Hub (≥5 importers) &nbsp;
+  <span style="color:#4f6ef7">●</span> Normal
+</div>
+<div id="tooltip"></div>
+<svg id="graph"></svg>
+<script>
+const nodes = ${nodesJson};
+const links = ${linksJson};
+
+const W = window.innerWidth, H = window.innerHeight;
+const svg = d3.select('#graph').attr('width', W).attr('height', H);
+const g = svg.append('g');
+
+svg.call(d3.zoom().scaleExtent([0.1, 8]).on('zoom', e => g.attr('transform', e.transform)));
+
+const sim = d3.forceSimulation(nodes)
+  .force('link', d3.forceLink(links).id(d => d.id).distance(80))
+  .force('charge', d3.forceManyBody().strength(-200))
+  .force('center', d3.forceCenter(W / 2, H / 2))
+  .force('collision', d3.forceCollide(18));
+
+const link = g.append('g').selectAll('line')
+  .data(links).join('line').attr('stroke-width', 0.8).attr('opacity', 0.5)
+  .attr('marker-end', 'url(#arr)');
+
+svg.append('defs').append('marker')
+  .attr('id', 'arr').attr('viewBox', '0 0 8 8').attr('refX', 8).attr('refY', 4)
+  .attr('markerWidth', 5).attr('markerHeight', 5).attr('orient', 'auto')
+  .append('path').attr('d', 'M0,0 L8,4 L0,8 z').attr('fill', '#334155');
+
+const tooltip = d3.select('#tooltip');
+
+const node = g.append('g').selectAll('circle')
+  .data(nodes).join('circle')
+  .attr('r', d => d.importers >= 5 ? 9 : 6)
+  .attr('fill', d => d.importers >= 5 ? '#f59e0b' : '#4f6ef7')
+  .attr('opacity', 0.85)
+  .on('mouseover', (e, d) => {
+    tooltip.style('opacity', 1).html('<strong>' + d.path + '</strong><br>' + d.importers + ' importers');
+  })
+  .on('mousemove', e => tooltip.style('left', (e.clientX + 12) + 'px').style('top', (e.clientY - 24) + 'px'))
+  .on('mouseout', () => tooltip.style('opacity', 0))
+  .call(d3.drag()
+    .on('start', (e, d) => { if (!e.active) sim.alphaTarget(0.3).restart(); d.fx = d.x; d.fy = d.y; })
+    .on('drag', (e, d) => { d.fx = e.x; d.fy = e.y; })
+    .on('end', (e, d) => { if (!e.active) sim.alphaTarget(0); d.fx = null; d.fy = null; })
+  );
+
+const label = g.append('g').selectAll('text')
+  .data(nodes).join('text')
+  .text(d => d.label.slice(0, 16))
+  .attr('font-size', 9).attr('fill', '#94a3b8').attr('text-anchor', 'middle').attr('dy', 18);
+
+sim.on('tick', () => {
+  link.attr('x1', d => d.source.x).attr('y1', d => d.source.y)
+      .attr('x2', d => d.target.x).attr('y2', d => d.target.y);
+  node.attr('cx', d => d.x).attr('cy', d => d.y);
+  label.attr('x', d => d.x).attr('y', d => d.y);
+});
+</script>
+</body>
+</html>`;
+  }
+
   export(format: ExportFormat): ExportResult {
     fs.mkdirSync(this.exportDir, { recursive: true });
     const files = this.graph.allFiles();
@@ -176,6 +290,12 @@ export class GraphExporter {
     if (format === 'svg') {
       const outputPath = path.join(this.exportDir, 'graph.svg');
       fs.writeFileSync(outputPath, this.toSVG(), 'utf-8');
+      return { format, outputPath, nodeCount: files.length, edgeCount };
+    }
+
+    if (format === 'html') {
+      const outputPath = path.join(this.exportDir, 'graph.html');
+      fs.writeFileSync(outputPath, this.toHTML(), 'utf-8');
       return { format, outputPath, nodeCount: files.length, edgeCount };
     }
 

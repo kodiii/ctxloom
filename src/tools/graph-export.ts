@@ -12,8 +12,8 @@ import type { ServerContext } from './context.js';
 import { GraphExporter } from '../graph/GraphExporter.js';
 
 const Schema = z.object({
-  format: z.enum(['graphml', 'dot', 'obsidian', 'svg']).describe(
-    'Output format: graphml (Gephi/yEd), dot (Graphviz), obsidian (wikilink vault), svg (inline, no dependencies)',
+  format: z.enum(['graphml', 'dot', 'obsidian', 'svg', 'html']).describe(
+    'Output format: graphml (Gephi/yEd), dot (Graphviz), obsidian (wikilink vault), svg (inline, no dependencies), html (interactive D3.js browser view)',
   ),
 });
 
@@ -27,17 +27,14 @@ export function registerGraphExportTool(registry: ToolRegistry, ctx: ServerConte
     {
       name: 'ctx_graph_export',
       description:
-        'Export the import graph to GraphML (Gephi/yEd), DOT (Graphviz), Obsidian wikilink format, or inline SVG. ' +
-        'Output is written to .ctxloom/export/. ' +
-        'GraphML and DOT enable visual graph exploration. ' +
-        'Obsidian format creates a linked knowledge base browsable in Obsidian. ' +
-        'SVG produces a standalone inline SVG with no external dependencies.',
+        'Export the import graph to GraphML (Gephi/yEd), DOT (Graphviz), Obsidian wikilink format, inline SVG, or an interactive D3.js HTML file. ' +
+        'Open the HTML file in any browser for a zoomable, draggable force-directed graph with hub highlighting.',
       inputSchema: {
         type: 'object',
         properties: {
           format: {
             type: 'string',
-            enum: ['graphml', 'dot', 'obsidian', 'svg'],
+            enum: ['graphml', 'dot', 'obsidian', 'svg', 'html'],
             description: 'Export format',
           },
         },
