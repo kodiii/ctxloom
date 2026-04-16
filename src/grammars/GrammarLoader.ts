@@ -75,10 +75,12 @@ export class GrammarLoader {
     const cached = this.getCachedPath(language);
     if (cached) return cached;
 
-    const url = `${this.cdn}/${entry.npmPackage}@${entry.version}/${entry.wasmFile}`;
+    const url = entry.downloadUrl?.trim()
+      ? entry.downloadUrl
+      : `${this.cdn}/${entry.npmPackage}@${entry.version}/${entry.wasmFile}`;
     const dest = path.join(this.cacheDir, entry.wasmFile);
 
-    logger.info('Downloading grammar', { language, url });
+    logger.info('Downloading grammar', { language, url, source: entry.downloadUrl?.trim() ? 'custom' : 'cdn' });
     fs.mkdirSync(this.cacheDir, { recursive: true });
 
     await this.download(url, dest);

@@ -13,6 +13,7 @@ export interface GrammarEntry {
   version: string;
   wasmFile: string;
   sha256: string | null; // null = unverified (skip hash check in dev)
+  downloadUrl?: string; // Override CDN URL (for grammars without WASM in npm package)
 }
 
 export const GRAMMAR_MANIFEST: GrammarEntry[] = [
