@@ -7,7 +7,7 @@ describe('CallGraphIndex', () => {
     idx.addEdge({ callerFile: 'src/a.ts', callerSymbol: 'foo', calleeSymbol: 'bar', line: 10 });
     const callers = idx.getCallers('bar');
     expect(callers).toHaveLength(1);
-    expect(callers[0]).toEqual({ file: 'src/a.ts', symbol: 'foo' });
+    expect(callers[0]).toMatchObject({ file: 'src/a.ts', symbol: 'foo' });
   });
 
   it('returns empty array for unknown callee', () => {
@@ -34,7 +34,7 @@ describe('CallGraphIndex', () => {
     idx.addEdge({ callerFile: 'a.ts', callerSymbol: 'foo', calleeSymbol: 'bar', line: 1 });
     const restored = CallGraphIndex.fromJSON(idx.toJSON());
     expect(restored.getCallers('bar')).toHaveLength(1);
-    expect(restored.getCallers('bar')[0]).toEqual({ file: 'a.ts', symbol: 'foo' });
+    expect(restored.getCallers('bar')[0]).toMatchObject({ file: 'a.ts', symbol: 'foo' });
   });
 
   it('size() counts total edges', () => {

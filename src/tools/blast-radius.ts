@@ -8,6 +8,7 @@ import { z } from 'zod';
 import { exec } from 'node:child_process';
 import { promisify } from 'node:util';
 import type { DependencyGraph } from '../graph/DependencyGraph.js';
+import type { EdgeConfidence } from '../graph/CallGraphIndex.js';
 import type { ToolRegistry } from './registry.js';
 import type { ServerContext } from './context.js';
 import { logger } from '../utils/logger.js';
@@ -34,7 +35,7 @@ export interface BlastRadiusResult {
   changedFiles: string[];
   directImporters: string[];
   transitiveImporters: string[];
-  callSites: Array<{ file: string; callerSymbol: string; calleeSymbol: string }>;
+  callSites: Array<{ file: string; callerSymbol: string; calleeSymbol: string; confidence: EdgeConfidence }>;
 }
 
 async function detectChangedFiles(projectRoot: string): Promise<string[]> {
@@ -86,7 +87,7 @@ export async function computeBlastRadius(opts: BlastRadiusOptions): Promise<Blas
     const symbolNames = graph.lookupSymbolsByFile(file);
     for (const sym of symbolNames) {
       for (const caller of callIdx.getCallers(sym)) {
-        callSites.push({ file: caller.file, callerSymbol: caller.symbol, calleeSymbol: sym });
+        callSites.push({ file: caller.file, callerSymbol: caller.symbol, calleeSymbol: sym, confidence: caller.confidence });
       }
     }
   }
@@ -132,7 +133,7 @@ export function buildBlastRadiusXml(
     '  </transitive_importers>',
     `  <call_sites count="${result.callSites.length}">`,
     ...result.callSites.map(s =>
-      `    <call_site file="${escapeXML(s.file)}" caller="${escapeXML(s.callerSymbol)}" callee="${escapeXML(s.calleeSymbol)}" />`,
+      `    <call_site file="${escapeXML(s.file)}" caller="${escapeXML(s.callerSymbol)}" callee="${escapeXML(s.calleeSymbol)}" confidence="${s.confidence}" />`,
     ),
     '  </call_sites>',
     '</blast_radius>',
