@@ -35,10 +35,13 @@ export function saveNamedSnapshot(
   rootDir: string,
   overwrite = false,
 ): void {
-  const snapshotsDir = path.join(rootDir, '.ctxloom', 'snapshots');
+  const snapshotsDir = path.resolve(rootDir, '.ctxloom', 'snapshots');
   fs.mkdirSync(snapshotsDir, { recursive: true });
 
-  const snapshotPath = path.join(snapshotsDir, `${name}.json`);
+  const snapshotPath = path.resolve(snapshotsDir, `${name}.json`);
+  if (!snapshotPath.startsWith(snapshotsDir + path.sep)) {
+    throw new Error(`Invalid snapshot name: "${name}"`);
+  }
   if (fs.existsSync(snapshotPath) && !overwrite) {
     throw new Error(`Snapshot "${name}" already exists. Pass overwrite: true to replace it.`);
   }
@@ -76,35 +79,42 @@ export function registerGraphSnapshotTool(registry: ToolRegistry, ctx: ServerCon
   registry.register(
     'ctx_graph_snapshot',
     {
-      type: 'object',
-      properties: {
-        name: {
-          type: 'string',
-          description: 'Snapshot name (e.g. "before-refactor", "v1.0"). Letters, digits, dots, underscores, hyphens only.',
+      name: 'ctx_graph_snapshot',
+      description:
+        'Save the current import graph as a named checkpoint to .ctxloom/snapshots/<name>.json. ' +
+        'Use ctx_graph_diff to compare two snapshots.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          name: {
+            type: 'string',
+            description: 'Snapshot name (e.g. "before-refactor", "v1.0"). Letters, digits, dots, underscores, hyphens only.',
+          },
+          overwrite: {
+            type: 'boolean',
+            description: 'If true, overwrite an existing snapshot with the same name. Default: false.',
+          },
         },
-        overwrite: {
-          type: 'boolean',
-          description: 'If true, overwrite an existing snapshot with the same name. Default: false.',
-        },
+        required: ['name'],
       },
-      required: ['name'],
     },
     async (args: unknown) => {
       const { name, overwrite } = schema.parse(args);
+      const graph = await ctx.getGraph();
 
       try {
-        saveNamedSnapshot(ctx.graph, name, ctx.rootDir, overwrite);
+        saveNamedSnapshot(graph, name, ctx.projectRoot, overwrite);
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         return `<ctx_graph_snapshot error="${msg}" />`;
       }
 
-      const files = ctx.graph.allFiles();
-      const saved = listNamedSnapshots(ctx.rootDir);
+      const files = graph.allFiles();
+      const saved = listNamedSnapshots(ctx.projectRoot);
 
       return [
         `<ctx_graph_snapshot name="${name}" saved_at="${new Date().toISOString()}"`,
-        ` node_count="${files.length}" edge_count="${ctx.graph.edgeCount()}">`,
+        ` node_count="${files.length}" edge_count="${graph.edgeCount()}">`,
         `  <message>Snapshot "${name}" saved to .ctxloom/snapshots/${name}.json</message>`,
         `  <available_snapshots count="${saved.length}">`,
         ...saved.map(s => `    <snapshot name="${s}" />`),
