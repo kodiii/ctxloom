@@ -93,6 +93,7 @@ export class ASTParser {
   private rubyLang: TreeSitter.Language | null = null;
   private kotlinLang: TreeSitter.Language | null = null;
   private swiftLang: TreeSitter.Language | null = null;
+  private phpLang: TreeSitter.Language | null = null;
   private grammarLoader = new GrammarLoader();
 
   async init(): Promise<void> {
@@ -225,6 +226,17 @@ export class ASTParser {
     }
   }
 
+  private async loadPhp(): Promise<void> {
+    if (this.phpLang) return;
+    try {
+      const wasmPath = await this.grammarLoader.ensureGrammar('php');
+      this.phpLang = await TreeSitter.Language.load(wasmPath);
+    } catch (err) {
+      const { logger } = await import('../utils/logger.js');
+      logger.warn('PHP grammar unavailable', { detail: err instanceof Error ? err.message : String(err) });
+    }
+  }
+
   async parse(filePath: string): Promise<ParsedNode[]> {
     if (!this.tsLang) throw new Error('ASTParser not initialized. Call init() first.');
 
@@ -240,6 +252,7 @@ export class ASTParser {
     if (ext === '.rb') return this.parseRuby(filePath);
     if (ext === '.kt' || ext === '.kts') return this.parseKotlin(filePath);
     if (ext === '.swift') return this.parseSwift(filePath);
+    if (ext === '.php') return this.parsePhp(filePath);
 
     const parser = new TreeSitter.Parser();
     parser.setLanguage(this.tsLang);
@@ -1185,6 +1198,74 @@ export class ASTParser {
               startLine: node.startPosition.row + 1,
               endLine: node.endPosition.row + 1,
             });
+          }
+          return;
+        }
+      }
+      for (const child of node.children) {
+        if (child) walk(child);
+      }
+    };
+
+    walk(tree.rootNode);
+    return nodes;
+  }
+
+  private async parsePhp(filePath: string): Promise<ParsedNode[]> {
+    if (!this.phpLang) await this.loadPhp();
+    if (!this.phpLang) return [];
+
+    const parser = new TreeSitter.Parser();
+    parser.setLanguage(this.phpLang);
+
+    const source = fs.readFileSync(filePath, 'utf-8');
+    const tree = parser.parse(source);
+    if (!tree) return [];
+
+    const nodes: ParsedNode[] = [];
+    const lines = source.split('\n');
+
+    const walk = (node: TreeSitter.Node): void => {
+      switch (node.type) {
+        case 'namespace_use_declaration': {
+          for (const child of node.children) {
+            if (child?.type === 'namespace_use_clause') {
+              const nameNode = child.children.find(c => c?.type === 'qualified_name' || c?.type === 'name');
+              if (nameNode) {
+                nodes.push({ type: 'import', name: nameNode.text, source: nameNode.text,
+                  startLine: node.startPosition.row + 1, endLine: node.endPosition.row + 1 });
+              }
+            }
+          }
+          return;
+        }
+        case 'function_definition': {
+          const nameNode = node.childForFieldName?.('name') ?? node.children.find(c => c?.type === 'name');
+          if (nameNode) {
+            nodes.push({ type: 'function', name: nameNode.text,
+              signature: (lines[node.startPosition.row] ?? '').trim(),
+              startLine: node.startPosition.row + 1, endLine: node.endPosition.row + 1 });
+          }
+          return;
+        }
+        case 'class_declaration': {
+          const nameNode = node.childForFieldName?.('name') ?? node.children.find(c => c?.type === 'name');
+          if (nameNode) {
+            const body = node.childForFieldName?.('body');
+            const methods = (body?.children ?? [])
+              .filter((c): c is TreeSitter.Node => c !== null && c.type === 'method_declaration')
+              .map(c => (c.childForFieldName?.('name') ?? c.children.find(ch => ch?.type === 'name'))?.text ?? '')
+              .filter(Boolean);
+            nodes.push({ type: 'class', name: nameNode.text, signature: `class ${nameNode.text}`,
+              methods, startLine: node.startPosition.row + 1, endLine: node.endPosition.row + 1 });
+          }
+          return;
+        }
+        case 'interface_declaration': {
+          const nameNode = node.childForFieldName?.('name') ?? node.children.find(c => c?.type === 'name');
+          if (nameNode) {
+            nodes.push({ type: 'interface', name: nameNode.text, signature: `interface ${nameNode.text}`,
+              startLine: node.startPosition.row + 1, endLine: node.endPosition.row + 1 });
           }
           return;
         }

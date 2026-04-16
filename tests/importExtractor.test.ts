@@ -145,6 +145,21 @@ describe('resolveImport()', () => {
     });
   });
 
+  describe('PHP imports', () => {
+    it('extracts require_once relative imports', () => {
+      const content = `<?php\nrequire_once './Models/User.php';\nrequire './helpers.php';\n`;
+      const result = extractImports('/project/src/index.php', content);
+      expect(result).toContainEqual({ specifier: './Models/User.php', isRelative: true });
+      expect(result).toContainEqual({ specifier: './helpers.php', isRelative: true });
+    });
+
+    it('extracts use namespace imports', () => {
+      const content = `<?php\nuse App\\Models\\User;\nuse App\\Services\\AuthService;\n`;
+      const result = extractImports('/project/src/index.php', content);
+      expect(result.some(r => r.specifier.includes('User'))).toBe(true);
+    });
+  });
+
   describe('Rust resolution', () => {
     it('should resolve mod foo to foo.rs', () => {
       fs.writeFileSync(path.join(tempDir, 'utils.rs'), '');
