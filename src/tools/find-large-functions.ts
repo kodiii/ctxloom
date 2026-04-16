@@ -43,8 +43,9 @@ export function findLargeFunctions(
       if (entry.type !== 'function' && entry.type !== 'class') continue;
       if (fileFilter && !entry.filePath.includes(fileFilter)) continue;
 
-      const startLine = entry.startLine ?? 0;
-      const endLine = entry.endLine ?? 0;
+      if (entry.startLine == null || entry.endLine == null) continue;
+      const startLine = entry.startLine;
+      const endLine = entry.endLine;
       const lineCount = endLine - startLine + 1;
 
       if (lineCount >= threshold) {
