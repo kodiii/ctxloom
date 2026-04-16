@@ -28,6 +28,7 @@ import { registerSuggestedQuestionsTool } from './suggested-questions.js';
 import { registerGetWorkflowTool } from './get-workflow.js';
 import { registerGraphSnapshotTool } from './graph-snapshot.js';
 import { registerGraphDiffTool } from './graph-diff.js';
+import { registerFindLargeFunctionsTool } from './find-large-functions.js';
 
 export function createToolRegistry(ctx: ServerContext): ToolRegistry {
   const registry = new ToolRegistry();
@@ -59,5 +60,6 @@ export function createToolRegistry(ctx: ServerContext): ToolRegistry {
   registerGetWorkflowTool(registry, ctx);
   registerGraphSnapshotTool(registry, ctx);
   registerGraphDiffTool(registry, ctx);
+  registerFindLargeFunctionsTool(registry, ctx);
   return registry;
 }

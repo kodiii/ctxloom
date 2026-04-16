@@ -36,11 +36,13 @@ export class DependencyGraph {
   /** file → set of files that import it (reverse edges) */
   private reverseEdges = new Map<string, Set<string>>();
 
-  /** Symbol index: symbolName → { filePath, type, signature } */
+  /** Symbol index: symbolName → { filePath, type, signature, startLine?, endLine? } */
   private symbolIndex = new Map<string, Array<{
     filePath: string;
     type: string;
     signature: string;
+    startLine?: number;
+    endLine?: number;
   }>>();
 
   private callGraphIndex = new CallGraphIndex();
@@ -136,6 +138,8 @@ export class DependencyGraph {
                 filePath: relPath,
                 type: node.type,
                 signature: node.signature ?? `${node.type} ${node.name}`,
+                startLine: node.startLine,
+                endLine: node.endLine,
               });
               this.symbolIndex.set(node.name, existing);
             }
@@ -208,6 +212,13 @@ export class DependencyGraph {
     return results;
   }
 
+  /**
+   * Iterate all symbol entries. Used by ctx_find_large_functions.
+   */
+  symbolEntries(): IterableIterator<[string, Array<{ filePath: string; type: string; signature: string; startLine?: number; endLine?: number }>]> {
+    return this.symbolIndex.entries();
+  }
+
   /** Return the pre-built call graph index (TypeScript/TSX only). */
   getCallGraphIndex(): CallGraphIndex {
     return this.callGraphIndex;
@@ -256,7 +267,13 @@ export class DependencyGraph {
     symbol: { type: string; name: string; signature: string; startLine?: number; endLine?: number },
   ): void {
     const existing = this.symbolIndex.get(symbol.name) ?? [];
-    existing.push({ filePath, type: symbol.type, signature: symbol.signature });
+    existing.push({
+      filePath,
+      type: symbol.type,
+      signature: symbol.signature,
+      startLine: symbol.startLine,
+      endLine: symbol.endLine,
+    });
     this.symbolIndex.set(symbol.name, existing);
     // Ensure file is registered in forward edges so allFiles() includes it
     if (!this.forwardEdges.has(filePath)) {
@@ -386,6 +403,8 @@ export class DependencyGraph {
               filePath: relPath,
               type: node.type,
               signature: node.signature ?? `${node.type} ${node.name}`,
+              startLine: node.startLine,
+              endLine: node.endLine,
             });
             this.symbolIndex.set(node.name, existing);
           }
