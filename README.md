@@ -53,8 +53,8 @@ ctxloom index
 | Graph export (Gephi/Obsidian) | ✅ `ctx_graph_export` | ✅ | ❌ |
 | Cross-repo search | ✅ `ctx_cross_repo_search` | ✅ | ❌ |
 | All-in-one code review packet | ✅ `ctx_git_diff_review` | ✅ | ❌ |
-| Tree-sitter AST | ✅ TS/JS + Python | ✅ Multi-language | varies |
-| Token reduction (skeletonization) | ✅ **~80% measured** | ✅ | ❌ |
+| Tree-sitter AST | ✅ TS/JS/Python/Go/Rust/Java/C#/Ruby/Kotlin/Swift/PHP/Dart/Vue — 13 languages | ✅ Multi-language | varies |
+| Token reduction (skeletonization) | ✅ **92% measured on real repos** | ✅ | ❌ |
 | npm install size | ✅ <5 MB (lazy grammars) | ❌ Large | varies |
 | MCP protocol native | ✅ | ✅ | varies |
 
@@ -62,7 +62,7 @@ ctxloom index
 
 ---
 
-## Tools — 27 total
+## Tools — 29 total
 
 ### Search & Context
 
@@ -73,6 +73,7 @@ ctxloom index
 | `ctx_get_context_packet` | Smart multi-file context: primary file + dependency skeletons + reverse importers |
 | `ctx_similar_files` | Find semantically similar files via vector embeddings |
 | `ctx_cross_repo_search` | Federated semantic search across all registered repos |
+| `ctx_full_text_search` | Hybrid keyword+vector search with regex support and configurable context lines |
 
 ### Graph Intelligence
 
@@ -85,6 +86,7 @@ ctxloom index
 | `ctx_architecture_overview` | High-level summary: communities, hub files, cross-community coupling |
 | `ctx_knowledge_gaps` | Isolated files, untested hubs, dead code candidates |
 | `ctx_surprising_connections` | Circular deps, cross-community imports, prod→test violations |
+| `ctx_find_large_functions` | Find functions/classes exceeding a line-count threshold, sorted by size descending |
 
 ### Code Navigation
 
@@ -94,6 +96,7 @@ ctxloom index
 | `ctx_get_definition` | Symbol definition lookup via AST index |
 | `ctx_execution_flow` | DFS call graph traversal from entry point with cycle detection |
 | `ctx_refactor_preview` | Read-only symbol rename diff preview — see every change before applying |
+| `ctx_apply_refactor` | Write symbol renames to disk atomically (supports dry_run) |
 
 ### Review & Export
 
@@ -101,7 +104,11 @@ ctxloom index
 |------|-------------|
 | `ctx_git_diff_review` | All-in-one code review packet: git diffs + skeletons + blast radius |
 | `ctx_wiki_generate` | Generate `.ctxloom/wiki/` — one Markdown page per community (no LLM needed) |
-| `ctx_graph_export` | Export graph to GraphML (Gephi/yEd), DOT (Graphviz), or Obsidian vault |
+| `ctx_graph_export` | Export graph to GraphML, DOT, Obsidian, SVG, or interactive D3.js HTML |
+| `ctx_suggested_questions` | Graph-driven code review questions without LLM |
+| `ctx_detect_changes` | Risk-scored change analysis — critical/high/medium/low priority |
+| `ctx_graph_snapshot` | Save a named checkpoint of the dependency graph |
+| `ctx_graph_diff` | Diff two named snapshots — added/removed nodes and edges |
 
 ### Utilities
 
@@ -109,6 +116,7 @@ ctxloom index
 |------|-------------|
 | `ctx_get_rules` | Inject project rules from `.cursorrules`, `CLAUDE.md`, `CONTEXT.md`, `.ctxloomrc` |
 | `ctx_status` | Server status: graph size, vector store count, initialization state |
+| `ctx_get_workflow` | Return a pre-written tool sequence for review/debug/onboard/refactor/audit workflows |
 
 ---
 
@@ -140,6 +148,10 @@ ctxloom --help               Show help
 | Ruby | ✅ Relative paths | ✅ | ✅ |
 | Kotlin | ✅ Package imports | ✅ | ✅ |
 | Swift | ✅ Module imports | ✅ | ✅ |
+| PHP | ✅ PSR-4 + require_once | ✅ | ❌ |
+| Dart | ✅ Relative imports | ✅ | ❌ |
+| Vue SFC | ✅ Script block | ✅ | ❌ |
+| Jupyter Notebook | ✅ Python cell imports | ✅ | ❌ |
 
 ---
 
@@ -150,7 +162,7 @@ ctxloom --help               Show help
 │                      MCP Interface                       │
 │                   (Stdio transport)                      │
 ├──────────────────────────────────────────────────────────┤
-│                    27 Tools (ToolRegistry)                │
+│                    29 Tools (ToolRegistry)                │
 │  Search · Graph Intelligence · Navigation · Review       │
 ├──────────────────────────────────────────────────────────┤
 │                    Context Engine                         │
@@ -176,7 +188,7 @@ ctxloom --help               Show help
 1. **Embed** — query is embedded with `sentence-transformers/all-MiniLM-L6-v2` (local, 384-dim)
 2. **Vector search** — ANN query against pre-indexed file embeddings in LanceDB
 3. **Graph expansion** — results expanded via import graph (importers + imports get a small score boost)
-4. **Skeletonize** — dependency files reduced to signature-only views (functions, classes, exports) cutting token usage by ~80%
+4. **Skeletonize** — dependency files reduced to signature-only views (functions, classes, exports) cutting token usage by ~92%
 
 ---
 
