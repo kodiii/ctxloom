@@ -81,6 +81,14 @@ export const GRAMMAR_MANIFEST: GrammarEntry[] = [
     wasmFile: 'tree-sitter-swift.wasm',
     sha256: null,
   },
+  {
+    language: 'php',
+    extensions: ['.php'],
+    npmPackage: 'tree-sitter-php',
+    version: '0.23.11',
+    wasmFile: 'tree-sitter-php.wasm',
+    sha256: null,
+  },
 ];
 
 export function findGrammar(language: string): GrammarEntry | undefined {

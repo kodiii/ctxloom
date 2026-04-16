@@ -49,6 +49,7 @@ export function extractImports(filePath: string, content: string): RawImport[] {
     case '.kt':
     case '.kts': return extractKotlinImports(content);
     case '.swift': return extractSwiftImports(content);
+    case '.php':   return extractPhpImports(content);
     case '.ipynb': return extractNotebookImports(filePath, content);
     default:      return [];
   }
@@ -79,6 +80,7 @@ export function resolveImport(
   if (ext === '.rb') return resolveRubyImport(fromDir, raw, rootDir);
   if (ext === '.kt' || ext === '.kts') return resolveKotlinImport(fromDir, raw, rootDir);
   if (ext === '.swift') return resolveSwiftImport(fromDir, raw, rootDir);
+  if (ext === '.php') return resolvePhpImport(fromAbs, fromDir, raw, rootDir);
   if (ext === '.ipynb') return resolvePythonImport(fromAbs, fromDir, raw, rootDir);
 
   return null;
@@ -359,6 +361,54 @@ function resolveSwiftImport(
   _raw: RawImport,
   _rootDir: string,
 ): string | null {
+  return null;
+}
+
+// ─── PHP ──────────────────────────────────────────────────────────────────
+
+function extractPhpImports(content: string): RawImport[] {
+  const results: RawImport[] = [];
+
+  // require/require_once/include/include_once with relative paths
+  const requireRe = /(?:require|require_once|include|include_once)\s+['"](\.[^'"]+\.php)['"]/gm;
+  let m: RegExpExecArray | null;
+  while ((m = requireRe.exec(content)) !== null) {
+    results.push({ specifier: m[1], isRelative: true });
+  }
+
+  // use Namespace\ClassName; — absolute namespace import
+  const useRe = /^use\s+([\w\\]+)(?:\s+as\s+\w+)?\s*;/gm;
+  while ((m = useRe.exec(content)) !== null) {
+    results.push({ specifier: m[1], isRelative: false });
+  }
+
+  return results;
+}
+
+function resolvePhpImport(
+  fromAbs: string,
+  fromDir: string,
+  raw: RawImport,
+  rootDir: string,
+): string | null {
+  void fromAbs;
+
+  if (raw.isRelative) {
+    const candidate = path.resolve(fromDir, raw.specifier);
+    if (fs.existsSync(candidate)) return path.relative(rootDir, candidate);
+    return null;
+  }
+
+  // PSR-4: App\Models\User → src/Models/User.php or rootDir/App/Models/User.php
+  const asPath = raw.specifier.replace(/\\/g, path.sep);
+  const candidates = [
+    path.join(rootDir, 'src', asPath + '.php'),
+    path.join(rootDir, asPath + '.php'),
+    path.join(fromDir, asPath.split(path.sep).pop()! + '.php'),
+  ];
+  for (const c of candidates) {
+    if (fs.existsSync(c)) return path.relative(rootDir, c);
+  }
   return null;
 }
 
