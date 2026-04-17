@@ -120,6 +120,44 @@ ctxloom index
 
 ---
 
+## Risk Overlay (Git History)
+
+ctxloom fuses your git history onto the structural graph to produce a *risk map* — showing which files are historically risky, not just structurally coupled.
+
+### Enable
+
+Re-index with the `--with-git` flag (enabled by default):
+
+```
+ctxloom . --with-git --git-window-days=365
+```
+
+First run mines the last 365 days of commits (~30–90s on large repos). Subsequent runs are incremental.
+
+### New tools
+
+| Tool | Description |
+|------|-------------|
+| `ctx_git_coupling` | Given a file, returns top co-changed siblings with confidence score, shared commit count, and recency data. Surfaces "historically this file changes with X" — invisible to static analysis. |
+| `ctx_risk_overlay` | Given a list of files, returns a per-file risk score (0–1) combining churn, bug-fix density, bus-factor ownership, and coupling fan-out. |
+
+### Enriched tools
+
+Existing tools gain a `risk` block when the overlay is active:
+
+- **`ctx_detect_changes`** — each changed file now includes churn bucket, bug density, top coupled siblings, and ownership.
+- **`ctx_blast_radius`** — adds a `historicalCoupling` section listing files that co-change with the seed set historically but are not reachable via imports ("historical surprise" surface).
+
+### Privacy
+
+The overlay is **local only**. No code or commit metadata is sent anywhere. The sidecar is stored at `.ctxloom/git-overlay.json` alongside the graph snapshot.
+
+### Opt out
+
+Pass `--no-git` to disable the overlay entirely. Tools degrade gracefully — the `risk` block becomes `null` and the note `"Re-index with --with-git to enable risk data."` appears in responses.
+
+---
+
 ## CLI Commands
 
 ```
