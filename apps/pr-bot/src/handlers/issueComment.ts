@@ -45,12 +45,13 @@ export async function onIssueComment(
   const octokit = context.octokit as unknown as Octokit;
 
   if (command === 'explain') {
+    const safeArg = arg.replace(/[`<>]/g, '').slice(0, 200);
     await replyToComment(
       octokit,
       owner,
       repo,
       issueNumber,
-      `ctxloom: would explain \`${arg}\` — full context coming in v2.`,
+      `ctxloom: would explain \`${safeArg}\` — full context coming in v2.`,
     );
     return;
   }
@@ -67,6 +68,11 @@ export async function onIssueComment(
   }
 
   if (command === 'refresh') {
+    if (!context.payload.issue.pull_request) {
+      await replyToComment(octokit, owner, repo, issueNumber, 'ctxloom: this command only works on pull requests.');
+      return;
+    }
+
     await replyToComment(
       octokit,
       owner,
