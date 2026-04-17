@@ -25,6 +25,7 @@ interface MockOctokit {
   };
   repos: {
     getContent: MockFn;
+    getCollaboratorPermissionLevel: MockFn;
   };
 }
 
@@ -59,6 +60,7 @@ function makeMockOctokit(overrides: Partial<MockOctokit> = {}): MockOctokit {
     },
     repos: {
       getContent: vi.fn().mockRejectedValue(Object.assign(new Error('Not found'), { status: 404 })),
+      getCollaboratorPermissionLevel: vi.fn().mockResolvedValue({ data: { permission: 'write' } }),
       ...overrides.repos,
     },
   };
@@ -106,13 +108,17 @@ function makePrContext(
   } as unknown as Parameters<typeof onPullRequest>[0];
 }
 
-function makeIssueCommentContext(body: string, octokit?: MockOctokit) {
+function makeIssueCommentContext(body: string, octokit?: MockOctokit, isPR = false) {
   const mock = octokit ?? makeMockOctokit();
+  const issue: Record<string, unknown> = { number: 1 };
+  if (isPR) {
+    issue.pull_request = { url: 'https://api.github.com/repos/acme/api/pulls/1' };
+  }
   return {
     octokit: mock,
     payload: {
-      comment: { body },
-      issue: { number: 1 },
+      comment: { body, user: { login: 'collab' } },
+      issue,
       repository: {
         owner: { login: 'acme' },
         name: 'api',
@@ -240,7 +246,7 @@ describe('onIssueComment', () => {
   it('replies to /ctxloom refresh', async () => {
     const octokit = makeMockOctokit();
     // For refresh we need pulls.listFiles and issues.listComments for the re-trigger
-    const context = makeIssueCommentContext('/ctxloom refresh', octokit);
+    const context = makeIssueCommentContext('/ctxloom refresh', octokit, true);
 
     await onIssueComment(context);
 
