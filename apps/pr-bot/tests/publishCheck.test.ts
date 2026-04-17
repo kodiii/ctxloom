@@ -129,5 +129,55 @@ describe('publishCheck', () => {
     const call = createCheckRun.mock.calls[0][0];
     expect(typeof call.output.summary).toBe('string');
     expect(call.output.summary.length).toBeGreaterThan(0);
+    // The highest-risk file in makePayload(0.8) gets riskLevel 'high'
+    expect(call.output.summary).toContain('src/auth.ts');
+  });
+
+  it('output summary includes the highest-risk (critical) file name', async () => {
+    const payload: ReviewPayload = {
+      pr: {
+        owner: 'acme',
+        repo: 'api',
+        number: 99,
+        headSha: 'sha999',
+        baseSha: 'base999',
+      },
+      riskScore: 0.95,
+      riskLabel: 'high',
+      changedFiles: [
+        {
+          file: 'src/billing.ts',
+          riskLevel: 'critical',
+          importerCount: 10,
+          isHub: true,
+          hasTestCoverage: false,
+          risk: null,
+        },
+        {
+          file: 'src/utils.ts',
+          riskLevel: 'low',
+          importerCount: 1,
+          isHub: false,
+          hasTestCoverage: true,
+          risk: null,
+        },
+      ],
+      impact: {
+        seedFiles: ['src/billing.ts'],
+        directImporters: [],
+        transitiveImporters: [],
+        historicalCoupling: [],
+        totalImpacted: 0,
+      },
+      suggestedReviewers: [],
+      config: { ...DEFAULT_CONFIG, risk_threshold: 0.7 },
+    };
+    const octokit = makeOctokit(createCheckRun);
+
+    await publishCheck(octokit, { owner: 'acme', name: 'api' }, payload);
+
+    const call = createCheckRun.mock.calls[0][0];
+    expect(typeof call.output.summary).toBe('string');
+    expect(call.output.summary).toContain('src/billing.ts');
   });
 });

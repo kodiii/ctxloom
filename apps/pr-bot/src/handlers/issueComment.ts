@@ -75,18 +75,28 @@ export async function onIssueComment(
       'ctxloom: re-running analysis…',
     );
 
-    // Re-trigger the PR handler by constructing a compatible context shape.
-    // The issue_comment context doesn't carry a full pull_request payload,
-    // so we build a minimal stub that satisfies onPullRequest's needs.
+    // Fetch the actual PR to get real SHAs before re-triggering analysis.
+    const { data: pr } = await (context.octokit as unknown as {
+      pulls: {
+        get: (params: {
+          owner: string;
+          repo: string;
+          pull_number: number;
+        }) => Promise<{
+          data: {
+            head: { sha: string };
+            base: { sha: string };
+            number: number;
+            changed_files: number;
+          };
+        }>;
+      };
+    }).pulls.get({ owner, repo, pull_number: issueNumber });
+
     const prContext = {
       octokit: context.octokit,
       payload: {
-        pull_request: {
-          number: issueNumber,
-          head: { sha: 'unknown' },
-          base: { sha: 'unknown' },
-          changed_files: 0,
-        },
+        pull_request: pr,
         repository: context.payload.repository,
       },
       repo: context.repo.bind(context),
