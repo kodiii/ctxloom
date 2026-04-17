@@ -54,6 +54,11 @@ export class InstallationTokenManager {
 
     const response = await this.#fetchToken(installationId);
     const expiresAtMs = new Date(response.expires_at).getTime();
+    if (Number.isNaN(expiresAtMs)) {
+      throw new Error(
+        `Invalid expires_at value received from GitHub: "${response.expires_at}"`,
+      );
+    }
     const refreshAfterMs = expiresAtMs - REFRESH_MARGIN_MS;
 
     const newEntry: CacheEntry = {

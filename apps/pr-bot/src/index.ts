@@ -2,6 +2,7 @@ import type { Probot } from 'probot';
 import { onPullRequest } from './handlers/pullRequest.js';
 import { onIssueComment } from './handlers/issueComment.js';
 import { onInstallationDeleted } from './handlers/installationDeleted.js';
+import { requirePrivateKey } from './auth/installation.js';
 
 // ---------------------------------------------------------------------------
 // Startup security guard: WEBHOOK_SECRET must be set before the app boots.
@@ -17,6 +18,8 @@ if (!process.env['WEBHOOK_SECRET'] || process.env['WEBHOOK_SECRET'].trim() === '
   );
   process.exit(1);
 }
+
+requirePrivateKey();
 
 export default (app: Probot) => {
   app.on(
