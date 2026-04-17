@@ -19,7 +19,9 @@
  * starts with the header line followed by a blank line and numstat lines.
  */
 
-import simpleGit from 'simple-git';
+import { spawn } from 'node:child_process';
+import { createInterface } from 'node:readline';
+import { simpleGit } from 'simple-git';
 import { logger } from '../utils/logger.js';
 
 // ---------------------------------------------------------------------------
@@ -85,13 +87,47 @@ export class GitHistoryMiner {
    * excludePaths prefix are omitted from the files array.
    */
   async *stream(opts?: MinerOptions): AsyncIterable<GitCommitEvent> {
+    if (opts?.sinceSha !== undefined && !/^[0-9a-f]{40}$/i.test(opts.sinceSha)) {
+      throw new Error(
+        `GitHistoryMiner: invalid sinceSha — expected 40-char hex SHA, got: ${opts.sinceSha}`,
+      );
+    }
+
     const bulkThreshold = opts?.bulkThreshold ?? DEFAULT_BULK_THRESHOLD;
     const excludePaths = opts?.excludePaths ?? DEFAULT_EXCLUDE_PATHS;
 
-    const rawLog = await this.fetchRawLog(opts);
-    if (!rawLog) return;
+    const logArgs = this.buildLogArgs(opts);
 
-    yield* this.parseRawLog(rawLog, bulkThreshold, excludePaths);
+    logger.debug('GitHistoryMiner: running git log', {
+      repoRoot: this.repoRoot,
+      sinceSha: opts?.sinceSha,
+      sinceDays: opts?.sinceDays,
+    });
+
+    let buffer: string[] = [];
+
+    for await (const line of this.fetchRawLogStream(logArgs)) {
+      if (line.startsWith(RECORD_SEPARATOR)) {
+        if (buffer.length > 0) {
+          const event = this.parseRecord(
+            buffer.join('\n'),
+            bulkThreshold,
+            excludePaths,
+          );
+          if (event !== null) yield event;
+        }
+        // Start fresh buffer — strip the sentinel from the first line.
+        buffer = [line.slice(RECORD_SEPARATOR.length)];
+      } else {
+        buffer.push(line);
+      }
+    }
+
+    // Flush final record.
+    if (buffer.length > 0) {
+      const event = this.parseRecord(buffer.join('\n'), bulkThreshold, excludePaths);
+      if (event !== null) yield event;
+    }
   }
 
   /** Return the full 40-character SHA of HEAD. */
@@ -105,12 +141,7 @@ export class GitHistoryMiner {
   // Private helpers
   // -------------------------------------------------------------------------
 
-  private async fetchRawLog(opts?: MinerOptions): Promise<string> {
-    const sg = simpleGit(this.repoRoot);
-
-    // Build the range or time-based arguments.
-    // Note: --format= with a leading \x1e sentinel (via %x1e) puts the
-    // record separator at the start of each commit's header line.
+  private buildLogArgs(opts?: MinerOptions): string[] {
     const logArgs: string[] = [
       `--format=${LOG_FORMAT}`,
       '--numstat',
@@ -124,50 +155,45 @@ export class GitHistoryMiner {
       logArgs.push(`--since=${days} days ago`);
     }
 
-    logger.debug('GitHistoryMiner: running git log', {
-      repoRoot: this.repoRoot,
-      sinceSha: opts?.sinceSha,
-      sinceDays: opts?.sinceDays,
-    });
-
-    let rawLog = '';
-    try {
-      rawLog = await sg.raw(['log', ...logArgs]);
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : String(err);
-      // An empty/no-commit repo causes git to exit non-zero; treat as empty.
-      if (
-        message.includes('does not have any commits') ||
-        message.includes('bad default revision') ||
-        message.includes('unknown revision') ||
-        message.includes("your current branch") // "does not have any commits yet"
-      ) {
-        logger.debug('GitHistoryMiner: repo has no commits, returning empty stream');
-        return '';
-      }
-      throw new Error(`GitHistoryMiner: git log failed in ${this.repoRoot}: ${message}`);
-    }
-
-    return rawLog;
+    return logArgs;
   }
 
-  private *parseRawLog(
-    rawLog: string,
-    bulkThreshold: number,
-    excludePaths: string[],
-  ): Iterable<GitCommitEvent> {
-    // Split on the \x1e sentinel that starts every commit header.
-    // parts[0] is the empty string before the first record.
-    const records = rawLog.split(RECORD_SEPARATOR);
+  private async *fetchRawLogStream(logArgs: string[]): AsyncIterable<string> {
+    const child = spawn('git', ['log', ...logArgs], {
+      cwd: this.repoRoot,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
 
-    for (const record of records) {
-      if (!record.trim()) continue;
+    const rl = createInterface({ input: child.stdout!, crlfDelay: Infinity });
 
-      const event = this.parseRecord(record, bulkThreshold, excludePaths);
-      if (event !== null) {
-        yield event;
-      }
+    const stderrChunks: Buffer[] = [];
+    child.stderr!.on('data', (chunk: Buffer) => stderrChunks.push(chunk));
+
+    for await (const line of rl) {
+      yield line;
     }
+
+    await new Promise<void>((resolve, reject) => {
+      child.on('close', (code) => {
+        if (code === 0 || code === null) {
+          resolve();
+        } else {
+          const stderr = Buffer.concat(stderrChunks).toString('utf8');
+          // Treat known "no commits" errors as an empty stream.
+          const knownEmpty =
+            /does not have any commits|bad default revision|unknown revision|your current branch/i.test(
+              stderr,
+            );
+          if (knownEmpty) {
+            logger.debug('GitHistoryMiner: repo has no commits, returning empty stream');
+            resolve();
+          } else {
+            reject(new Error(`git log exited with code ${code}: ${stderr}`));
+          }
+        }
+      });
+      child.on('error', reject);
+    });
   }
 
   private parseRecord(
