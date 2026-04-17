@@ -38,6 +38,23 @@ ctxloom index
 
 ---
 
+## GitHub App — ctxloom-bot
+
+![Beta](https://img.shields.io/badge/status-beta-orange)
+
+Get automated risk analysis and reviewer suggestions on every pull request.
+
+<!-- TODO: Add demo GIF showing bot posting summary + inline comment on a PR -->
+
+- Posts a risk-scored summary comment on every PR, combining blast radius, churn, and coupling data
+- Adds inline review comments at the specific lines that carry the highest structural risk
+- Suggests reviewers based on ownership data mined from git history
+- Responds to `/ctxloom` slash commands (e.g. `/ctxloom blast-radius`, `/ctxloom risk`) directly in PR threads
+
+See [`apps/pr-bot/README.md`](apps/pr-bot/README.md) for full installation and self-hosting instructions.
+
+---
+
 ## How ctxloom Compares
 
 | Feature | ctxloom | code-review-graph | Others |
@@ -57,6 +74,7 @@ ctxloom index
 | Token reduction (skeletonization) | ✅ **92% measured on real repos** | ✅ | ❌ |
 | npm install size | ✅ <5 MB (lazy grammars) | ❌ Large | varies |
 | MCP protocol native | ✅ | ✅ | varies |
+| PR-native review comments | ✅ ctxloom-bot posts on every PR | ❌ | ❌ |
 
 > Token reduction is measured, not estimated. See [`benchmarks/README.md`](benchmarks/README.md).
 
