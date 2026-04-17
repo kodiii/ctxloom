@@ -9,14 +9,14 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "probot": "^13.0.0",
+    "probot": "^13.4.7",
     "yaml": "^2.5.0",
     "zod": "^3.22.0"
   },
   "devDependencies": {
-    "typescript": "^5.5.0",
+    "@types/node": "^20.0.0",
     "ts-node": "^10.9.0",
-    "vitest": "^2.0.0",
-    "@types/node": "^20.0.0"
+    "typescript": "^5.5.0",
+    "vitest": "^2.0.0"
   }
 }
