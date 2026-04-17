@@ -80,7 +80,7 @@ See [`apps/pr-bot/README.md`](apps/pr-bot/README.md) for full installation and s
 
 ---
 
-## Tools — 29 total
+## Tools — 31 total
 
 ### Search & Context
 
@@ -218,7 +218,7 @@ ctxloom --help               Show help
 │                      MCP Interface                       │
 │                   (Stdio transport)                      │
 ├──────────────────────────────────────────────────────────┤
-│                    29 Tools (ToolRegistry)                │
+│                    31 Tools (ToolRegistry)                │
 │  Search · Graph Intelligence · Navigation · Review       │
 ├──────────────────────────────────────────────────────────┤
 │                    Context Engine                         │
