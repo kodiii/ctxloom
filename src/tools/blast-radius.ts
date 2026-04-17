@@ -7,6 +7,10 @@
  * When ctx.overlay is present, a `historical_coupling` section is appended
  * listing nodes that co-change strongly with the seed set but are NOT in the
  * static impact set. When ctx.overlay is absent, historical_coupling is empty.
+ *
+ * Pure analysis logic (import BFS + historical coupling) lives in src/lib/analysis.ts.
+ * This module handles MCP schema validation, git file detection, call-site lookup,
+ * and XML formatting.
  */
 import { z } from 'zod';
 import { exec } from 'node:child_process';
@@ -15,7 +19,11 @@ import type { DependencyGraph } from '../graph/DependencyGraph.js';
 import type { EdgeConfidence } from '../graph/CallGraphIndex.js';
 import type { ToolRegistry } from './registry.js';
 import type { ServerContext } from './context.js';
+import { getImpactRadius } from '../lib/analysis.js';
+import type { HistoricalCouplingEntry } from '../lib/analysis.js';
 import { logger } from '../utils/logger.js';
+
+export type { HistoricalCouplingEntry };
 
 const execAsync = promisify(exec);
 
@@ -42,12 +50,6 @@ export interface BlastRadiusResult {
   callSites: Array<{ file: string; callerSymbol: string; calleeSymbol: string; confidence: EdgeConfidence }>;
 }
 
-export interface HistoricalCouplingEntry {
-  node: string;
-  confidence: number;
-  evidence: string;
-}
-
 async function detectChangedFiles(projectRoot: string): Promise<string[]> {
   try {
     const { stdout } = await execAsync('git diff HEAD~1 --name-only', { cwd: projectRoot });
@@ -58,39 +60,7 @@ async function detectChangedFiles(projectRoot: string): Promise<string[]> {
   }
 }
 
-export async function computeBlastRadius(opts: BlastRadiusOptions): Promise<BlastRadiusResult> {
-  const { changedFiles, depth, graph } = opts;
-  const changedSet = new Set(changedFiles);
-
-  // BFS traversal of importers
-  const directImporters = new Set<string>();
-  const allReachable = new Set<string>();
-
-  // BFS: level 0 = changedFiles, level 1 = direct importers, etc.
-  let frontier = new Set(changedFiles);
-  for (let d = 0; d < depth; d++) {
-    const nextFrontier = new Set<string>();
-    for (const file of frontier) {
-      for (const imp of graph.getImporters(file)) {
-        if (changedSet.has(imp)) continue;
-        if (d === 0) directImporters.add(imp);
-        if (!allReachable.has(imp)) {
-          allReachable.add(imp);
-          nextFrontier.add(imp);
-        }
-      }
-    }
-    frontier = nextFrontier;
-    if (frontier.size === 0) break;
-  }
-
-  // Transitive = reachable but NOT direct importers
-  const transitiveImporters: string[] = [];
-  for (const file of allReachable) {
-    if (!directImporters.has(file)) transitiveImporters.push(file);
-  }
-
-  // Call sites: find callers of symbols defined in changed files
+function resolveCallSites(changedFiles: string[], graph: DependencyGraph): BlastRadiusResult['callSites'] {
   const callSites: BlastRadiusResult['callSites'] = [];
   const callIdx = graph.getCallGraphIndex();
   for (const file of changedFiles) {
@@ -101,11 +71,23 @@ export async function computeBlastRadius(opts: BlastRadiusOptions): Promise<Blas
       }
     }
   }
+  return callSites;
+}
+
+/**
+ * Compute full blast radius including call sites.
+ * Exported for direct use in tests.
+ */
+export async function computeBlastRadius(opts: BlastRadiusOptions): Promise<BlastRadiusResult> {
+  const { changedFiles, depth, graph } = opts;
+
+  const report = getImpactRadius({ graph, changedFiles, depth });
+  const callSites = resolveCallSites(changedFiles, graph);
 
   return {
-    changedFiles: Array.from(changedSet),
-    directImporters: Array.from(directImporters),
-    transitiveImporters,
+    changedFiles: report.seedFiles,
+    directImporters: report.directImporters,
+    transitiveImporters: report.transitiveImporters,
     callSites,
   };
 }
@@ -130,7 +112,6 @@ export function buildBlastRadiusXml(
     ].join('');
   }
 
-  // Standard mode — full per-file XML
   const lines = [
     `<blast_radius changed_files="${result.changedFiles.length}" depth="${depth}" graph_type="${graphType}">`,
     `  <changed count="${result.changedFiles.length}">`,
@@ -155,38 +136,6 @@ export function buildBlastRadiusXml(
     '</blast_radius>',
   ];
   return lines.join('\n');
-}
-
-function buildHistoricalCoupling(
-  changedFiles: string[],
-  staticSet: Set<string>,
-  ctx: ServerContext,
-): HistoricalCouplingEntry[] {
-  const historicalCoupling: HistoricalCouplingEntry[] = [];
-
-  if (ctx.overlay === undefined) return historicalCoupling;
-
-  const now = Math.floor(Date.now() / 1000);
-
-  for (const seedFile of changedFiles) {
-    const coupled = ctx.overlay.coChange.topFor({ node: seedFile, limit: 10, minConfidence: 0.2 });
-    for (const hit of coupled) {
-      const sibling = hit.nodeA === seedFile ? hit.nodeB : hit.nodeA;
-      if (!staticSet.has(sibling) && !historicalCoupling.some(h => h.node === sibling)) {
-        const daysSinceLast = Math.round((now - hit.lastSharedTimestamp) / 86400);
-        historicalCoupling.push({
-          node: sibling,
-          confidence: hit.confidence,
-          evidence: `Changed together in ${hit.sharedCommits} commits; last co-change ${daysSinceLast} days ago.`,
-        });
-      }
-    }
-  }
-
-  historicalCoupling.sort((a, b) => b.confidence - a.confidence);
-  historicalCoupling.splice(10); // top 10 max
-
-  return historicalCoupling;
 }
 
 export function registerBlastRadiusTool(registry: ToolRegistry, ctx: ServerContext): void {
@@ -230,16 +179,10 @@ export function registerBlastRadiusTool(registry: ToolRegistry, ctx: ServerConte
       const graph = await ctx.getGraph();
       const result = await computeBlastRadius({ changedFiles: files, depth, projectRoot: ctx.projectRoot, graph });
 
-      // Build the static impact set: changed + direct + transitive importers
-      const staticSet = new Set<string>([
-        ...result.changedFiles,
-        ...result.directImporters,
-        ...result.transitiveImporters,
-      ]);
+      // Derive historical coupling via the lib layer (overlay-aware)
+      const report = getImpactRadius({ graph, overlay: ctx.overlay, changedFiles: files, depth });
 
-      const historicalCoupling = buildHistoricalCoupling(files, staticSet, ctx);
-
-      return buildBlastRadiusXml(result, depth, detail_level, historicalCoupling);
+      return buildBlastRadiusXml(result, depth, detail_level, report.historicalCoupling);
     },
   );
 }
