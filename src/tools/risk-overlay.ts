@@ -38,7 +38,7 @@ function computeRiskScore(
 ): number {
   const churnPart = Math.min(1, churnLines / 1000);
   const bugPart = Math.min(1, bugDensity * 2);
-  const ownerPart = busFactor === 1 ? 0.6 : busFactor === 2 ? 0.3 : 0.1;
+  const ownerPart = busFactor === 0 ? 0.0 : busFactor === 1 ? 0.6 : busFactor === 2 ? 0.3 : 0.1;
   const couplingPart = Math.min(1, couplingFanOut / 5);
   return 0.35 * churnPart + 0.30 * bugPart + 0.20 * ownerPart + 0.15 * couplingPart;
 }
