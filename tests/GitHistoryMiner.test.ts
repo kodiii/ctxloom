@@ -256,4 +256,132 @@ describe('GitHistoryMiner', () => {
       }
     });
   });
+
+  // ---------------------------------------------------------------------------
+  // isMerge=true — real merge commit
+  // ---------------------------------------------------------------------------
+
+  describe('isMerge detection', () => {
+    it('merge commit created with --no-ff has isMerge=true', async () => {
+      const mergeRepo = path.join(os.tmpdir(), `miner-merge-${Date.now()}`);
+      await fs.mkdir(mergeRepo, { recursive: true });
+      try {
+        git(mergeRepo, 'init');
+        git(mergeRepo, 'config user.email "test@example.com"');
+        git(mergeRepo, 'config user.name "Test Author"');
+
+        // Initial commit on main
+        await writeLines(path.join(mergeRepo, 'src', 'main.ts'), 3);
+        git(mergeRepo, 'add -A');
+        git(mergeRepo, 'commit -m "feat: initial commit"');
+
+        // Create a feature branch and add a commit
+        git(mergeRepo, 'checkout -b feature/x');
+        await writeLines(path.join(mergeRepo, 'src', 'feature.ts'), 2);
+        git(mergeRepo, 'add -A');
+        git(mergeRepo, 'commit -m "feat: add feature"');
+
+        // Merge back to main with --no-ff to force a merge commit
+        git(mergeRepo, 'checkout main');
+        git(mergeRepo, 'merge --no-ff feature/x -m "Merge feature/x into main"');
+        const mergeSha = git(mergeRepo, 'rev-parse HEAD');
+
+        const miner = new GitHistoryMiner(mergeRepo);
+        const events: GitCommitEvent[] = [];
+        for await (const ev of miner.stream({ sinceDays: 365 })) {
+          events.push(ev);
+        }
+
+        const mergeCommit = events.find((e) => e.sha === mergeSha);
+        expect(mergeCommit).toBeDefined();
+        expect(mergeCommit!.isMerge).toBe(true);
+      } finally {
+        await fs.rm(mergeRepo, { recursive: true, force: true });
+      }
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // Binary file skipping
+  // ---------------------------------------------------------------------------
+
+  describe('binary file skipping', () => {
+    it('does not include binary files in the files array', async () => {
+      const binaryRepo = path.join(os.tmpdir(), `miner-binary-${Date.now()}`);
+      await fs.mkdir(binaryRepo, { recursive: true });
+      try {
+        git(binaryRepo, 'init');
+        git(binaryRepo, 'config user.email "test@example.com"');
+        git(binaryRepo, 'config user.name "Test Author"');
+
+        // Commit a text file alongside a binary file
+        await writeLines(path.join(binaryRepo, 'src', 'index.ts'), 4);
+        const binaryBuffer = Buffer.from(
+          Array.from({ length: 64 }, (_, i) => i % 256),
+        );
+        await fs.mkdir(path.join(binaryRepo, 'src'), { recursive: true });
+        await fs.writeFile(path.join(binaryRepo, 'src', 'logo.png'), binaryBuffer);
+        git(binaryRepo, 'add -A');
+        git(binaryRepo, 'commit -m "chore: add binary asset"');
+        const sha = git(binaryRepo, 'rev-parse HEAD');
+
+        const miner = new GitHistoryMiner(binaryRepo);
+        const events: GitCommitEvent[] = [];
+        for await (const ev of miner.stream({ sinceDays: 365 })) {
+          events.push(ev);
+        }
+
+        const commit = events.find((e) => e.sha === sha);
+        expect(commit).toBeDefined();
+        const filePaths = commit!.files.map((f) => f.path);
+        expect(filePaths).not.toContain('src/logo.png');
+        expect(filePaths).toContain('src/index.ts');
+      } finally {
+        await fs.rm(binaryRepo, { recursive: true, force: true });
+      }
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // excludePaths filtering
+  // ---------------------------------------------------------------------------
+
+  describe('excludePaths filtering', () => {
+    it('omits node_modules files while keeping src files', async () => {
+      const filterRepo = path.join(os.tmpdir(), `miner-filter-${Date.now()}`);
+      await fs.mkdir(filterRepo, { recursive: true });
+      try {
+        git(filterRepo, 'init');
+        git(filterRepo, 'config user.email "test@example.com"');
+        git(filterRepo, 'config user.name "Test Author"');
+
+        // Commit a src file alongside a node_modules file (no .gitignore)
+        await writeLines(path.join(filterRepo, 'src', 'real.ts'), 3);
+        await fs.mkdir(path.join(filterRepo, 'node_modules', 'pkg'), { recursive: true });
+        await fs.writeFile(
+          path.join(filterRepo, 'node_modules', 'pkg', 'index.js'),
+          'module.exports = {};\n',
+          'utf8',
+        );
+        git(filterRepo, 'add -A');
+        git(filterRepo, 'commit -m "feat: add real and vendor file"');
+        const sha = git(filterRepo, 'rev-parse HEAD');
+
+        const miner = new GitHistoryMiner(filterRepo);
+        const events: GitCommitEvent[] = [];
+        // Use default options so DEFAULT_EXCLUDE_PATHS applies (includes 'node_modules/')
+        for await (const ev of miner.stream({ sinceDays: 365 })) {
+          events.push(ev);
+        }
+
+        const commit = events.find((e) => e.sha === sha);
+        expect(commit).toBeDefined();
+        const filePaths = commit!.files.map((f) => f.path);
+        expect(filePaths).toContain('src/real.ts');
+        expect(filePaths).not.toContain('node_modules/pkg/index.js');
+      } finally {
+        await fs.rm(filterRepo, { recursive: true, force: true });
+      }
+    });
+  });
 });
