@@ -142,7 +142,7 @@ export async function startServer(opts: ServerOptions = {}): Promise<void> {
         }
         await overlay.saveSnapshot();
         ctx.overlay = overlay;
-        logger.info(`Git overlay ready — ${overlay.stats().commits} commits scanned`);
+        logger.info('Git overlay ready', { commits: overlay.stats().commits });
       } catch (err) {
         logger.warn('Git overlay bootstrap failed — overlay disabled', { detail: String(err) });
       }
@@ -201,6 +201,6 @@ export async function startServer(opts: ServerOptions = {}): Promise<void> {
 
   watcher.start();
   logger.info('File watcher active');
-  process.on('SIGINT', () => { watcher.stop(); process.exit(0); });
-  process.on('SIGTERM', () => { watcher.stop(); process.exit(0); });
+  process.on('SIGINT', () => { if (overlayRefreshTimer) clearTimeout(overlayRefreshTimer); watcher.stop(); process.exit(0); });
+  process.on('SIGTERM', () => { if (overlayRefreshTimer) clearTimeout(overlayRefreshTimer); watcher.stop(); process.exit(0); });
 }
