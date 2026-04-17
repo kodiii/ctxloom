@@ -20,9 +20,19 @@ import { ASTParser } from './ast/ASTParser.js';
 import { Skeletonizer } from './ast/Skeletonizer.js';
 import { FileWatcher } from './watcher/FileWatcher.js';
 import { RuleManager } from './tools/ruleManager.js';
+import { GitOverlayStore } from './git/GitOverlayStore.js';
 import { logger } from './utils/logger.js';
 import { createToolRegistry } from './tools/index.js';
 import type { ServerContext } from './tools/context.js';
+
+// ─── Server startup options ──────────────────────────────────────────────────
+
+export interface ServerOptions {
+  /** Enable git overlay (default: true). */
+  withGit?: boolean;
+  /** How far back to mine git history in days (default: 365). */
+  gitWindowDays?: number;
+}
 
 const PROJECT_ROOT = process.env.CTXLOOM_ROOT ?? process.cwd();
 const DB_PATH = path.join(PROJECT_ROOT, '.ctxloom', 'vectors.lancedb');
@@ -107,7 +117,10 @@ export function createServer(): { server: Server; ctx: ServerContext } {
 }
 
 // ─── Server startup ──────────────────────────────────────────────────────────
-export async function startServer(): Promise<void> {
+export async function startServer(opts: ServerOptions = {}): Promise<void> {
+  const withGit = opts.withGit ?? true;
+  const gitWindowDays = opts.gitWindowDays ?? 365;
+
   const { server, ctx } = createServer();
   const transport = new StdioServerTransport();
   await server.connect(transport);
@@ -115,11 +128,31 @@ export async function startServer(): Promise<void> {
   logger.info('MCP Server started on Stdio transport');
   logger.info('Project root', { root: PROJECT_ROOT });
 
-  Promise.all([ctx.getGraph(), generateEmbedding('warmup')]).then(([graph]) => {
+  Promise.all([ctx.getGraph(), generateEmbedding('warmup')]).then(async ([graph]) => {
     logger.info('Ready', { edges: graph.edgeCount() });
+
+    if (withGit) {
+      try {
+        const overlay = new GitOverlayStore(PROJECT_ROOT, { windowDays: gitWindowDays });
+        const loaded = await overlay.loadSnapshot();
+        if (!loaded) {
+          await overlay.rebuild();
+        } else {
+          await overlay.refresh();
+        }
+        await overlay.saveSnapshot();
+        ctx.overlay = overlay;
+        logger.info(`Git overlay ready — ${overlay.stats().commits} commits scanned`);
+      } catch (err) {
+        logger.warn('Git overlay bootstrap failed — overlay disabled', { detail: String(err) });
+      }
+    }
   }).catch(err => {
     logger.warn('Initialization warning', { detail: String(err) });
   });
+
+  // Debounce timer for incremental overlay refresh triggered by file changes
+  let overlayRefreshTimer: ReturnType<typeof setTimeout> | null = null;
 
   const watcher = new FileWatcher(PROJECT_ROOT, async (absPath, event) => {
     const pathValidator = ctx.getPathValidator();
@@ -150,6 +183,20 @@ export async function startServer(): Promise<void> {
     }
 
     try { await (await ctx.getGraph()).updateFile(absPath, PROJECT_ROOT); } catch { /* ok */ }
+
+    // Debounced incremental git overlay refresh (30 s after last file change)
+    if (ctx.overlay) {
+      if (overlayRefreshTimer) clearTimeout(overlayRefreshTimer);
+      overlayRefreshTimer = setTimeout(async () => {
+        try {
+          await ctx.overlay!.refresh();
+          await ctx.overlay!.saveSnapshot();
+          logger.debug('Git overlay refreshed incrementally');
+        } catch (err) {
+          logger.warn('Git overlay refresh failed', { detail: String(err) });
+        }
+      }, 30_000);
+    }
   });
 
   watcher.start();

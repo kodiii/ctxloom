@@ -23,7 +23,35 @@ import { RepoRegistry } from './tools/cross-repo-search.js';
 import os from 'node:os';
 import path from 'node:path';
 
-const command = process.argv[2];
+// ─── CLI flag parsing ────────────────────────────────────────────────────────
+
+const args = process.argv.slice(2);
+
+/**
+ * Resolved command: the first positional argument (not a flag).
+ * Special-cased: '--help' and '-h' are mapped to '--help' so the switch
+ * still handles them even though they start with '-'.
+ */
+const command: string | undefined =
+  args.includes('--help') || args.includes('-h')
+    ? '--help'
+    : args.find(a => !a.startsWith('-'));
+
+function hasFlag(flag: string): boolean {
+  return args.includes(flag);
+}
+
+function getFlagValue(prefix: string): string | undefined {
+  const entry = args.find(a => a.startsWith(prefix));
+  return entry ? entry.slice(prefix.length) : undefined;
+}
+
+// --with-git (default true), --no-git
+const withGit = !hasFlag('--no-git');
+
+// --git-window-days=<n> (default 365)
+const rawWindowDays = getFlagValue('--git-window-days=');
+const gitWindowDays = rawWindowDays !== undefined ? parseInt(rawWindowDays, 10) : 365;
 
 async function main(): Promise<void> {
   switch (command) {
@@ -126,6 +154,11 @@ Usage:
   ctxloom repos                List all registered repos
   ctxloom --help               Show this help
 
+Flags (for MCP server mode):
+  --with-git                   Enable git history overlay (default: true)
+  --no-git                     Disable git history overlay
+  --git-window-days=<n>        Days of git history to mine (default: 365)
+
 Environment Variables:
   CTXLOOM_ROOT     Project root directory (default: current working directory)
 
@@ -165,13 +198,15 @@ Tools Exposed:
   ctx_refactor_preview       Read-only symbol rename diff preview across definition files and importers
   ctx_execution_flow         DFS call graph traversal from entry point with cycle detection
   ctx_cross_repo_search      Federated semantic search across all registered repos
+  ctx_git_coupling           Co-change coupling between files from git history
+  ctx_risk_overlay           Risk score overlay: churn, coupling, ownership bus-factor
 `);
       break;
     }
 
     default: {
       // Start MCP server
-      await startServer();
+      await startServer({ withGit, gitWindowDays });
       break;
     }
   }
