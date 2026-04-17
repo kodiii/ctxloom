@@ -4,6 +4,7 @@ import type { DependencyGraph } from '../graph/DependencyGraph.js';
 import type { ASTParser } from '../ast/ASTParser.js';
 import type { Skeletonizer } from '../ast/Skeletonizer.js';
 import type { RuleManager } from './ruleManager.js';
+import type { GitOverlayStore } from '../git/GitOverlayStore.js';
 
 export interface ServerContext {
   projectRoot: string;
@@ -18,4 +19,5 @@ export interface ServerContext {
   isStoreInitialized: () => boolean;
   isGraphInitialized: () => boolean;
   isParserInitialized: () => boolean;
+  overlay?: GitOverlayStore;
 }
