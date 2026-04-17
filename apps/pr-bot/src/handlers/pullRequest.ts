@@ -227,7 +227,12 @@ export async function onPullRequest(context: Context<'pull_request'>): Promise<v
       }),
     };
 
-    const commentBody = buildCommentBody(review);
+    const graphEmpty = graph.allFiles().length === 0;
+    let commentBody = buildCommentBody(review);
+    if (graphEmpty) {
+      commentBody +=
+        '\n\n> ⚠️ Graph not yet available for this repo — risk scores are based on file count only, not dependency analysis.';
+    }
 
     await upsertSummaryComment(
       context.octokit as unknown as Octokit,

@@ -98,9 +98,9 @@ export function renderSummary(payload: ReviewPayload): string {
     marker;
 
   if (output.length > CHAR_LIMIT) {
-    const tableCompact = buildRiskTable(changedFiles, RISK_BREAKDOWN_ROWS);
+    const tableCompact = buildRiskTable(changedFiles, 3);
     const breakdownCompact = tableCompact
-      ? `\n\n<details>\n<summary>Risk breakdown (top ${RISK_BREAKDOWN_ROWS})</summary>\n\n${tableCompact}\n</details>`
+      ? `\n\n<details>\n<summary>Risk breakdown (top 3)</summary>\n\n${tableCompact}\n</details>`
       : '';
 
     output =

@@ -44,6 +44,21 @@ export async function onIssueComment(
   const issueNumber: number = context.payload.issue.number;
   const octokit = context.octokit as unknown as Octokit;
 
+  // Only honour slash commands from collaborators with push access.
+  const permissionRes = await (context.octokit as unknown as {
+    repos: {
+      getCollaboratorPermissionLevel: (p: {
+        owner: string; repo: string; username: string;
+      }) => Promise<{ data: { permission: string } }>;
+    };
+  }).repos.getCollaboratorPermissionLevel({
+    owner,
+    repo,
+    username: context.payload.comment.user.login,
+  });
+  const permission = permissionRes.data.permission;
+  if (permission !== 'admin' && permission !== 'write') return;
+
   if (command === 'explain') {
     const safeArg = arg.replace(/[`<>]/g, '').slice(0, 200);
     await replyToComment(
