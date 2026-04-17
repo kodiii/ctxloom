@@ -148,7 +148,7 @@ export class GitOverlayStore {
     this.totalCommits += count;
     this.lastCommitScanned = newHead;
 
-    return { commitsIngested: count, newHead };
+    return { commitsIngested: count, newHead: newHead ?? '' };
   }
 
   /**
