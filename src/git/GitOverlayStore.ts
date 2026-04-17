@@ -70,9 +70,13 @@ const SIDECAR_SUBPATH = path.join('.ctxloom', 'git-overlay.json');
 // ---------------------------------------------------------------------------
 
 export class GitOverlayStore {
-  coChange: CoChangeIndex;
-  churn: ChurnIndex;
-  ownership: OwnershipIndex;
+  #coChange: CoChangeIndex = new CoChangeIndex();
+  #churn: ChurnIndex = new ChurnIndex();
+  #ownership: OwnershipIndex = new OwnershipIndex();
+
+  get coChange(): CoChangeIndex { return this.#coChange; }
+  get churn(): ChurnIndex { return this.#churn; }
+  get ownership(): OwnershipIndex { return this.#ownership; }
 
   private lastCommitScanned: string | null = null;
   private totalCommits = 0;
@@ -88,10 +92,6 @@ export class GitOverlayStore {
     this.windowDays = opts.windowDays ?? DEFAULT_WINDOW_DAYS;
     this.bulkThreshold = opts.bulkThreshold ?? DEFAULT_BULK_THRESHOLD;
     this.excludePaths = opts.excludePaths;
-
-    this.coChange = new CoChangeIndex();
-    this.churn = new ChurnIndex();
-    this.ownership = new OwnershipIndex();
   }
 
   /**
@@ -99,9 +99,9 @@ export class GitOverlayStore {
    * event into all three indices.
    */
   async rebuild(): Promise<void> {
-    this.coChange = new CoChangeIndex();
-    this.churn = new ChurnIndex();
-    this.ownership = new OwnershipIndex();
+    this.#coChange = new CoChangeIndex();
+    this.#churn = new ChurnIndex();
+    this.#ownership = new OwnershipIndex();
     this.totalCommits = 0;
     this.lastCommitScanned = null;
 
@@ -163,9 +163,9 @@ export class GitOverlayStore {
       lastCommitScanned: this.lastCommitScanned,
       commits: this.totalCommits,
       windowDays: this.windowDays,
-      coChange: this.coChange.snapshot(),
-      churn: this.churn.snapshot(),
-      ownership: this.ownership.snapshot(),
+      coChange: this.#coChange.snapshot(),
+      churn: this.#churn.snapshot(),
+      ownership: this.#ownership.snapshot(),
     };
 
     await fs.writeFile(sidecarPath, JSON.stringify(data, null, 2), 'utf8');
@@ -188,9 +188,13 @@ export class GitOverlayStore {
 
     const data = JSON.parse(raw) as SidecarData;
 
-    this.coChange = CoChangeIndex.load(data.coChange);
-    this.churn = ChurnIndex.load(data.churn);
-    this.ownership = OwnershipIndex.load(data.ownership);
+    if (data.version !== 1) {
+      throw new Error(`GitOverlayStore: unsupported sidecar version ${data.version}`);
+    }
+
+    this.#coChange = CoChangeIndex.load(data.coChange);
+    this.#churn = ChurnIndex.load(data.churn);
+    this.#ownership = OwnershipIndex.load(data.ownership);
     this.lastCommitScanned = data.lastCommitScanned;
     this.totalCommits = data.commits;
 
@@ -225,9 +229,9 @@ export class GitOverlayStore {
   ): Promise<number> {
     let count = 0;
     for await (const event of stream) {
-      this.coChange.ingest(event);
-      this.churn.ingest(event);
-      this.ownership.ingest(event);
+      this.#coChange.ingest(event);
+      this.#churn.ingest(event);
+      this.#ownership.ingest(event);
       count++;
     }
     return count;
