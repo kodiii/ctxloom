@@ -210,7 +210,7 @@ export async function onPullRequest(context: Context<'pull_request'>): Promise<v
       baseSha,
     };
 
-    const review = await buildReview({
+    const rawReview = await buildReview({
       graph,
       overlay: undefined,
       changedFiles,
@@ -218,11 +218,14 @@ export async function onPullRequest(context: Context<'pull_request'>): Promise<v
       config,
     });
 
-    review.suggestedReviewers = suggestReviewers({
-      filesTouched: changedFiles,
-      overlay: undefined,
-      recentApprovers: [],
-    });
+    const review = {
+      ...rawReview,
+      suggestedReviewers: suggestReviewers({
+        filesTouched: changedFiles,
+        overlay: undefined,
+        recentApprovers: [],
+      }),
+    };
 
     const commentBody = buildCommentBody(review);
 

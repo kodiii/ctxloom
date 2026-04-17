@@ -18,6 +18,7 @@ interface MockOctokit {
   };
   pulls: {
     listFiles: MockFn;
+    get: MockFn;
   };
   checks: {
     create: MockFn;
@@ -41,6 +42,14 @@ function makeMockOctokit(overrides: Partial<MockOctokit> = {}): MockOctokit {
           { filename: 'src/auth.ts', status: 'modified' },
           { filename: 'src/utils.ts', status: 'modified' },
         ],
+      }),
+      get: vi.fn().mockResolvedValue({
+        data: {
+          number: 1,
+          head: { sha: 'abc123' },
+          base: { sha: 'base000' },
+          changed_files: 2,
+        },
       }),
       ...overrides.pulls,
     },
