@@ -270,10 +270,12 @@ describe('GitHistoryMiner', () => {
         git(mergeRepo, 'config user.email "test@example.com"');
         git(mergeRepo, 'config user.name "Test Author"');
 
-        // Initial commit on main
+        // Initial commit on main (rename default branch so CI runners with
+        // init.defaultBranch=master don't fail on 'git checkout main' later)
         await writeLines(path.join(mergeRepo, 'src', 'main.ts'), 3);
         git(mergeRepo, 'add -A');
         git(mergeRepo, 'commit -m "feat: initial commit"');
+        git(mergeRepo, 'branch -M main');
 
         // Create a feature branch and add a commit
         git(mergeRepo, 'checkout -b feature/x');
