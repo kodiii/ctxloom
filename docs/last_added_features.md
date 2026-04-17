@@ -5,6 +5,90 @@
 
 ---
 
+## 📊 Git History Sprint — April 2026
+
+### New Tools (2 added)
+
+#### `ctx_git_coupling`
+Co-change analysis from git history. Given a file, returns the top files that have historically changed together with it — ranked by a confidence score that combines Jaccard similarity, shared commit count, and recency decay. Surfaces coupling that is invisible to static analysis (e.g., a migration file that always changes with a schema file).
+
+Params: `node` (file path), `limit` (default 10), `minConfidence` (default 0.1), `windowDays` (default 365).
+
+**Use it when:** Reviewing a PR and want to know "what else usually changes when this file changes" — catches forgotten migration files, related config, and test fixtures.
+
+---
+
+#### `ctx_risk_overlay`
+Per-file risk scoring from git history. Given a list of files, returns a composite risk score (0–1) per file combining: churn lines (35%), bug-fix commit density (30%), bus-factor ownership (20%), and co-change coupling fan-out (15%). Risk labels: `low` (< 0.4), `medium` (0.4–0.7), `high` (≥ 0.7).
+
+Params: `nodes` (1–200 file paths).
+
+**Use it when:** Prioritizing review effort — focus on files with the highest composite risk before diving into low-churn utility changes.
+
+---
+
+### Enriched Tools (2 updated)
+
+- **`ctx_detect_changes`** — each changed file now includes an `<overlay_risk>` block with churn bucket, bug density, top coupled siblings, and ownership when `--with-git` is active.
+- **`ctx_blast_radius`** — adds a `historicalCoupling` section listing files that co-change with the seed set historically but are not reachable via static imports ("historical surprise" surface).
+
+---
+
+### GitHub App — ctxloom-bot (new)
+
+A GitHub App (`apps/pr-bot`) that integrates ctxloom analysis directly into the pull request workflow.
+
+**What it does on every PR:**
+- Posts a single idempotent risk-scored summary comment: overall risk label + score, blast radius, affected flows, and top high-risk files in a collapsible table
+- Posts inline review comments anchored to the highest-risk files
+- Suggests reviewers by intersecting git-history ownership data with recent approvers
+- Supports slash commands: `/ctxloom explain <file>`, `/ctxloom ignore`, `/ctxloom refresh`
+- Optionally publishes a Check Run so teams can gate merges on `risk < threshold`
+
+**Configuration** via `.ctxloom.yml` in the repo root:
+```yaml
+risk_threshold: 0.7        # score above which Check Run fails
+inline_comments: true      # post per-file inline comments
+suggested_reviewers: true  # suggest reviewers based on ownership
+check_run: false           # publish a Check Run (off by default)
+excluded_paths: []         # glob patterns to skip
+max_inline_per_pr: 10      # cap on inline comments per PR
+```
+
+**Self-host:** See `apps/pr-bot/README.md` for Docker and Fly.io deployment.
+
+**Security:** All analysis is local to the bot host — no source code leaves the machine. Webhook signature verification is required (`WEBHOOK_SECRET`). Installation tokens are TTL-cached and never logged.
+
+---
+
+### Key Numbers update
+
+| Metric | Before | After |
+|--------|--------|-------|
+| MCP tools | 29 | **31** |
+| Languages supported | 13 | **13** (unchanged) |
+| Token reduction (measured) | 92% | **92%** (unchanged) |
+| Git history risk overlay | ✗ | **✅ churn + coupling + ownership** |
+| PR-native GitHub App | ✗ | **✅ ctxloom-bot** |
+| Slash commands | ✗ | **✅ /ctxloom explain / ignore / refresh** |
+
+---
+
+### Changelog entry (prepend to changelog block)
+
+```
+v0.7.0 (latest — git history sprint)
++ ctx_git_coupling — co-change coupling from git history (Jaccard + recency decay)
++ ctx_risk_overlay — per-file composite risk: churn 35%, bug density 30%, bus factor 20%, coupling 15%
++ ctx_detect_changes enriched — overlay_risk block per file (churn, bug density, owners, coupled siblings)
++ ctx_blast_radius enriched — historicalCoupling section (files that co-change but aren't reachable via imports)
++ ctxloom-bot — GitHub App: risk-scored PR comments, inline annotations, reviewer suggestions, slash commands
++ --with-git flag (on by default) — mines last N days of commits for risk data
++ --no-git flag — disable overlay entirely, tools degrade gracefully
+```
+
+---
+
 ## Competitive Parity Sprint — April 2026
 
 ### New Tools (8 added)
