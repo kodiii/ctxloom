@@ -5,13 +5,21 @@
  *   - importer_count: how many files depend on it
  *   - is_hub: importer_count >= 5
  *   - has_test_coverage: a test file imports it or name-matches
+ *
+ * When ctx.overlay is present, each file also gets a `risk` block with
+ * churn bucket, bugDensity, coupledNodes, and owners derived from git history.
+ * When ctx.overlay is absent, `risk` is null per file and overlayNote is set
+ * once at the response level.
+ *
+ * Pure analysis logic lives in src/lib/analysis.ts — this module handles
+ * only MCP schema validation, git file detection, and XML formatting.
  */
 import { z } from 'zod';
 import { exec } from 'node:child_process';
 import { promisify } from 'node:util';
 import type { ToolRegistry } from './registry.js';
 import type { ServerContext } from './context.js';
-import type { DependencyGraph } from '../graph/DependencyGraph.js';
+import { detectChanges } from '../lib/analysis.js';
 import { logger } from '../utils/logger.js';
 
 const execAsync = promisify(exec);
@@ -25,52 +33,8 @@ const Schema = z.object({
   ),
 });
 
-type RiskLevel = 'critical' | 'high' | 'medium' | 'low';
-
-const TEST_PATTERN = /(\.test\.|\.spec\.|\/tests\/|\/test\/|\/spec\/|__tests__)/;
-
 function escapeXML(text: string): string {
   return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-}
-
-function hasTestCoverage(filePath: string, graph: DependencyGraph): boolean {
-  const importers = graph.getImporters(filePath);
-  if (importers.some(f => TEST_PATTERN.test(f))) return true;
-  const base = filePath.replace(/\.[^.]+$/, '');
-  const stem = base.split('/').pop() ?? '';
-  return graph.allFiles().some(f => TEST_PATTERN.test(f) && stem.length > 0 && f.includes(stem));
-}
-
-function computeRisk(
-  filePath: string,
-  graph: DependencyGraph,
-): { level: RiskLevel; importerCount: number; isHub: boolean; hasCoverage: boolean; reasons: string[] } {
-  const isTest = TEST_PATTERN.test(filePath);
-  const importerCount = graph.getImporters(filePath).length;
-  const isHub = importerCount >= 5;
-  const hasCoverage = isTest || hasTestCoverage(filePath, graph);
-  const reasons: string[] = [];
-
-  if (isHub) reasons.push(`hub: ${importerCount} dependents`);
-  if (!hasCoverage && !isTest) reasons.push('no test coverage');
-  if (importerCount > 0 && !isHub) reasons.push(`${importerCount} direct importers`);
-
-  let level: RiskLevel;
-  if (isTest) {
-    level = 'low';
-  } else if (isHub && !hasCoverage) {
-    level = 'critical';
-  } else if (isHub || (!hasCoverage && importerCount > 2)) {
-    level = 'high';
-  } else if (!hasCoverage) {
-    level = 'medium';
-  } else if (importerCount > 2) {
-    level = 'medium';
-  } else {
-    level = 'low';
-  }
-
-  return { level, importerCount, isHub, hasCoverage, reasons };
 }
 
 async function detectChangedFiles(projectRoot: string): Promise<string[]> {
@@ -83,7 +47,14 @@ async function detectChangedFiles(projectRoot: string): Promise<string[]> {
   }
 }
 
-const RISK_ORDER: Record<RiskLevel, number> = { critical: 0, high: 1, medium: 2, low: 3 };
+function buildReasonsFor(importerCount: number, isHub: boolean, hasCoverage: boolean, filePath: string): string[] {
+  const isTest = /(\.test\.|\.spec\.|\/tests\/|\/test\/|\/spec\/|__tests__)/.test(filePath);
+  const reasons: string[] = [];
+  if (isHub) reasons.push(`hub: ${importerCount} dependents`);
+  if (!hasCoverage && !isTest) reasons.push('no test coverage');
+  if (importerCount > 0 && !isHub) reasons.push(`${importerCount} direct importers`);
+  return reasons;
+}
 
 export function registerDetectChangesTool(registry: ToolRegistry, ctx: ServerContext): void {
   registry.register(
@@ -125,29 +96,51 @@ export function registerDetectChangesTool(registry: ToolRegistry, ctx: ServerCon
       }
 
       const graph = await ctx.getGraph();
-      const scored = files.map(f => ({ file: f, ...computeRisk(f, graph) }));
-      scored.sort((a, b) => RISK_ORDER[a.level] - RISK_ORDER[b.level]);
-
-      const criticalCount = scored.filter(s => s.level === 'critical').length;
-      const highCount = scored.filter(s => s.level === 'high').length;
-      const mediumCount = scored.filter(s => s.level === 'medium').length;
-      const lowCount = scored.filter(s => s.level === 'low').length;
+      const { changedFiles: scored, summary } = detectChanges({
+        graph,
+        overlay: ctx.overlay,
+        changedFiles: files,
+      });
 
       if (detail_level === 'minimal') {
-        return `<detect_changes count="${scored.length}" critical="${criticalCount}" high="${highCount}" medium="${mediumCount}" low="${lowCount}" detail_level="minimal" />`;
+        return (
+          `<detect_changes count="${scored.length}" critical="${summary.critical}" high="${summary.high}"` +
+          ` medium="${summary.medium}" low="${summary.low}" detail_level="minimal" />`
+        );
       }
 
+      const hasOverlay = ctx.overlay !== undefined;
+
       const xml = [
-        `<detect_changes count="${scored.length}" critical="${criticalCount}" high="${highCount}" medium="${mediumCount}" low="${lowCount}">`,
+        `<detect_changes count="${scored.length}" critical="${summary.critical}" high="${summary.high}" medium="${summary.medium}" low="${summary.low}">`,
       ];
 
+      if (!hasOverlay) {
+        xml.push('  <!-- overlayNote: Re-index with --with-git to enable risk data. -->');
+      }
+
       for (const s of scored) {
+        const reasons = buildReasonsFor(s.importerCount, s.isHub, s.hasTestCoverage, s.file);
         xml.push(
-          `  <file path="${escapeXML(s.file)}" risk="${s.level}" importer_count="${s.importerCount}" is_hub="${s.isHub}" has_test_coverage="${s.hasCoverage}">`,
+          `  <file path="${escapeXML(s.file)}" risk="${s.riskLevel}" importer_count="${s.importerCount}" is_hub="${s.isHub}" has_test_coverage="${s.hasTestCoverage}">`,
         );
-        for (const reason of s.reasons) {
+        for (const reason of reasons) {
           xml.push(`    <reason>${escapeXML(reason)}</reason>`);
         }
+
+        if (hasOverlay && s.risk !== null) {
+          xml.push(`    <overlay_risk churn="${s.risk.churn}" bug_density="${s.risk.bugDensity}">`);
+          for (const cn of s.risk.coupledNodes) {
+            xml.push(`      <coupled_node node="${escapeXML(cn.node)}" confidence="${cn.confidence}" />`);
+          }
+          for (const owner of s.risk.owners) {
+            xml.push(`      <owner author="${escapeXML(owner.author)}" share="${owner.share}" />`);
+          }
+          xml.push('    </overlay_risk>');
+        } else {
+          xml.push('    <overlay_risk risk="null" />');
+        }
+
         xml.push('  </file>');
       }
 

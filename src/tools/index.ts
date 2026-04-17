@@ -29,6 +29,8 @@ import { registerGetWorkflowTool } from './get-workflow.js';
 import { registerGraphSnapshotTool } from './graph-snapshot.js';
 import { registerGraphDiffTool } from './graph-diff.js';
 import { registerFindLargeFunctionsTool } from './find-large-functions.js';
+import { registerGitCouplingTool } from './git-coupling.js';
+import { registerRiskOverlayTool } from './risk-overlay.js';
 
 export function createToolRegistry(ctx: ServerContext): ToolRegistry {
   const registry = new ToolRegistry();
@@ -61,5 +63,7 @@ export function createToolRegistry(ctx: ServerContext): ToolRegistry {
   registerGraphSnapshotTool(registry, ctx);
   registerGraphDiffTool(registry, ctx);
   registerFindLargeFunctionsTool(registry, ctx);
+  registerGitCouplingTool(registry, ctx);
+  registerRiskOverlayTool(registry, ctx);
   return registry;
 }

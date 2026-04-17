@@ -5,6 +5,11 @@
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
+  "exports": {
+    ".": "./dist/index.js",
+    "./lib": "./dist/lib/index.js"
+  },
+  "workspaces": ["apps/*"],
   "bin": {
     "ctxloom": "dist/index.js"
   },
@@ -64,6 +69,7 @@
     "chokidar": "^4.0.0",
     "graphology": "^0.26.0",
     "graphology-communities-louvain": "^2.0.2",
+    "simple-git": "^3.36.0",
     "tree-sitter-typescript": "^0.23.2",
     "web-tree-sitter": "^0.25.0",
     "zod": "^3.23.0"
