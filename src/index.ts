@@ -47,11 +47,16 @@ function getFlagValue(prefix: string): string | undefined {
 }
 
 // --with-git (default true), --no-git
-const withGit = !hasFlag('--no-git');
+const withGit = hasFlag('--with-git') || !hasFlag('--no-git');
 
 // --git-window-days=<n> (default 365)
 const rawWindowDays = getFlagValue('--git-window-days=');
-const gitWindowDays = rawWindowDays !== undefined ? parseInt(rawWindowDays, 10) : 365;
+const parsed = rawWindowDays !== undefined ? parseInt(rawWindowDays, 10) : 365;
+if (isNaN(parsed) || parsed <= 0) {
+  process.stderr.write(`[ctxloom] Invalid --git-window-days value: "${rawWindowDays}". Must be a positive integer.\n`);
+  process.exit(1);
+}
+const gitWindowDays = parsed;
 
 async function main(): Promise<void> {
   switch (command) {
