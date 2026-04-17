@@ -1,7 +1,6 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import os from 'node:os';
 import { RepoCache } from '../src/graph/repoCache.js';
 
 const TEST_BASE = '/tmp/ctxloom-bot-test';

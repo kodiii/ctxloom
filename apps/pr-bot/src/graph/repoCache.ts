@@ -2,7 +2,6 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 
 const DEFAULT_BASE_DIR = '/var/lib/ctxloom-bot';
-const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
 
 export interface CacheKey {
   installationId: number;
