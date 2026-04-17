@@ -5,6 +5,11 @@
  *   - importer_count: how many files depend on it
  *   - is_hub: importer_count >= 5
  *   - has_test_coverage: a test file imports it or name-matches
+ *
+ * When ctx.overlay is present, each file also gets a `risk` block with
+ * churn bucket, bugDensity, coupledNodes, and owners derived from git history.
+ * When ctx.overlay is absent, `risk` is null per file and overlayNote is set
+ * once at the response level.
  */
 import { z } from 'zod';
 import { exec } from 'node:child_process';
@@ -26,6 +31,7 @@ const Schema = z.object({
 });
 
 type RiskLevel = 'critical' | 'high' | 'medium' | 'low';
+type ChurnBucket = 'low' | 'medium' | 'high';
 
 const TEST_PATTERN = /(\.test\.|\.spec\.|\/tests\/|\/test\/|\/spec\/|__tests__)/;
 
@@ -71,6 +77,12 @@ function computeRisk(
   }
 
   return { level, importerCount, isHub, hasCoverage, reasons };
+}
+
+function bucketChurn(churnLines: number): ChurnBucket {
+  if (churnLines < 100) return 'low';
+  if (churnLines < 500) return 'medium';
+  return 'high';
 }
 
 async function detectChangedFiles(projectRoot: string): Promise<string[]> {
@@ -137,9 +149,15 @@ export function registerDetectChangesTool(registry: ToolRegistry, ctx: ServerCon
         return `<detect_changes count="${scored.length}" critical="${criticalCount}" high="${highCount}" medium="${mediumCount}" low="${lowCount}" detail_level="minimal" />`;
       }
 
+      const hasOverlay = ctx.overlay !== undefined;
+
       const xml = [
         `<detect_changes count="${scored.length}" critical="${criticalCount}" high="${highCount}" medium="${mediumCount}" low="${lowCount}">`,
       ];
+
+      if (!hasOverlay) {
+        xml.push('  <!-- overlayNote: Re-index with --with-git to enable risk data. -->');
+      }
 
       for (const s of scored) {
         xml.push(
@@ -148,6 +166,34 @@ export function registerDetectChangesTool(registry: ToolRegistry, ctx: ServerCon
         for (const reason of s.reasons) {
           xml.push(`    <reason>${escapeXML(reason)}</reason>`);
         }
+
+        if (hasOverlay) {
+          const churnStats = ctx.overlay?.churn.statsFor(s.file);
+          const ownStats   = ctx.overlay?.ownership.statsFor(s.file);
+          const coupled    = ctx.overlay?.coChange.topFor({ node: s.file, limit: 3 }) ?? [];
+
+          const churnBucket: ChurnBucket = churnStats !== null && churnStats !== undefined
+            ? bucketChurn(churnStats.churnLines)
+            : 'low';
+          const bugDensity = churnStats?.bugDensity ?? 0;
+          const coupledNodes = coupled.map(c => ({
+            node: c.nodeA === s.file ? c.nodeB : c.nodeA,
+            confidence: c.confidence,
+          }));
+          const owners = (ownStats?.owners ?? []).map(o => ({ author: o.author, share: o.share }));
+
+          xml.push(`    <overlay_risk churn="${churnBucket}" bug_density="${bugDensity}">`);
+          for (const cn of coupledNodes) {
+            xml.push(`      <coupled_node node="${escapeXML(cn.node)}" confidence="${cn.confidence}" />`);
+          }
+          for (const owner of owners) {
+            xml.push(`      <owner author="${escapeXML(owner.author)}" share="${owner.share}" />`);
+          }
+          xml.push('    </overlay_risk>');
+        } else {
+          xml.push('    <overlay_risk risk="null" />');
+        }
+
         xml.push('  </file>');
       }
 

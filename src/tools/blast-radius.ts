@@ -3,6 +3,10 @@
  *
  * Traverses forward import edges AND call-graph edges from changed files.
  * Groups results: changed → direct importers → transitive importers → call sites.
+ *
+ * When ctx.overlay is present, a `historical_coupling` section is appended
+ * listing nodes that co-change strongly with the seed set but are NOT in the
+ * static impact set. When ctx.overlay is absent, historical_coupling is empty.
  */
 import { z } from 'zod';
 import { exec } from 'node:child_process';
@@ -36,6 +40,12 @@ export interface BlastRadiusResult {
   directImporters: string[];
   transitiveImporters: string[];
   callSites: Array<{ file: string; callerSymbol: string; calleeSymbol: string; confidence: EdgeConfidence }>;
+}
+
+export interface HistoricalCouplingEntry {
+  node: string;
+  confidence: number;
+  evidence: string;
 }
 
 async function detectChangedFiles(projectRoot: string): Promise<string[]> {
@@ -108,6 +118,7 @@ export function buildBlastRadiusXml(
   result: BlastRadiusResult,
   depth: number,
   detailLevel: 'standard' | 'minimal',
+  historicalCoupling: HistoricalCouplingEntry[] = [],
 ): string {
   const graphType = result.callSites.length > 0 ? 'import+call' : 'import';
 
@@ -136,9 +147,46 @@ export function buildBlastRadiusXml(
       `    <call_site file="${escapeXML(s.file)}" caller="${escapeXML(s.callerSymbol)}" callee="${escapeXML(s.calleeSymbol)}" confidence="${s.confidence}" />`,
     ),
     '  </call_sites>',
+    `  <historical_coupling count="${historicalCoupling.length}">`,
+    ...historicalCoupling.map(h =>
+      `    <coupling node="${escapeXML(h.node)}" confidence="${h.confidence}" evidence="${escapeXML(h.evidence)}" />`,
+    ),
+    '  </historical_coupling>',
     '</blast_radius>',
   ];
   return lines.join('\n');
+}
+
+function buildHistoricalCoupling(
+  changedFiles: string[],
+  staticSet: Set<string>,
+  ctx: ServerContext,
+): HistoricalCouplingEntry[] {
+  const historicalCoupling: HistoricalCouplingEntry[] = [];
+
+  if (ctx.overlay === undefined) return historicalCoupling;
+
+  const now = Math.floor(Date.now() / 1000);
+
+  for (const seedFile of changedFiles) {
+    const coupled = ctx.overlay.coChange.topFor({ node: seedFile, limit: 10, minConfidence: 0.2 });
+    for (const hit of coupled) {
+      const sibling = hit.nodeA === seedFile ? hit.nodeB : hit.nodeA;
+      if (!staticSet.has(sibling) && !historicalCoupling.some(h => h.node === sibling)) {
+        const daysSinceLast = Math.round((now - hit.lastSharedTimestamp) / 86400);
+        historicalCoupling.push({
+          node: sibling,
+          confidence: hit.confidence,
+          evidence: `Changed together in ${hit.sharedCommits} commits; last co-change ${daysSinceLast} days ago.`,
+        });
+      }
+    }
+  }
+
+  historicalCoupling.sort((a, b) => b.confidence - a.confidence);
+  historicalCoupling.splice(10); // top 10 max
+
+  return historicalCoupling;
 }
 
 export function registerBlastRadiusTool(registry: ToolRegistry, ctx: ServerContext): void {
@@ -182,7 +230,16 @@ export function registerBlastRadiusTool(registry: ToolRegistry, ctx: ServerConte
       const graph = await ctx.getGraph();
       const result = await computeBlastRadius({ changedFiles: files, depth, projectRoot: ctx.projectRoot, graph });
 
-      return buildBlastRadiusXml(result, depth, detail_level);
+      // Build the static impact set: changed + direct + transitive importers
+      const staticSet = new Set<string>([
+        ...result.changedFiles,
+        ...result.directImporters,
+        ...result.transitiveImporters,
+      ]);
+
+      const historicalCoupling = buildHistoricalCoupling(files, staticSet, ctx);
+
+      return buildBlastRadiusXml(result, depth, detail_level, historicalCoupling);
     },
   );
 }
