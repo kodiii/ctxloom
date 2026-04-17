@@ -4,16 +4,18 @@ import type { ChangedFile } from '../../../../src/lib/index.js';
 const CHAR_LIMIT = 60_000;
 const RISK_BREAKDOWN_ROWS = 5;
 
-const RISK_EMOJI: Record<'low' | 'medium' | 'high', string> = {
+const RISK_EMOJI: Record<'low' | 'medium' | 'high' | 'critical', string> = {
   low: '🟢',
   medium: '🟠',
   high: '🔴',
+  critical: '🚨',
 };
 
-const RISK_LABELS: Record<'low' | 'medium' | 'high', string> = {
+const RISK_LABELS: Record<'low' | 'medium' | 'high' | 'critical', string> = {
   low: 'Low risk',
   medium: 'Medium risk',
   high: 'High risk',
+  critical: 'Critical risk',
 };
 
 function formatPercent(n: number): string {
@@ -35,7 +37,7 @@ function buildRiskTable(files: readonly ChangedFile[], maxRows: number): string 
   const body = rows
     .map(f => {
       const cov = f.hasTestCoverage ? '✅' : '❌';
-      return `| \`${f.file}\` | ${f.riskLevel} | ${f.importerCount} | ${cov} |`;
+      return `| \`${f.file}\` | ${RISK_EMOJI[f.riskLevel]} ${f.riskLevel} | ${f.importerCount} | ${cov} |`;
     })
     .join('\n');
 
