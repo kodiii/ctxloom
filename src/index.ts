@@ -17,6 +17,7 @@ import { startServer } from './server.js';
 import { indexDirectory } from './indexer/embedder.js';
 import { DependencyGraph } from './graph/DependencyGraph.js';
 import { ASTParser } from './ast/ASTParser.js';
+import { GitOverlayStore } from './git/GitOverlayStore.js';
 import { runSetupWizard } from './setup/setup-wizard.js';
 import { GrammarLoader } from './grammars/GrammarLoader.js';
 import { RepoRegistry } from './tools/cross-repo-search.js';
@@ -68,7 +69,7 @@ async function main(): Promise<void> {
       });
       console.log(`\n[ctxloom] Done! Indexed ${result.indexed} files, ${result.errors} errors.`);
 
-      // Also build the dependency graph
+      // Build dependency graph
       console.log('[ctxloom] Building dependency graph...');
       const parser = new ASTParser();
       await parser.init();
@@ -76,6 +77,25 @@ async function main(): Promise<void> {
       graph.setParser(parser);
       await graph.buildFromDirectory(root);
       console.log(`[ctxloom] Graph built with ${graph.edgeCount()} edges.`);
+
+      // Mine git history if requested
+      if (withGit) {
+        console.log('[ctxloom] Mining git history (this may take a minute)...');
+        try {
+          const overlay = new GitOverlayStore(root, { windowDays: gitWindowDays });
+          const loaded = await overlay.loadSnapshot();
+          if (loaded) {
+            await overlay.refresh();
+          } else {
+            await overlay.rebuild();
+          }
+          await overlay.saveSnapshot();
+          const stats = overlay.stats();
+          console.log(`[ctxloom] Git overlay ready — ${stats.commits} commits mined.`);
+        } catch (err) {
+          console.warn(`[ctxloom] Git overlay failed (skipping): ${String(err)}`);
+        }
+      }
       break;
     }
 
@@ -144,6 +164,17 @@ async function main(): Promise<void> {
       break;
     }
 
+    case 'dashboard': {
+      const port = Number(
+        args.find(a => a.startsWith('--port='))?.split('=')[1] ?? '7842'
+      );
+      const open = args.includes('--open') || args.includes('-o');
+      const root = process.env.CTXLOOM_ROOT ?? process.cwd();
+      const { startDashboard } = await import('./dashboard.js');
+      await startDashboard({ root, port, open });
+      break;
+    }
+
     case '--help':
     case '-h': {
       console.log(`
@@ -157,6 +188,9 @@ Usage:
   ctxloom grammars --download  Pre-download all language grammars
   ctxloom register <path>      Register a repo for cross-repo search
   ctxloom repos                List all registered repos
+  ctxloom dashboard            Start the web dashboard (port 7842)
+  ctxloom dashboard --port=N   Start on custom port
+  ctxloom dashboard --open     Open browser automatically
   ctxloom --help               Show this help
 
 Flags (for MCP server mode):

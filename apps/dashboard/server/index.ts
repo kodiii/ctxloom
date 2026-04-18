@@ -1,0 +1,106 @@
+import express from 'express';
+import cors from 'cors';
+import path from 'node:path';
+import fs from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { loadContext, reloadContext } from './loader.js';
+import { buildOverviewRouter } from './routes/overview.js';
+import { buildGraphRouter } from './routes/graph.js';
+import { buildRiskRouter } from './routes/risk.js';
+import { buildCommunitiesRouter } from './routes/communities.js';
+import { buildChurnRouter } from './routes/churn.js';
+import { buildOwnershipRouter } from './routes/ownership.js';
+import { buildFileRouter } from './routes/file.js';
+import { buildOpenRouter } from './routes/open.js';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+export async function startDashboard(options: {
+  root: string;
+  port: number;
+  open: boolean;
+}): Promise<void> {
+  const { root, port, open } = options;
+
+  console.log(`ctxloom dashboard — loading context from ${root}...`);
+  const ctx = await loadContext(root);
+  console.log(`  ${ctx.graph.allFiles().length} files, ${ctx.graph.edgeCount()} edges, git=${ctx.gitEnabled}`);
+
+  const app = express();
+  app.use(cors());
+  app.use(express.json());
+
+  app.use('/api/overview', buildOverviewRouter(ctx));
+  app.use('/api/graph', buildGraphRouter(ctx));
+  app.use('/api/risk', buildRiskRouter(ctx));
+  app.use('/api/communities', buildCommunitiesRouter(ctx));
+  app.use('/api/churn', buildChurnRouter(ctx));
+  app.use('/api/ownership', buildOwnershipRouter(ctx));
+  app.use('/api/file', buildFileRouter(ctx));
+  app.use('/api/open', buildOpenRouter(ctx));
+
+  app.get('/api/health', (_req, res) => res.json({ ok: true, root, gitEnabled: ctx.gitEnabled }));
+
+  app.get('/api/status', (_req, res) => res.json({
+    lastIndexed: ctx.lastIndexed.toISOString(),
+    fileCount: ctx.graph.allFiles().length,
+    gitEnabled: ctx.gitEnabled,
+  }));
+
+  let reloading = false;
+  app.post('/api/refresh', async (_req, res) => {
+    if (reloading) return res.status(409).json({ error: 'reload already in progress' });
+    reloading = true;
+    try {
+      console.log('[dashboard] manual refresh triggered');
+      await reloadContext(ctx);
+      console.log(`[dashboard] reloaded — ${ctx.graph.allFiles().length} files`);
+      res.json({ ok: true, lastIndexed: ctx.lastIndexed.toISOString(), fileCount: ctx.graph.allFiles().length });
+    } finally {
+      reloading = false;
+    }
+  });
+
+  // Watch .ctxloom/ for snapshot changes and auto-reload
+  const snapshotDir = path.join(root, '.ctxloom');
+  let debounce: ReturnType<typeof setTimeout> | null = null;
+  try {
+    fs.watch(snapshotDir, (_event, filename) => {
+      if (!filename || !filename.includes('snapshot')) return;
+      if (debounce) clearTimeout(debounce);
+      debounce = setTimeout(async () => {
+        if (reloading) return;
+        reloading = true;
+        try {
+          console.log(`[dashboard] ${filename} changed, reloading…`);
+          await reloadContext(ctx);
+          console.log(`[dashboard] auto-reload done — ${ctx.graph.allFiles().length} files`);
+        } finally {
+          reloading = false;
+        }
+      }, 500);
+    });
+  } catch {
+    // .ctxloom may not exist yet — watcher skipped
+  }
+
+  const clientDist = path.join(__dirname, '../dist/dashboard/client');
+  app.use(express.static(clientDist));
+  app.get('*', (_req, res) => {
+    res.sendFile(path.join(clientDist, 'index.html'));
+  });
+
+  app.listen(port, () => {
+    const url = `http://localhost:${port}`;
+    console.log(`\nctxloom dashboard running at ${url}\n`);
+    if (open) {
+      import('open').then(m => m.default(url)).catch(() => {});
+    }
+  });
+}
+
+if (process.argv[1] === fileURLToPath(import.meta.url)) {
+  const root = process.env.CTXLOOM_ROOT ?? process.cwd();
+  const port = Number(process.env.PORT ?? 7842);
+  startDashboard({ root, port, open: false });
+}
