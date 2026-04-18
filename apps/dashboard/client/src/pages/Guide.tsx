@@ -158,7 +158,7 @@ const SECTIONS = [
   {
     id: 'ownership',
     title: 'Ownership',
-    icon: '👤',
+    icon: '◎',
     summary: 'Per-file git ownership — who knows the code and where knowledge is concentrated.',
     items: [
       {
