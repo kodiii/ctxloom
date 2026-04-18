@@ -2,16 +2,11 @@
   "version": "0.0.1",
   "configurations": [
     {
-      "name": "dev",
-      "runtimeExecutable": "tsx",
-      "runtimeArgs": ["src/index.ts"],
-      "port": 3000
-    },
-    {
-      "name": "start",
-      "runtimeExecutable": "node",
-      "runtimeArgs": ["dist/index.js"],
-      "port": 3000
+      "name": "ctxloom-dashboard",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["tsx", "src/index.ts", "dashboard", "--port=7842"],
+      "port": 7842,
+      "autoPort": false
     }
   ]
 }

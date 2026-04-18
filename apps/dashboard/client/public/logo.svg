@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<svg viewBox="0 0 30 30" xmlns="http://www.w3.org/2000/svg">
+  <rect x="0.75" y="0.75" width="28.5" height="28.5" rx="6.5"
+        fill="#0f0d1a" stroke="#8b5cf6" stroke-width="0.6" stroke-opacity="0.35"/>
+  <line x1="15" y1="15" x2="22.5" y2="8.5"  stroke="#8b5cf6" stroke-width="0.9" stroke-opacity="0.45" stroke-linecap="round"/>
+  <line x1="15" y1="15" x2="7.5"  y2="8.5"  stroke="#8b5cf6" stroke-width="0.9" stroke-opacity="0.45" stroke-linecap="round"/>
+  <line x1="15" y1="15" x2="23"   y2="21"   stroke="#8b5cf6" stroke-width="0.9" stroke-opacity="0.45" stroke-linecap="round"/>
+  <line x1="15" y1="15" x2="7.5"  y2="21.5" stroke="#8b5cf6" stroke-width="0.9" stroke-opacity="0.45" stroke-linecap="round"/>
+  <line x1="15" y1="15" x2="15"   y2="6.5"  stroke="#8b5cf6" stroke-width="0.9" stroke-opacity="0.3"  stroke-linecap="round"/>
+  <line x1="22.5" y1="8.5" x2="23"  y2="21"   stroke="#8b5cf6" stroke-width="0.5" stroke-opacity="0.2" stroke-linecap="round"/>
+  <line x1="7.5"  y1="8.5" x2="7.5" y2="21.5" stroke="#8b5cf6" stroke-width="0.5" stroke-opacity="0.2" stroke-linecap="round"/>
+  <circle cx="22.5" cy="8.5"  r="1.8" fill="#8b5cf6" opacity="0.65"/>
+  <circle cx="7.5"  cy="8.5"  r="1.8" fill="#8b5cf6" opacity="0.65"/>
+  <circle cx="23"   cy="21"   r="1.8" fill="#8b5cf6" opacity="0.65"/>
+  <circle cx="7.5"  cy="21.5" r="1.8" fill="#8b5cf6" opacity="0.65"/>
+  <circle cx="15"   cy="6.5"  r="1.4" fill="#8b5cf6" opacity="0.45"/>
+  <circle cx="15" cy="15" r="4.5" fill="#8b5cf6" opacity="0.12">
+    <animate attributeName="r"       values="4;6;4"       dur="2.8s" repeatCount="indefinite" calcMode="ease"/>
+    <animate attributeName="opacity" values="0.15;0;0.15" dur="2.8s" repeatCount="indefinite" calcMode="ease"/>
+  </circle>
+  <circle cx="15" cy="15" r="3" fill="#8b5cf6"/>
+  <circle cx="13.8" cy="13.8" r="1" fill="#ffffff" opacity="0.25"/>
+</svg>
