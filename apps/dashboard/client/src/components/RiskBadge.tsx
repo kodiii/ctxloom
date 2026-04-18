@@ -1,13 +1,13 @@
 const COLOURS: Record<string, string> = {
-  high: 'bg-red-100 text-red-700',
-  medium: 'bg-yellow-100 text-yellow-700',
-  low: 'bg-green-100 text-green-700',
-  critical: 'bg-red-200 text-red-900 font-bold',
+  critical: 'bg-red-900/50 text-red-300 font-semibold',
+  high: 'bg-orange-900/50 text-orange-300',
+  medium: 'bg-yellow-900/50 text-yellow-300',
+  low: 'bg-green-900/50 text-green-300',
 };
 
 export function RiskBadge({ level }: { level: string }) {
   return (
-    <span className={`inline-block rounded px-2 py-0.5 text-xs ${COLOURS[level] ?? 'bg-gray-100 text-gray-600'}`}>
+    <span className={`inline-block rounded-full px-2.5 py-0.5 text-xs ${COLOURS[level] ?? 'bg-white/10 text-white/50'}`}>
       {level}
     </span>
   );

@@ -57,7 +57,7 @@ export function GraphView() {
       .selectAll('line')
       .data(simLinks)
       .join('line')
-      .attr('stroke', '#d1d5db')
+      .attr('stroke', 'rgba(255,255,255,0.1)')
       .attr('stroke-width', 0.8)
       .attr('stroke-opacity', 0.6);
 
@@ -67,7 +67,7 @@ export function GraphView() {
       .join('circle')
       .attr('r', d => 3 + Math.min(10, (d.inDegree + d.outDegree) * 0.5))
       .attr('fill', d => COMMUNITY_COLOURS[d.community % COMMUNITY_COLOURS.length])
-      .attr('stroke', '#fff')
+      .attr('stroke', 'rgba(255,255,255,0.15)')
       .attr('stroke-width', 1)
       .call(
         d3.drag<SVGCircleElement, SimNode>()
@@ -92,19 +92,19 @@ export function GraphView() {
     return () => { sim.stop(); };
   }, [state]);
 
-  if (state.status === 'loading') return <div className="text-gray-400 text-sm">Building graph...</div>;
+  if (state.status === 'loading') return <div className="text-white/40 text-sm">Building graph...</div>;
   if (state.status === 'error') return <ErrorBanner message={state.message} />;
 
   return (
     <div className="space-y-4 h-full">
       <div className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold text-gray-900">Dependency Graph</h1>
-        <span className="text-xs text-gray-400">
+        <h1 className="text-white text-xl font-semibold">Dependency Graph</h1>
+        <span className="text-xs text-white/40">
           {state.data.nodes.length} nodes · {state.data.edges.length} edges · scroll to zoom · drag to pan
         </span>
       </div>
-      <div className="rounded-lg border border-gray-200 bg-white shadow-sm" style={{ height: 'calc(100vh - 160px)' }}>
-        <svg ref={svgRef} width="100%" height="100%" />
+      <div className="rounded-xl border border-white/10 bg-[#18181f]" style={{ height: 'calc(100vh - 160px)' }}>
+        <svg ref={svgRef} width="100%" height="100%" style={{ background: '#18181f', borderRadius: '0.75rem' }} />
       </div>
     </div>
   );

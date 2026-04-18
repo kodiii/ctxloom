@@ -12,7 +12,7 @@ export function RiskTable() {
   const [sort, setSort] = useState<SortKey>('riskScore');
   const [filter, setFilter] = useState('');
 
-  if (state.status === 'loading') return <div className="text-gray-400 text-sm">Loading...</div>;
+  if (state.status === 'loading') return <div className="text-white/40 text-sm">Loading...</div>;
   if (state.status === 'error') return <ErrorBanner message={state.message} />;
 
   const { entries, overallRiskScore } = state.data;
@@ -20,8 +20,10 @@ export function RiskTable() {
   if (entries.length === 0) {
     return (
       <div className="space-y-4">
-        <h1 className="text-xl font-semibold text-gray-900">Risk</h1>
-        <p className="text-gray-500 text-sm">No git history available. Run <code>ctxloom index --with-git</code> to enable risk analysis.</p>
+        <h1 className="text-white text-xl font-semibold">Risk</h1>
+        <p className="text-white/40 text-sm">
+          No git history available. Run <code className="text-[#a78bfa]">ctxloom index --with-git</code> to enable risk analysis.
+        </p>
       </div>
     );
   }
@@ -40,8 +42,8 @@ export function RiskTable() {
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold text-gray-900">Risk</h1>
-        <span className="text-sm text-gray-400">avg score: {overallRiskScore}</span>
+        <h1 className="text-white text-xl font-semibold">Risk</h1>
+        <span className="text-sm text-white/40">avg score: {overallRiskScore}</span>
       </div>
 
       <input
@@ -49,35 +51,35 @@ export function RiskTable() {
         placeholder="Filter by file..."
         value={filter}
         onChange={e => setFilter(e.target.value)}
-        className="w-full rounded-md border border-gray-200 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-gray-300"
+        className="w-full rounded-md border border-white/10 bg-[#1e1d2a] px-3 py-2 text-sm text-white placeholder:text-white/30 outline-none focus:ring-2 focus:ring-[#603dc6]/50 focus:border-[#603dc6]/50"
       />
 
-      <div className="overflow-x-auto rounded-lg border border-gray-200 bg-white shadow-sm">
+      <div className="overflow-x-auto rounded-xl border border-white/10 bg-[#1e1d2a]">
         <table className="min-w-full text-sm">
-          <thead className="border-b border-gray-100 bg-gray-50">
+          <thead className="border-b border-white/10 bg-[#131220]">
             <tr>
-              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500">File</th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500">Owner</th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-white/40">File</th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-white/40">Owner</th>
               {cols.map(c => (
                 <th
                   key={c.key}
                   onClick={() => setSort(c.key)}
-                  className={`px-4 py-3 text-left text-xs font-medium cursor-pointer select-none ${sort === c.key ? 'text-gray-900' : 'text-gray-500'}`}
+                  className={`px-4 py-3 text-left text-xs font-medium cursor-pointer select-none ${sort === c.key ? 'text-[#a78bfa]' : 'text-white/40'}`}
                 >
                   {c.label} {sort === c.key ? '↓' : ''}
                 </th>
               ))}
             </tr>
           </thead>
-          <tbody className="divide-y divide-gray-100">
+          <tbody className="divide-y divide-white/8">
             {filtered.map(e => (
-              <tr key={e.file} className="hover:bg-gray-50">
-                <td className="px-4 py-3 font-mono text-xs text-gray-700 max-w-xs truncate" title={e.file}>{e.file}</td>
-                <td className="px-4 py-3 text-xs text-gray-500">{e.topOwner ?? '—'}</td>
+              <tr key={e.file} className="hover:bg-white/5">
+                <td className="px-4 py-3 font-mono text-xs text-white/60 max-w-xs truncate" title={e.file}>{e.file}</td>
+                <td className="px-4 py-3 text-xs text-white/50">{e.topOwner ?? '—'}</td>
                 <td className="px-4 py-3"><RiskBadge level={e.riskLabel} /></td>
-                <td className="px-4 py-3 text-gray-700">{e.churnLines.toLocaleString()}</td>
-                <td className="px-4 py-3 text-gray-700">{e.busFactor}</td>
-                <td className="px-4 py-3 text-gray-700">{e.couplingFanOut}</td>
+                <td className="px-4 py-3 text-white/70">{e.churnLines.toLocaleString()}</td>
+                <td className="px-4 py-3 text-white/70">{e.busFactor}</td>
+                <td className="px-4 py-3 text-white/70">{e.couplingFanOut}</td>
               </tr>
             ))}
           </tbody>
