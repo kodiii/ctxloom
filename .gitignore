@@ -1,6 +1,7 @@
 node_modules/
 dist/
 .contextmesh/
+.ctxloom/
 coverage/
 .DS_Store
 *.log

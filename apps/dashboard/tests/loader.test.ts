@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 
-vi.mock('../../src/graph/DependencyGraph.js', () => ({
+vi.mock('../../../src/graph/DependencyGraph.js', () => ({
   DependencyGraph: vi.fn().mockImplementation(() => ({
     buildFromDirectory: vi.fn().mockResolvedValue(undefined),
     allFiles: vi.fn().mockReturnValue(['src/a.ts', 'src/b.ts']),
@@ -10,7 +10,7 @@ vi.mock('../../src/graph/DependencyGraph.js', () => ({
   })),
 }));
 
-vi.mock('../../src/git/GitOverlayStore.js', () => ({
+vi.mock('../../../src/git/GitOverlayStore.js', () => ({
   GitOverlayStore: vi.fn().mockImplementation(() => ({
     loadSnapshot: vi.fn().mockResolvedValue(true),
     churn: { statsFor: vi.fn().mockReturnValue(null) },
@@ -20,6 +20,7 @@ vi.mock('../../src/git/GitOverlayStore.js', () => ({
 }));
 
 import { loadContext } from '../server/loader.js';
+import { GitOverlayStore } from '../../../src/git/GitOverlayStore.js';
 
 describe('loadContext', () => {
   it('returns graph and overlay for a valid root', async () => {
@@ -31,7 +32,6 @@ describe('loadContext', () => {
   });
 
   it('sets gitEnabled=false when overlay snapshot is missing', async () => {
-    const { GitOverlayStore } = await import('../../src/git/GitOverlayStore.js');
     vi.mocked(GitOverlayStore).mockImplementationOnce(() => ({
       loadSnapshot: vi.fn().mockResolvedValue(false),
       churn: { statsFor: vi.fn().mockReturnValue(null) },
