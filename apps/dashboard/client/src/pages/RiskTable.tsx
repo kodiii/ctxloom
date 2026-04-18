@@ -3,6 +3,7 @@ import { useApi } from '../hooks/useApi.ts';
 import { api } from '../lib/api.ts';
 import { RiskBadge } from '../components/RiskBadge.tsx';
 import { ErrorBanner } from '../components/ErrorBanner.tsx';
+import { FileDrawer } from '../components/FileDrawer.tsx';
 import type { RiskEntry } from '../../../server/types.js';
 
 type SortKey = keyof Pick<RiskEntry, 'riskScore' | 'churnLines' | 'busFactor' | 'couplingFanOut' | 'bugDensity'>;
@@ -11,6 +12,7 @@ export function RiskTable() {
   const state = useApi(api.risk);
   const [sort, setSort] = useState<SortKey>('riskScore');
   const [filter, setFilter] = useState('');
+  const [selectedFile, setSelectedFile] = useState<string | null>(null);
 
   if (state.status === 'loading') return <div className="text-white/40 text-sm">Loading...</div>;
   if (state.status === 'error') return <ErrorBanner message={state.message} />;
@@ -75,7 +77,13 @@ export function RiskTable() {
           <tbody className="divide-y divide-[rgba(255,255,255,0.05)]">
             {filtered.map(e => (
               <tr key={e.file} className="hover:bg-white/5">
-                <td className="px-4 py-3 font-mono text-xs text-white/60 max-w-xs truncate" title={e.file}>{e.file}</td>
+                <td
+                  className="px-4 py-3 font-mono text-xs text-white/60 max-w-xs truncate cursor-pointer hover:text-[#a78bfa] transition-colors"
+                  title={e.file}
+                  onClick={() => setSelectedFile(e.file)}
+                >
+                  {e.file}
+                </td>
                 <td className="px-4 py-3 text-xs text-white/50">{e.topOwner ?? '—'}</td>
                 <td className="px-4 py-3"><RiskBadge level={e.riskLabel} /></td>
                 <td className="px-4 py-3 text-white/70">{e.churnLines.toLocaleString()}</td>
@@ -87,6 +95,8 @@ export function RiskTable() {
           </tbody>
         </table>
       </div>
+
+      <FileDrawer file={selectedFile} onClose={() => setSelectedFile(null)} />
     </div>
   );
 }

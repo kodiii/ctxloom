@@ -9,6 +9,8 @@ import { buildRiskRouter } from './routes/risk.js';
 import { buildCommunitiesRouter } from './routes/communities.js';
 import { buildChurnRouter } from './routes/churn.js';
 import { buildOwnershipRouter } from './routes/ownership.js';
+import { buildFileRouter } from './routes/file.js';
+import { buildOpenRouter } from './routes/open.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -33,6 +35,8 @@ export async function startDashboard(options: {
   app.use('/api/communities', buildCommunitiesRouter(ctx));
   app.use('/api/churn', buildChurnRouter(ctx));
   app.use('/api/ownership', buildOwnershipRouter(ctx));
+  app.use('/api/file', buildFileRouter(ctx));
+  app.use('/api/open', buildOpenRouter(ctx));
 
   app.get('/api/health', (_req, res) => res.json({ ok: true, root, gitEnabled: ctx.gitEnabled }));
 

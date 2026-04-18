@@ -2,10 +2,12 @@ import { useState } from 'react';
 import { useApi } from '../hooks/useApi.ts';
 import { api } from '../lib/api.ts';
 import { ErrorBanner } from '../components/ErrorBanner.tsx';
+import { FileDrawer } from '../components/FileDrawer.tsx';
 
 export function Communities() {
   const state = useApi(api.communities);
   const [expanded, setExpanded] = useState<number | null>(null);
+  const [selectedFile, setSelectedFile] = useState<string | null>(null);
 
   if (state.status === 'loading') return <div className="text-white/40 text-sm">Loading...</div>;
   if (state.status === 'error') return <ErrorBanner message={state.message} />;
@@ -38,13 +40,22 @@ export function Communities() {
             {expanded === c.id && (
               <ul className="mt-3 space-y-1 border-t border-white/10 pt-3">
                 {c.files.map(f => (
-                  <li key={f} className="font-mono text-xs text-white/40 truncate" title={f}>{f}</li>
+                  <li
+                    key={f}
+                    className="font-mono text-xs text-white/40 truncate cursor-pointer hover:text-[#a78bfa] transition-colors"
+                    title={f}
+                    onClick={() => setSelectedFile(f)}
+                  >
+                    {f}
+                  </li>
                 ))}
               </ul>
             )}
           </div>
         ))}
       </div>
+
+      <FileDrawer file={selectedFile} onClose={() => setSelectedFile(null)} />
     </div>
   );
 }

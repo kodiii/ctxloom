@@ -3,6 +3,7 @@ import * as d3 from 'd3';
 import { useApi } from '../hooks/useApi.ts';
 import { api } from '../lib/api.ts';
 import { ErrorBanner } from '../components/ErrorBanner.tsx';
+import { FileDrawer } from '../components/FileDrawer.tsx';
 import type { GraphNode, GraphEdge } from '../../../server/types.js';
 
 interface SimNode extends GraphNode, d3.SimulationNodeDatum {}
@@ -40,6 +41,7 @@ export function GraphView() {
   const [hoveredNode, setHoveredNode] = useState<TooltipData | null>(null);
   const [tooltipPos, setTooltipPos] = useState<TooltipPos>({ x: 0, y: 0 });
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
+  const [selectedFile, setSelectedFile] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [communities, setCommunities] = useState<number[]>([]);
 
@@ -210,6 +212,7 @@ export function GraphView() {
       .on('click', (event: MouseEvent, d: SimNode) => {
         event.stopPropagation();
         setSelectedNodeId(prev => (prev === d.id ? null : d.id));
+        setSelectedFile(d.id);
       });
 
     // Apply highlight based on selectedNodeId via a D3 subscription
@@ -350,6 +353,7 @@ export function GraphView() {
           </div>
         )}
       </div>
+      <FileDrawer file={selectedFile} onClose={() => setSelectedFile(null)} />
     </div>
   );
 }

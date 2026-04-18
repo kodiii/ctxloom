@@ -2,10 +2,12 @@ import { useState } from 'react';
 import { useApi } from '../hooks/useApi.ts';
 import { api } from '../lib/api.ts';
 import { ErrorBanner } from '../components/ErrorBanner.tsx';
+import { FileDrawer } from '../components/FileDrawer.tsx';
 
 export function Ownership() {
   const state = useApi(api.ownership);
   const [filter, setFilter] = useState('');
+  const [selectedFile, setSelectedFile] = useState<string | null>(null);
 
   if (state.status === 'loading') return <div className="text-white/40 text-sm">Loading...</div>;
   if (state.status === 'error') return <ErrorBanner message={state.message} />;
@@ -65,7 +67,13 @@ export function Ownership() {
           <tbody className="divide-y divide-[rgba(255,255,255,0.05)]">
             {filtered.map(e => (
               <tr key={e.file} className={`hover:bg-white/5 ${e.busFactor === 1 ? 'bg-yellow-900/10' : ''}`}>
-                <td className="px-4 py-3 font-mono text-xs text-white/60 max-w-xs truncate" title={e.file}>{e.file}</td>
+                <td
+                  className="px-4 py-3 font-mono text-xs text-white/60 max-w-xs truncate cursor-pointer hover:text-[#a78bfa] transition-colors"
+                  title={e.file}
+                  onClick={() => setSelectedFile(e.file)}
+                >
+                  {e.file}
+                </td>
                 <td className="px-4 py-3 text-xs text-white/70">{e.primaryOwner}</td>
                 <td className="px-4 py-3 text-xs text-white/50">{Math.round(e.primaryShare * 100)}%</td>
                 <td className="px-4 py-3 text-xs text-white/50">
@@ -79,6 +87,8 @@ export function Ownership() {
           </tbody>
         </table>
       </div>
+
+      <FileDrawer file={selectedFile} onClose={() => setSelectedFile(null)} />
     </div>
   );
 }
