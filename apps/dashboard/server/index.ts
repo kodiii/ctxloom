@@ -36,7 +36,7 @@ export async function startDashboard(options: {
 
   app.get('/api/health', (_req, res) => res.json({ ok: true, root, gitEnabled: ctx.gitEnabled }));
 
-  const clientDist = path.join(__dirname, '../../dist/dashboard/client');
+  const clientDist = path.join(__dirname, '../dist/dashboard/client');
   app.use(express.static(clientDist));
   app.get('*', (_req, res) => {
     res.sendFile(path.join(clientDist, 'index.html'));
