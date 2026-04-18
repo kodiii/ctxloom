@@ -71,7 +71,7 @@ export function RiskTable() {
               ))}
             </tr>
           </thead>
-          <tbody className="divide-y divide-white/8">
+          <tbody className="divide-y divide-[rgba(255,255,255,0.05)]">
             {filtered.map(e => (
               <tr key={e.file} className="hover:bg-white/5">
                 <td className="px-4 py-3 font-mono text-xs text-white/60 max-w-xs truncate" title={e.file}>{e.file}</td>
