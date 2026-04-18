@@ -1,6 +1,6 @@
 import path from 'node:path';
-import { DependencyGraph } from '../../src/graph/DependencyGraph.js';
-import { GitOverlayStore } from '../../src/git/GitOverlayStore.js';
+import { DependencyGraph } from '../../../src/graph/DependencyGraph.js';
+import { GitOverlayStore } from '../../../src/git/GitOverlayStore.js';
 
 export interface DashboardContext {
   root: string;
