@@ -5,6 +5,7 @@ import { GraphView } from './pages/GraphView.tsx';
 import { RiskTable } from './pages/RiskTable.tsx';
 import { Communities } from './pages/Communities.tsx';
 import { Ownership } from './pages/Ownership.tsx';
+import { Guide } from './pages/Guide.tsx';
 
 export default function App() {
   return (
@@ -15,6 +16,7 @@ export default function App() {
         <Route path="risk" element={<RiskTable />} />
         <Route path="communities" element={<Communities />} />
         <Route path="ownership" element={<Ownership />} />
+        <Route path="guide" element={<Guide />} />
       </Route>
     </Routes>
   );

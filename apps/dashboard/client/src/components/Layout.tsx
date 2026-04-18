@@ -6,6 +6,7 @@ const NAV = [
   { to: '/risk', label: 'Risk' },
   { to: '/communities', label: 'Communities' },
   { to: '/ownership', label: 'Ownership' },
+  { to: '/guide', label: 'Guide' },
 ];
 
 export function Layout() {
