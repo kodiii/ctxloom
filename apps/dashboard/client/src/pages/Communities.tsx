@@ -7,7 +7,7 @@ export function Communities() {
   const state = useApi(api.communities);
   const [expanded, setExpanded] = useState<number | null>(null);
 
-  if (state.status === 'loading') return <div className="text-gray-400 text-sm">Loading...</div>;
+  if (state.status === 'loading') return <div className="text-white/40 text-sm">Loading...</div>;
   if (state.status === 'error') return <ErrorBanner message={state.message} />;
 
   const { communities, totalFiles, totalEdges } = state.data;
@@ -15,30 +15,30 @@ export function Communities() {
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold text-gray-900">Communities</h1>
-        <span className="text-sm text-gray-400">
+        <h1 className="text-white text-xl font-semibold">Communities</h1>
+        <span className="text-sm text-white/40">
           {communities.length} clusters · {totalFiles} files · {totalEdges} edges
         </span>
       </div>
 
       <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
         {communities.map(c => (
-          <div key={c.id} className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
+          <div key={c.id} className="bg-[#1e1d2a] border border-white/10 rounded-xl p-4 transition-colors hover:border-white/20">
             <button
               className="w-full flex items-center justify-between text-left"
               onClick={() => setExpanded(expanded === c.id ? null : c.id)}
             >
               <div>
-                <span className="text-sm font-medium text-gray-800">{c.name}</span>
-                <span className="ml-2 text-xs text-gray-400">{c.size} files</span>
+                <span className="text-white/80 text-sm font-medium">{c.name}</span>
+                <span className="ml-2 text-xs text-white/40">{c.size} files</span>
               </div>
-              <span className="text-gray-400 text-xs">{expanded === c.id ? '▲' : '▼'}</span>
+              <span className="text-white/30 text-xs">{expanded === c.id ? '▲' : '▼'}</span>
             </button>
 
             {expanded === c.id && (
-              <ul className="mt-3 space-y-1 border-t border-gray-100 pt-3">
+              <ul className="mt-3 space-y-1 border-t border-white/10 pt-3">
                 {c.files.map(f => (
-                  <li key={f} className="font-mono text-xs text-gray-500 truncate" title={f}>{f}</li>
+                  <li key={f} className="font-mono text-xs text-white/40 truncate" title={f}>{f}</li>
                 ))}
               </ul>
             )}
