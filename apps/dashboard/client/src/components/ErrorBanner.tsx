@@ -1,6 +1,6 @@
 export function ErrorBanner({ message }: { message: string }) {
   return (
-    <div className="rounded-md bg-red-50 border border-red-200 p-4 text-red-800 text-sm">
+    <div className="bg-red-900/30 border border-red-500/30 text-red-300 rounded-lg p-3 text-sm">
       {message}
     </div>
   );

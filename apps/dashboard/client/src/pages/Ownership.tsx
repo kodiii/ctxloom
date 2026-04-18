@@ -7,7 +7,7 @@ export function Ownership() {
   const state = useApi(api.ownership);
   const [filter, setFilter] = useState('');
 
-  if (state.status === 'loading') return <div className="text-gray-400 text-sm">Loading...</div>;
+  if (state.status === 'loading') return <div className="text-white/40 text-sm">Loading...</div>;
   if (state.status === 'error') return <ErrorBanner message={state.message} />;
 
   const { entries, totalAuthors } = state.data;
@@ -15,9 +15,9 @@ export function Ownership() {
   if (entries.length === 0) {
     return (
       <div className="space-y-4">
-        <h1 className="text-xl font-semibold text-gray-900">Ownership</h1>
-        <p className="text-gray-500 text-sm">
-          No git history available. Run <code>ctxloom index --with-git</code> to enable ownership analysis.
+        <h1 className="text-white text-xl font-semibold">Ownership</h1>
+        <p className="text-white/40 text-sm">
+          No git history available. Run <code className="text-[#a78bfa]">ctxloom index --with-git</code> to enable ownership analysis.
         </p>
       </div>
     );
@@ -34,12 +34,12 @@ export function Ownership() {
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold text-gray-900">Ownership</h1>
-        <span className="text-sm text-gray-400">{totalAuthors} authors · {busFactor1} single-owner files</span>
+        <h1 className="text-white text-xl font-semibold">Ownership</h1>
+        <span className="text-sm text-white/40">{totalAuthors} authors · {busFactor1} single-owner files</span>
       </div>
 
       {busFactor1 > 0 && (
-        <div className="rounded-md bg-yellow-50 border border-yellow-200 p-3 text-yellow-800 text-sm">
+        <div className="bg-yellow-900/20 border border-yellow-500/30 text-yellow-300 rounded-lg p-3 text-sm">
           ⚠ {busFactor1} files have only one contributor — bus factor risk.
         </div>
       )}
@@ -49,28 +49,28 @@ export function Ownership() {
         placeholder="Filter by file or owner..."
         value={filter}
         onChange={e => setFilter(e.target.value)}
-        className="w-full rounded-md border border-gray-200 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-gray-300"
+        className="w-full rounded-md border border-white/10 bg-[#1e1d2a] px-3 py-2 text-sm text-white placeholder:text-white/30 outline-none focus:ring-2 focus:ring-[#603dc6]/50 focus:border-[#603dc6]/50"
       />
 
-      <div className="overflow-x-auto rounded-lg border border-gray-200 bg-white shadow-sm">
+      <div className="overflow-x-auto rounded-xl border border-white/10 bg-[#1e1d2a]">
         <table className="min-w-full text-sm">
-          <thead className="border-b border-gray-100 bg-gray-50">
+          <thead className="border-b border-white/10 bg-[#131220]">
             <tr>
-              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500">File</th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500">Primary owner</th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500">Share</th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500">Contributors</th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-white/40">File</th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-white/40">Primary owner</th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-white/40">Share</th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-white/40">Contributors</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-gray-100">
+          <tbody className="divide-y divide-white/8">
             {filtered.map(e => (
-              <tr key={e.file} className={`hover:bg-gray-50 ${e.busFactor === 1 ? 'bg-yellow-50/40' : ''}`}>
-                <td className="px-4 py-3 font-mono text-xs text-gray-700 max-w-xs truncate" title={e.file}>{e.file}</td>
-                <td className="px-4 py-3 text-xs text-gray-700">{e.primaryOwner}</td>
-                <td className="px-4 py-3 text-xs text-gray-500">{Math.round(e.primaryShare * 100)}%</td>
-                <td className="px-4 py-3 text-xs text-gray-500">
+              <tr key={e.file} className={`hover:bg-white/5 ${e.busFactor === 1 ? 'bg-yellow-900/10' : ''}`}>
+                <td className="px-4 py-3 font-mono text-xs text-white/60 max-w-xs truncate" title={e.file}>{e.file}</td>
+                <td className="px-4 py-3 text-xs text-white/70">{e.primaryOwner}</td>
+                <td className="px-4 py-3 text-xs text-white/50">{Math.round(e.primaryShare * 100)}%</td>
+                <td className="px-4 py-3 text-xs text-white/50">
                   {e.busFactor === 1
-                    ? <span className="text-yellow-600 font-medium">sole owner</span>
+                    ? <span className="text-yellow-400 font-medium">sole owner</span>
                     : e.busFactor
                   }
                 </td>
