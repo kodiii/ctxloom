@@ -10,9 +10,10 @@ function computeRiskScore(churnLines: number, bugDensity: number, busFactor: num
   return churnPart * 0.3 + bugPart * 0.3 + busPart * 0.2 + couplingPart * 0.2;
 }
 
-function riskLabel(score: number): 'low' | 'medium' | 'high' {
-  if (score >= 0.66) return 'high';
-  if (score >= 0.33) return 'medium';
+function riskLabel(score: number): 'low' | 'medium' | 'high' | 'critical' {
+  if (score > 0.8) return 'critical';
+  if (score > 0.6) return 'high';
+  if (score > 0.3) return 'medium';
   return 'low';
 }
 

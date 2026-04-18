@@ -27,10 +27,19 @@ export function buildOverviewRouter(ctx: DashboardContext): Router {
     if (gitEnabled) {
       for (const f of files) {
         const churn = overlay.churn.statsFor(f);
-        if (!churn) { risk.low++; continue; }
-        if (churn.churnLines > 1000) risk.critical++;
-        else if (churn.churnLines > 500) risk.high++;
-        else if (churn.churnLines > 100) risk.medium++;
+        const ownership = overlay.ownership.statsFor(f);
+        const coupled = overlay.coChange.topFor({ node: f, limit: 100, minConfidence: 0.1 });
+        const churnLines = churn?.churnLines ?? 0;
+        const bugDensity = churn?.bugDensity ?? 0;
+        const busFactor = ownership?.busFactor ?? 1;
+        const churnPart = Math.min(1, churnLines / 1000);
+        const bugPart = Math.min(1, bugDensity * 2);
+        const busPart = busFactor <= 1 ? 1 : busFactor <= 2 ? 0.5 : 0;
+        const couplingPart = Math.min(1, coupled.length / 10);
+        const score = churnPart * 0.3 + bugPart * 0.3 + busPart * 0.2 + couplingPart * 0.2;
+        if (score > 0.8) risk.critical++;
+        else if (score > 0.6) risk.high++;
+        else if (score > 0.3) risk.medium++;
         else risk.low++;
       }
     }
