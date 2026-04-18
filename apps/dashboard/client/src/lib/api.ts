@@ -15,6 +15,18 @@ async function get<T>(path: string): Promise<T> {
   return res.json() as Promise<T>;
 }
 
+export interface StatusResponse {
+  lastIndexed: string;
+  fileCount: number;
+  gitEnabled: boolean;
+}
+
+export interface RefreshResponse {
+  ok: boolean;
+  lastIndexed: string;
+  fileCount: number;
+}
+
 export const api = {
   overview: () => get<OverviewResponse>('/overview'),
   graph: () => get<GraphResponse>('/graph'),
@@ -22,4 +34,6 @@ export const api = {
   communities: () => get<CommunitiesResponse>('/communities'),
   churn: () => get<ChurnResponse>('/churn'),
   ownership: () => get<OwnershipResponse>('/ownership'),
+  status: () => get<StatusResponse>('/status'),
+  refresh: () => fetch(`${BASE}/refresh`, { method: 'POST' }).then(r => r.json()) as Promise<RefreshResponse>,
 };

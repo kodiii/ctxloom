@@ -1,8 +1,9 @@
 import express from 'express';
 import cors from 'cors';
 import path from 'node:path';
+import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { loadContext } from './loader.js';
+import { loadContext, reloadContext } from './loader.js';
 import { buildOverviewRouter } from './routes/overview.js';
 import { buildGraphRouter } from './routes/graph.js';
 import { buildRiskRouter } from './routes/risk.js';
@@ -39,6 +40,49 @@ export async function startDashboard(options: {
   app.use('/api/open', buildOpenRouter(ctx));
 
   app.get('/api/health', (_req, res) => res.json({ ok: true, root, gitEnabled: ctx.gitEnabled }));
+
+  app.get('/api/status', (_req, res) => res.json({
+    lastIndexed: ctx.lastIndexed.toISOString(),
+    fileCount: ctx.graph.allFiles().length,
+    gitEnabled: ctx.gitEnabled,
+  }));
+
+  let reloading = false;
+  app.post('/api/refresh', async (_req, res) => {
+    if (reloading) return res.status(409).json({ error: 'reload already in progress' });
+    reloading = true;
+    try {
+      console.log('[dashboard] manual refresh triggered');
+      await reloadContext(ctx);
+      console.log(`[dashboard] reloaded — ${ctx.graph.allFiles().length} files`);
+      res.json({ ok: true, lastIndexed: ctx.lastIndexed.toISOString(), fileCount: ctx.graph.allFiles().length });
+    } finally {
+      reloading = false;
+    }
+  });
+
+  // Watch .ctxloom/ for snapshot changes and auto-reload
+  const snapshotDir = path.join(root, '.ctxloom');
+  let debounce: ReturnType<typeof setTimeout> | null = null;
+  try {
+    fs.watch(snapshotDir, (_event, filename) => {
+      if (!filename || !filename.includes('snapshot')) return;
+      if (debounce) clearTimeout(debounce);
+      debounce = setTimeout(async () => {
+        if (reloading) return;
+        reloading = true;
+        try {
+          console.log(`[dashboard] ${filename} changed, reloading…`);
+          await reloadContext(ctx);
+          console.log(`[dashboard] auto-reload done — ${ctx.graph.allFiles().length} files`);
+        } finally {
+          reloading = false;
+        }
+      }, 500);
+    });
+  } catch {
+    // .ctxloom may not exist yet — watcher skipped
+  }
 
   const clientDist = path.join(__dirname, '../dist/dashboard/client');
   app.use(express.static(clientDist));
