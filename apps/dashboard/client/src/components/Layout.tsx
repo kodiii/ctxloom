@@ -12,9 +12,12 @@ export function Layout() {
   return (
     <div className="flex h-screen bg-[#18181f]">
       <aside className="w-52 shrink-0 border-r border-white/8 bg-[#131220] flex flex-col">
-        <div className="px-5 py-4 border-b border-white/8">
-          <span className="text-sm font-semibold text-[#a78bfa]">ctxloom</span>
-          <span className="ml-1 text-xs text-white/30">dashboard</span>
+        <div className="px-4 py-4 border-b border-white/8 flex items-center gap-2.5">
+          <img src="/logo.svg" alt="ctxloom" className="w-6 h-6 shrink-0" />
+          <div>
+            <span className="text-sm font-semibold text-[#a78bfa]">ctxloom</span>
+            <span className="ml-1 text-xs text-white/30">dashboard</span>
+          </div>
         </div>
         <nav className="flex-1 py-4 space-y-1 px-2">
           {NAV.map(({ to, label }) => (
