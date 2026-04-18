@@ -1,3 +1,4 @@
+import { NavLink } from 'react-router-dom';
 import { useApi } from '../hooks/useApi.ts';
 import { api } from '../lib/api.ts';
 import { StatCard } from '../components/StatCard.tsx';
@@ -26,10 +27,18 @@ export function Overview() {
       <h1 className="text-white text-xl font-semibold">Overview</h1>
 
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-        <StatCard label="Files" value={data.totalFiles} />
-        <StatCard label="Edges" value={data.totalEdges} />
-        <StatCard label="Communities" value={data.totalCommunities} />
-        <StatCard label="Git history" value={data.gitEnabled ? 'enabled' : 'disabled'} />
+        <NavLink to="/graph" className="cursor-pointer rounded-xl hover:ring-1 hover:ring-[#603dc6]/40">
+          <StatCard label="Files" value={data.totalFiles} />
+        </NavLink>
+        <NavLink to="/graph" className="cursor-pointer rounded-xl hover:ring-1 hover:ring-[#603dc6]/40">
+          <StatCard label="Edges" value={data.totalEdges} />
+        </NavLink>
+        <NavLink to="/communities" className="cursor-pointer rounded-xl hover:ring-1 hover:ring-[#603dc6]/40">
+          <StatCard label="Communities" value={data.totalCommunities} />
+        </NavLink>
+        <NavLink to="/risk" className="cursor-pointer rounded-xl hover:ring-1 hover:ring-[#603dc6]/40">
+          <StatCard label="Git history" value={data.gitEnabled ? 'enabled' : 'disabled'} />
+        </NavLink>
       </div>
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
