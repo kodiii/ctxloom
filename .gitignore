@@ -6,3 +6,8 @@ coverage/
 *.log
 .env
 .env.local
+# Compiled TypeScript output in src/ (use dist/ instead)
+src/**/*.js
+src/**/*.js.map
+src/**/*.d.ts
+src/**/*.d.ts.map
