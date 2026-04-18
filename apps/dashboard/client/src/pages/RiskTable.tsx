@@ -5,7 +5,7 @@ import { RiskBadge } from '../components/RiskBadge.tsx';
 import { ErrorBanner } from '../components/ErrorBanner.tsx';
 import type { RiskEntry } from '../../../server/types.js';
 
-type SortKey = keyof Pick<RiskEntry, 'riskScore' | 'churnLines' | 'busFactor' | 'couplingFanOut'>;
+type SortKey = keyof Pick<RiskEntry, 'riskScore' | 'churnLines' | 'busFactor' | 'couplingFanOut' | 'bugDensity'>;
 
 export function RiskTable() {
   const state = useApi(api.risk);
@@ -37,6 +37,7 @@ export function RiskTable() {
     { key: 'churnLines', label: 'Churn lines' },
     { key: 'busFactor', label: 'Bus factor' },
     { key: 'couplingFanOut', label: 'Coupling' },
+    { key: 'bugDensity', label: 'Bug density' },
   ];
 
   return (
@@ -80,6 +81,7 @@ export function RiskTable() {
                 <td className="px-4 py-3 text-white/70">{e.churnLines.toLocaleString()}</td>
                 <td className="px-4 py-3 text-white/70">{e.busFactor}</td>
                 <td className="px-4 py-3 text-white/70">{e.couplingFanOut}</td>
+                <td className="px-4 py-3 text-white/70">{e.bugDensity.toFixed(2)}</td>
               </tr>
             ))}
           </tbody>
