@@ -73,7 +73,7 @@ export function FileDrawer({ file, onClose }: FileDrawerProps) {
               onClick={onClose}
               className="text-white/30 hover:text-white/70 transition-colors text-lg leading-none px-1"
             >
-              \u2715
+              ✕
             </button>
           </div>
         </div>
