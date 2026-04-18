@@ -11,8 +11,8 @@ const NAV = [
 export function Layout() {
   return (
     <div className="flex h-screen bg-[#18181f]">
-      <aside className="w-52 shrink-0 border-r border-white/8 bg-[#131220] flex flex-col">
-        <div className="px-4 py-4 border-b border-white/8 flex items-center gap-2.5">
+      <aside className="w-52 shrink-0 bg-[#131220] flex flex-col" style={{ borderRight: '1px solid rgba(255,255,255,0.07)' }}>
+        <div className="px-4 py-4 flex items-center gap-2.5" style={{ borderBottom: '1px solid rgba(255,255,255,0.07)' }}>
           <img src="/logo.svg" alt="ctxloom" className="w-6 h-6 shrink-0" />
           <div>
             <span className="text-sm font-semibold text-[#a78bfa]">ctxloom</span>
