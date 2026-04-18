@@ -29,7 +29,7 @@ export interface GraphResponse {
 export interface RiskEntry {
   file: string;
   riskScore: number;
-  riskLabel: 'low' | 'medium' | 'high';
+  riskLabel: 'low' | 'medium' | 'high' | 'critical';
   churnLines: number;
   bugDensity: number;
   busFactor: number;
