@@ -1,6 +1,6 @@
 # ctxloom — The Universal Code Context Engine
 
-A local-first MCP server that gives AI coding assistants deep structural understanding of your codebase through hybrid **Vector + AST + Graph** search, with **Skeletonization** for 70–90% token reduction.
+A local-first MCP server that gives AI coding assistants deep structural understanding of your codebase through hybrid **Vector + AST + Graph** search, with **Skeletonization** for 92% token reduction.
 
 No API keys. No cloud. No Python. Everything runs on your machine.
 
