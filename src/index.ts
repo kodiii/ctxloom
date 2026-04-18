@@ -144,6 +144,17 @@ async function main(): Promise<void> {
       break;
     }
 
+    case 'dashboard': {
+      const port = Number(
+        args.find(a => a.startsWith('--port='))?.split('=')[1] ?? '7842'
+      );
+      const open = args.includes('--open') || args.includes('-o');
+      const root = process.env.CTXLOOM_ROOT ?? process.cwd();
+      const { startDashboard } = await import('./dashboard.js');
+      await startDashboard({ root, port, open });
+      break;
+    }
+
     case '--help':
     case '-h': {
       console.log(`
@@ -157,6 +168,9 @@ Usage:
   ctxloom grammars --download  Pre-download all language grammars
   ctxloom register <path>      Register a repo for cross-repo search
   ctxloom repos                List all registered repos
+  ctxloom dashboard            Start the web dashboard (port 7842)
+  ctxloom dashboard --port=N   Start on custom port
+  ctxloom dashboard --open     Open browser automatically
   ctxloom --help               Show this help
 
 Flags (for MCP server mode):
