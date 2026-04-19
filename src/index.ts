@@ -234,6 +234,10 @@ async function main(): Promise<void> {
       const root = process.cwd();
       const ctxloomDir = path.join(root, '.ctxloom');
       const max = parseInt(getFlagValue('--max=') ?? '3', 10);
+      if (isNaN(max) || max <= 0) {
+        console.error('[ctxloom] --max must be a positive integer.');
+        process.exit(1);
+      }
       const emitCodeowners = hasFlag('--emit-codeowners');
       const writeFlag = hasFlag('--write');
       const explainFlag = hasFlag('--explain');
@@ -245,7 +249,7 @@ async function main(): Promise<void> {
       const store = new GitOverlayStore(root);
       await store.loadSnapshot();
 
-      const positionalFiles = args.filter(a => !a.startsWith('-'));
+      const positionalFiles = args.filter(a => !a.startsWith('-') && a !== command);
       const files: string[] = positionalFiles.length > 0
         ? positionalFiles
         : getStagedFiles(root);
@@ -256,8 +260,10 @@ async function main(): Promise<void> {
       }
 
       const config = await loadReviewConfig(root);
-      if (excludeFlags.length > 0) config.exclude.push(...excludeFlags);
-      config.defaults.max = max;
+      if (excludeFlags.length > 0) {
+        config.exclude = [...config.exclude, ...excludeFlags];
+      }
+      config.defaults = { ...config.defaults, max, minShare };
 
       const prAuthorEmail = authorFlag ?? getGitUserEmail(root) ?? '';
       const activity = buildActivityFromOverlay(store);
