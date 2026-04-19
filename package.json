@@ -1,5 +1,5 @@
 {
-  "name": "@kodiii/ctxloom",
+  "name": "@1st4media/ctxloom",
   "version": "1.0.3",
   "description": "ctxloom — The Universal Code Context Engine. A local-first MCP server providing intelligent code context via hybrid Vector + AST + Graph search with Skeletonization (92% token reduction).",
   "type": "module",
