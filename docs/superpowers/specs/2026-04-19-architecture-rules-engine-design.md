@@ -123,7 +123,9 @@ export function formatText(result: CheckResult, limit?: number): string;
 // JSON mode is always unlimited — limit is a text-only concern.
 
 export function formatJson(result: CheckResult): string;
-// Always emits full violation list; stable schema with schemaVersion: 1.
+// Always emits full violation list.
+// Injects schemaVersion: 1 at serialization time (not a field on CheckResult);
+// consumers (dashboard, ctxloom-prbot) use it for forward-compat handling.
 ```
 
 ### `src/tools/rules-check.ts` (MCP tool)
@@ -318,6 +320,7 @@ src/rules/RulesChecker.ts
 src/rules/reporter.ts
 src/rules/index.ts
 src/tools/rules-check.ts
+docs/rules-engine.md                 (user-facing guide: config syntax, CLI/MCP usage, examples)
 test/fixtures/rules/clean-repo/      (minimal fixture)
 test/fixtures/rules/violating-repo/  (minimal fixture)
 test/fixtures/rules/no-config/       (empty dir)
