@@ -1,5 +1,5 @@
 import type { OwnershipIndex } from '../git/OwnershipIndex.js';
-import type { CoChangeIndex } from '../git/CoChangeIndex.js';
+import type { CoChangeIndex, CoChangeStats } from '../git/CoChangeIndex.js';
 import type {
   ReviewConfig,
   CandidateActivity,
@@ -7,9 +7,19 @@ import type {
   ReviewSuggestion,
   BusFactorWarning,
   ReviewSuggestResult,
+  ReviewThresholds,
 } from './types.js';
 
 const SECS_PER_DAY = 86_400;
+
+const BUS_FACTOR_MIN_SHARE = 0.10;
+const SORT_TIE_EPSILON = 0.02;
+const REASON_OWNERSHIP_THRESHOLD = 0.30;
+const REASON_CO_CHANGE_THRESHOLD = 0.30;
+
+function mean(arr: number[]): number {
+  return arr.reduce((s, v) => s + v, 0) / arr.length;
+}
 
 export function scoreReviewers(
   files: string[],
@@ -20,6 +30,8 @@ export function scoreReviewers(
   config: ReviewConfig,
   now: number = Math.floor(Date.now() / 1000),
 ): ReviewSuggestResult {
+  if (files.length === 0) return { suggestions: [], warnings: [] };
+
   const { weights, thresholds, defaults } = config;
 
   // Build activity lookup: email → last commit timestamp
@@ -49,37 +61,53 @@ export function scoreReviewers(
     }),
   );
 
+  // Pre-compute co-change peers per file (avoids redundant topFor calls)
+  const coChangePeersPerFile = new Map<string, Array<CoChangeStats & { confidence: number }>>();
+  for (const file of files) {
+    coChangePeersPerFile.set(file, coChange.topFor({
+      node: file, limit: 10,
+      minConfidence: 0.05,
+      halfLifeDays: thresholds.coChangeWindowDays,
+      now,
+    }));
+  }
+
   // Score each active candidate across all files, then take mean
   const breakdowns: ScoreBreakdown[] = [];
   for (const email of activeEmails) {
     const perFile = files.map(file => scoreCandidate(
-      email, file, ownership, coChange, activityMap, config, now,
+      email, file, ownership, coChangePeersPerFile.get(file)!, activityMap, config, now,
     ));
     // Mean across files
-    const mean = (arr: number[]) => arr.reduce((s, v) => s + v, 0) / arr.length;
     const first = perFile[0]!;
+    const ownershipScore = mean(perFile.map(b => b.ownership));
+    const coChangeScore = mean(perFile.map(b => b.coChange));
+    const activityScore = first.activity; // activity is per-person, not per-file
+    const busBoostScore = mean(perFile.map(b => b.busFactorBoost));
+    const stalenessMultiplier = first.stalenessMultiplier;
+    const total =
+      (weights.ownership * ownershipScore +
+       weights.coChange * coChangeScore +
+       weights.activity * activityScore +
+       weights.busFactorBoost * busBoostScore) *
+      stalenessMultiplier;
+
     const merged: ScoreBreakdown = {
       email,
-      ownership: mean(perFile.map(b => b.ownership)),
-      coChange: mean(perFile.map(b => b.coChange)),
-      activity: first.activity, // activity is per-person, not per-file
-      busFactorBoost: mean(perFile.map(b => b.busFactorBoost)),
-      stalenessMultiplier: first.stalenessMultiplier,
-      total: 0,
+      ownership: ownershipScore,
+      coChange: coChangeScore,
+      activity: activityScore,
+      busFactorBoost: busBoostScore,
+      stalenessMultiplier,
+      total,
     };
-    merged.total =
-      (weights.ownership * merged.ownership +
-       weights.coChange * merged.coChange +
-       weights.activity * merged.activity +
-       weights.busFactorBoost * merged.busFactorBoost) *
-      merged.stalenessMultiplier;
     breakdowns.push(merged);
   }
 
   // Sort descending; tie-break by stalenessMultiplier then activity
   breakdowns.sort((a, b) => {
     const diff = b.total - a.total;
-    if (Math.abs(diff) >= 0.02) return diff;
+    if (Math.abs(diff) >= SORT_TIE_EPSILON) return diff;
     if (b.stalenessMultiplier !== a.stalenessMultiplier)
       return b.stalenessMultiplier - a.stalenessMultiplier;
     const lastA = activityMap.get(a.email) ?? 0;
@@ -89,7 +117,7 @@ export function scoreReviewers(
 
   const suggestions: ReviewSuggestion[] = breakdowns
     .slice(0, defaults.max)
-    .map(bd => ({ breakdown: bd, reason: buildReason(bd, files, ownership, now) }));
+    .map(bd => ({ breakdown: bd, reason: buildReason(bd, files, ownership, config.thresholds, now) }));
 
   // Bus-factor warnings
   const warnings: BusFactorWarning[] = collectWarnings(files, ownership, now, thresholds.activityMidDays);
@@ -105,7 +133,7 @@ function scoreCandidate(
   email: string,
   file: string,
   ownership: OwnershipIndex,
-  coChange: CoChangeIndex,
+  coChangePeers: Array<CoChangeStats & { confidence: number }>,
   activityMap: Map<string, number>,
   config: ReviewConfig,
   now: number,
@@ -118,12 +146,6 @@ function scoreCandidate(
   const ownershipScore = ownerEntry?.share ?? 0;
 
   // Co-change score: fraction of top co-changed files owned by this candidate
-  const coChangePeers = coChange.topFor({
-    node: file, limit: 10,
-    minConfidence: 0.05,
-    halfLifeDays: thresholds.coChangeWindowDays,
-    now,
-  });
   let coChangeScore = 0;
   if (coChangePeers.length > 0) {
     const hits = coChangePeers.filter(peer => {
@@ -141,9 +163,9 @@ function scoreCandidate(
     daysAgo <= thresholds.activityRecentDays ? 1.0 :
     daysAgo <= thresholds.activityMidDays ? 0.5 : 0;
 
-  // Bus-factor boost: non-top-owner with >=10% share on low-bus-factor file
+  // Bus-factor boost: non-top-owner with >=BUS_FACTOR_MIN_SHARE share on low-bus-factor file
   let busBoost = 0;
-  if (stats && stats.busFactor <= 2 && ownerEntry && ownerEntry.share >= 0.10) {
+  if (stats && stats.busFactor <= 2 && ownerEntry && ownerEntry.share >= BUS_FACTOR_MIN_SHARE) {
     const isTopOwner = stats.owners[0]?.email === email;
     if (!isTopOwner) busBoost = 1;
   }
@@ -159,7 +181,7 @@ function scoreCandidate(
     activity: activityScore,
     busFactorBoost: busBoost,
     stalenessMultiplier,
-    total: 0, // set by caller after mean
+    total: 0, // not used; caller computes final total after mean-aggregation
   };
 }
 
@@ -171,10 +193,11 @@ function buildReason(
   bd: ScoreBreakdown,
   files: string[],
   ownership: OwnershipIndex,
+  thresholds: ReviewThresholds,
   now: number,
 ): string {
   const parts: string[] = [];
-  if (bd.ownership > 0.3) {
+  if (bd.ownership > REASON_OWNERSHIP_THRESHOLD) {
     const pct = Math.round(bd.ownership * 100);
     const topFile = files.find(f => {
       const s = ownership.statsFor(f, now);
@@ -182,9 +205,9 @@ function buildReason(
     });
     parts.push(`owns ~${pct}% of ${topFile ?? 'changed files'}`);
   }
-  if (bd.coChange > 0.3) parts.push('active in co-changed files');
+  if (bd.coChange > REASON_CO_CHANGE_THRESHOLD) parts.push('active in co-changed files');
   if (bd.busFactorBoost > 0) parts.push('bus-factor boost');
-  if (bd.stalenessMultiplier < 1) parts.push('stale (>180d)');
+  if (bd.stalenessMultiplier < 1) parts.push(`stale (>${thresholds.activityMidDays}d inactive)`);
   return parts.join('; ') || 'historical contributor';
 }
 
