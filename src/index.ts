@@ -394,6 +394,84 @@ async function main(): Promise<void> {
       break;
     }
 
+    case 'rules': {
+      const subCommand = process.argv[3];
+      if (subCommand !== 'check') {
+        process.stderr.write('[ctxloom] Usage: ctxloom rules check [--json] [--use-snapshot] [--limit=N]\n');
+        process.exit(2);
+      }
+
+      const root = process.cwd();
+      const useSnapshot = hasFlag('--use-snapshot');
+      const jsonMode = hasFlag('--json');
+      const rawLimit = getFlagValue('--limit=');
+      const limit = rawLimit !== undefined ? parseInt(rawLimit, 10) : 50;
+
+      const { loadRulesConfig, RulesChecker, formatText, formatJson, RulesConfigError } = await import('./rules/index.js');
+
+      let config;
+      try {
+        config = await loadRulesConfig(root);
+      } catch (err) {
+        if (err instanceof RulesConfigError) {
+          process.stderr.write(`[ctxloom] Config error: ${err.message}\n`);
+          process.exit(2);
+        }
+        throw err;
+      }
+
+      if (config === null) {
+        process.stderr.write(
+          '[ctxloom] No .ctxloom/rules.yml found. Create one to define architecture rules.\n' +
+          '  See: docs/rules-engine.md\n',
+        );
+        process.exit(0);
+      }
+
+      if (config.rules.length === 0) {
+        console.log('[ctxloom] 0 rules configured. 0 violations.');
+        process.exit(0);
+      }
+
+      let graph;
+      if (useSnapshot) {
+        const { DependencyGraph } = await import('./graph/DependencyGraph.js');
+        graph = new DependencyGraph();
+        try {
+          await graph.buildFromDirectory(root);
+        } catch {
+          process.stderr.write('[ctxloom] --use-snapshot: no graph snapshot found. Run `ctxloom index` first.\n');
+          process.exit(2);
+        }
+      } else {
+        console.log('[ctxloom] Building dependency graph...');
+        const { ASTParser } = await import('./ast/ASTParser.js');
+        const { DependencyGraph } = await import('./graph/DependencyGraph.js');
+        let parser;
+        try {
+          parser = new ASTParser();
+          await parser.init();
+          graph = new DependencyGraph();
+          graph.setParser(parser);
+          await graph.buildFromDirectory(root);
+        } catch (err) {
+          process.stderr.write(`[ctxloom] Failed to build dependency graph: ${String(err)}\n`);
+          process.exit(2);
+        }
+      }
+
+      const result = new RulesChecker(graph, config).check();
+
+      if (jsonMode) {
+        console.log(formatJson(result));
+      } else {
+        console.log(formatText(result, limit));
+      }
+
+      const hasErrorViolation = result.violations.some(v => v.severity === 'error');
+      process.exit(hasErrorViolation ? 1 : 0);
+    }
+
     case '--help':
     case '-h': {
       console.log(`
@@ -412,6 +490,9 @@ Usage:
   ctxloom dashboard --open     Open browser automatically
   ctxloom review-suggest [files]   Suggest reviewers from ownership index
   ctxloom authors-sync             Map git emails to GitHub handles (needs GITHUB_TOKEN)
+  ctxloom rules check              Check architecture rules (.ctxloom/rules.yml)
+  ctxloom rules check --json       Output violations as JSON
+  ctxloom rules check --use-snapshot  Fast mode: use existing graph snapshot
   ctxloom --help               Show this help
 
 Flags (for MCP server mode):
