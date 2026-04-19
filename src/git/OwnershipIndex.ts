@@ -131,6 +131,11 @@ export class OwnershipIndex {
     };
   }
 
+  /** Return all file paths that have ownership data. */
+  allNodes(): string[] {
+    return Array.from(this.nodes.keys());
+  }
+
   /**
    * Return a deep-copy snapshot of all internal state for persistence.
    */
