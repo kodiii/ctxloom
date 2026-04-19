@@ -14,6 +14,8 @@ CLI command: `ctxloom rules check`
 MCP tool: `ctx_rules_check`
 Config: `.ctxloom/rules.yml`
 
+**Note:** The existing `ctx_get_rules` MCP tool loads project conventions from `.cursorrules`/`CLAUDE.md` — unrelated. The new `ctx_rules_check` tool is a dependency-graph linter. Different names, different purposes, no conflict.
+
 ---
 
 ## Decisions
