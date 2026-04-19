@@ -31,6 +31,7 @@ import { registerGraphDiffTool } from './graph-diff.js';
 import { registerFindLargeFunctionsTool } from './find-large-functions.js';
 import { registerGitCouplingTool } from './git-coupling.js';
 import { registerRiskOverlayTool } from './risk-overlay.js';
+import { registerRulesCheckTool } from './rules-check.js';
 
 export function createToolRegistry(ctx: ServerContext): ToolRegistry {
   const registry = new ToolRegistry();
@@ -40,6 +41,7 @@ export function createToolRegistry(ctx: ServerContext): ToolRegistry {
   registerCallGraphTool(registry, ctx);
   registerDefinitionTool(registry, ctx);
   registerRulesTool(registry, ctx);
+  registerRulesCheckTool(registry, ctx);
   registerSimilarFilesTool(registry, ctx);
   registerStatusTool(registry, ctx);
   registerBlastRadiusTool(registry, ctx);
