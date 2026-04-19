@@ -246,4 +246,20 @@ describe('OwnershipIndex', () => {
       expect(idx.statsFor('nonexistent.ts')).toBeNull();
     });
   });
+
+  // -------------------------------------------------------------------------
+  // 7. allNodes
+  // -------------------------------------------------------------------------
+  it('allNodes returns all tracked file paths', () => {
+    const idx = new OwnershipIndex();
+    const event = (path: string) => ({
+      sha: 'abc', author: 'Alice', authorEmail: 'alice@x.com',
+      timestamp: 1_000_000, message: '',
+      files: [{ path, added: 5, deleted: 0 }],
+      isBulk: false, isMerge: false,
+    });
+    idx.ingest(event('src/a.ts'));
+    idx.ingest(event('src/b.ts'));
+    expect(idx.allNodes().sort()).toEqual(['src/a.ts', 'src/b.ts']);
+  });
 });
