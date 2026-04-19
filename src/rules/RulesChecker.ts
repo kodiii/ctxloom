@@ -22,8 +22,7 @@ export class RulesChecker {
       const toFiles = new Set(allFiles.filter(f => toMatcher(f)));
 
       if (fromFiles.length === 0 || toFiles.size === 0) {
-        const side = fromFiles.length === 0 ? '"from"' : '"to"';
-        warnings.push(`rule "${rule.name}" matched 0 files on ${side} — check your glob`);
+        warnings.push(`rule "${rule.name}" matched 0 files on from/to — check glob`);
         continue;
       }
 
