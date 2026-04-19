@@ -27,6 +27,7 @@ export class FileWatcher {
   private watcher: FSWatcher | null = null;
   private debounceTimers = new Map<string, ReturnType<typeof setTimeout>>();
   private debounceMs: number;
+  private readyPromise: Promise<void> | null = null;
 
   constructor(root: string, onChange: ChangeCallback, debounceMs: number = 200) {
     this.root = root;
@@ -39,6 +40,10 @@ export class FileWatcher {
       ignored: IGNORED,
       persistent: true,
       ignoreInitial: true,
+    });
+
+    this.readyPromise = new Promise<void>(resolve => {
+      this.watcher!.on('ready', resolve);
     });
 
     const handler = (event: 'add' | 'change' | 'unlink') => (filePath: string) => {
@@ -69,6 +74,11 @@ export class FileWatcher {
       .on('add', handler('add'))
       .on('change', handler('change'))
       .on('unlink', handler('unlink'));
+  }
+
+  /** Resolves once chokidar has finished its initial scan and is ready to receive events. */
+  ready(): Promise<void> {
+    return this.readyPromise ?? Promise.resolve();
   }
 
   stop(): void {
