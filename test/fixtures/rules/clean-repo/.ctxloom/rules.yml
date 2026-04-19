@@ -1,0 +1,7 @@
+version: 1
+rules:
+  - name: "domain must not import infra"
+    type: no-import
+    from: "src/domain/**"
+    to: "src/infra/**"
+    severity: error
