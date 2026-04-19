@@ -41,8 +41,22 @@ export function registerRulesCheckTool(registry: ToolRegistry, ctx: ServerContex
         });
       }
 
-      const graph = await ctx.getGraph();
-      const result = new RulesChecker(graph, config).check();
+      let graph;
+      let result;
+      try {
+        graph = await ctx.getGraph();
+        result = new RulesChecker(graph, config).check();
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        return JSON.stringify({
+          schemaVersion: 1,
+          violations: [],
+          warnings: [`Runtime error: ${msg}`],
+          rulesChecked: 0,
+          filesChecked: 0,
+          durationMs: 0,
+        });
+      }
       return JSON.stringify({ schemaVersion: 1, ...result }, null, 2);
     },
   );
