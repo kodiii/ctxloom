@@ -39,14 +39,14 @@ describe('FileWatcher', () => {
     });
     watcher.start();
 
-    // Give chokidar time to initialize
-    await new Promise(r => setTimeout(r, 600));
+    // Wait for chokidar to finish its initial scan before writing any files
+    await watcher.ready();
 
     const newFile = path.join(tempDir, 'new-file.ts');
     fs.writeFileSync(newFile, 'export const x = 1;');
 
     // Wait for debounce (200ms) + chokidar processing buffer
-    await new Promise(r => setTimeout(r, 1000));
+    await new Promise(r => setTimeout(r, 600));
 
     watcher.stop();
 
@@ -63,11 +63,13 @@ describe('FileWatcher', () => {
     });
     watcher.start();
 
-    await new Promise(r => setTimeout(r, 500));
+    await watcher.ready();
+    // Small settling buffer after ready so chokidar commits initial file state
+    await new Promise(r => setTimeout(r, 100));
 
     fs.writeFileSync(existingFile, 'export const x = 2;');
 
-    await new Promise(r => setTimeout(r, 800));
+    await new Promise(r => setTimeout(r, 600));
 
     watcher.stop();
 
@@ -80,12 +82,12 @@ describe('FileWatcher', () => {
     });
     watcher.start();
 
-    await new Promise(r => setTimeout(r, 500));
+    await watcher.ready();
 
     const binFile = path.join(tempDir, 'data.bin');
     fs.writeFileSync(binFile, Buffer.from([0, 1, 2, 3]));
 
-    await new Promise(r => setTimeout(r, 800));
+    await new Promise(r => setTimeout(r, 600));
 
     watcher.stop();
 
@@ -101,11 +103,13 @@ describe('FileWatcher', () => {
     });
     watcher.start();
 
-    await new Promise(r => setTimeout(r, 500));
+    await watcher.ready();
+    // Small settling buffer after ready so chokidar commits initial file state
+    await new Promise(r => setTimeout(r, 100));
 
     fs.unlinkSync(existingFile);
 
-    await new Promise(r => setTimeout(r, 800));
+    await new Promise(r => setTimeout(r, 600));
 
     watcher.stop();
 

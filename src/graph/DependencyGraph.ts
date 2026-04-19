@@ -179,6 +179,19 @@ export class DependencyGraph {
   }
 
   /**
+   * Snapshot-only hydration: sets up paths and tries to load from the
+   * persisted snapshot without triggering a full AST rebuild.
+   *
+   * Returns true when the snapshot was found and loaded, false when no
+   * snapshot exists (caller should tell the user to run `ctxloom index`).
+   */
+  async loadSnapshotOnly(rootDir: string): Promise<boolean> {
+    this.rootDir = rootDir;
+    this.snapshotDir = path.join(rootDir, '.ctxloom');
+    return this.loadSnapshot();
+  }
+
+  /**
    * Get files that the given file directly imports.
    */
   getImports(fileRel: string): string[] {

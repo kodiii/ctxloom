@@ -394,6 +394,89 @@ async function main(): Promise<void> {
       break;
     }
 
+    case 'rules': {
+      const subCommand = process.argv[3];
+      if (subCommand !== 'check') {
+        process.stderr.write('[ctxloom] Usage: ctxloom rules check [--json] [--use-snapshot] [--limit=N]\n');
+        process.exit(2);
+      }
+
+      const root = process.cwd();
+      const useSnapshot = hasFlag('--use-snapshot');
+      const jsonMode = hasFlag('--json');
+      const rawLimit = getFlagValue('--limit=');
+      const limit = rawLimit !== undefined ? parseInt(rawLimit, 10) : 50;
+      if (rawLimit !== undefined && (isNaN(limit) || limit < 0)) {
+        process.stderr.write('[ctxloom] --limit must be a non-negative integer (0 for unlimited)\n');
+        process.exit(2);
+      }
+
+      const { loadRulesConfig, RulesChecker, formatText, formatJson, RulesConfigError } = await import('./rules/index.js');
+
+      let config;
+      try {
+        config = await loadRulesConfig(root);
+      } catch (err) {
+        if (err instanceof RulesConfigError) {
+          process.stderr.write(`[ctxloom] Config error: ${err.message}\n`);
+          process.exit(2);
+        }
+        throw err;
+      }
+
+      if (config === null) {
+        process.stderr.write(
+          '[ctxloom] No .ctxloom/rules.yml found. Create one to define architecture rules.\n' +
+          '  See: docs/rules-engine.md\n',
+        );
+        process.exit(0);
+      }
+
+      if (config.rules.length === 0) {
+        process.stdout.write('[ctxloom] 0 rules configured. 0 violations.\n');
+        process.exit(0);
+      }
+
+      let graph;
+      if (useSnapshot) {
+        const { DependencyGraph } = await import('./graph/DependencyGraph.js');
+        graph = new DependencyGraph();
+        // loadSnapshotOnly sets up paths and hydrates from the persisted JSON
+        // without triggering a full AST rebuild. Returns false when no snapshot exists.
+        const loaded = await graph.loadSnapshotOnly(root);
+        if (!loaded) {
+          process.stderr.write('[ctxloom] --use-snapshot: no graph snapshot found. Run `ctxloom index` first.\n');
+          process.exit(2);
+        }
+      } else {
+        process.stderr.write('[ctxloom] Building dependency graph...\n');
+        const { ASTParser } = await import('./ast/ASTParser.js');
+        const { DependencyGraph } = await import('./graph/DependencyGraph.js');
+        let parser;
+        try {
+          parser = new ASTParser();
+          await parser.init();
+          graph = new DependencyGraph();
+          graph.setParser(parser);
+          await graph.buildFromDirectory(root);
+        } catch (err) {
+          process.stderr.write(`[ctxloom] Failed to build dependency graph: ${String(err)}\n`);
+          process.exit(2);
+        }
+      }
+
+      const result = new RulesChecker(graph, config).check();
+
+      if (jsonMode) {
+        process.stdout.write(formatJson(result) + '\n');
+      } else {
+        process.stdout.write(formatText(result, limit) + '\n');
+      }
+
+      const hasErrorViolation = result.violations.some(v => v.severity === 'error');
+      process.exit(hasErrorViolation ? 1 : 0);
+    }
+
     case '--help':
     case '-h': {
       console.log(`
@@ -412,6 +495,10 @@ Usage:
   ctxloom dashboard --open     Open browser automatically
   ctxloom review-suggest [files]   Suggest reviewers from ownership index
   ctxloom authors-sync             Map git emails to GitHub handles (needs GITHUB_TOKEN)
+  ctxloom rules check              Check architecture rules (.ctxloom/rules.yml)
+  ctxloom rules check --json       Output violations as JSON
+  ctxloom rules check --use-snapshot  Fast mode: use existing graph snapshot
+  ctxloom rules check --limit=N   Show first N violations (default 50, 0=unlimited)
   ctxloom --help               Show this help
 
 Flags (for MCP server mode):
@@ -460,6 +547,7 @@ Tools Exposed:
   ctx_cross_repo_search      Federated semantic search across all registered repos
   ctx_git_coupling           Co-change coupling between files from git history
   ctx_risk_overlay           Risk score overlay: churn, coupling, ownership bus-factor
+  ctx_rules_check            Check architecture rules against live dependency graph
 `);
       break;
     }
