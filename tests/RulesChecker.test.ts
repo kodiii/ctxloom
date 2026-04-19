@@ -88,6 +88,28 @@ describe('RulesChecker', () => {
     expect(result.warnings.some(w => w.includes('ghost-to'))).toBe(true);
   });
 
+  it('matches files with single-segment * glob', () => {
+    const config: RulesConfig = {
+      version: 1,
+      rules: [{ name: 'no-db-in-services', type: 'no-import', from: 'src/services/*', to: 'src/db/*' }],
+    };
+    const graph = makeGraph([['src/services/user.ts', 'src/db/client.ts']]);
+    const result = new RulesChecker(graph, config).check();
+    expect(result.violations).toHaveLength(1);
+    expect(result.violations[0].fromFile).toBe('src/services/user.ts');
+  });
+
+  it('matches dotfiles with { dot: true } option', () => {
+    const config: RulesConfig = {
+      version: 1,
+      rules: [{ name: 'no-hidden-imports', type: 'no-import', from: 'src/**', to: 'src/.internal/**' }],
+    };
+    const graph = makeGraph([['src/main.ts', 'src/.internal/secrets.ts']]);
+    const result = new RulesChecker(graph, config).check();
+    expect(result.violations).toHaveLength(1);
+    expect(result.violations[0].toFile).toBe('src/.internal/secrets.ts');
+  });
+
   it('defaults severity to "error" when omitted in rule', () => {
     const config: RulesConfig = {
       version: 1,
