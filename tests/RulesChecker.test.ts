@@ -96,7 +96,7 @@ describe('RulesChecker', () => {
     const graph = makeGraph([['src/services/user.ts', 'src/db/client.ts']]);
     const result = new RulesChecker(graph, config).check();
     expect(result.violations).toHaveLength(1);
-    expect(result.violations[0].fromFile).toBe('src/services/user.ts');
+    expect(result.violations[0]!.fromFile).toBe('src/services/user.ts');
   });
 
   it('matches dotfiles with { dot: true } option', () => {
@@ -107,7 +107,7 @@ describe('RulesChecker', () => {
     const graph = makeGraph([['src/main.ts', 'src/.internal/secrets.ts']]);
     const result = new RulesChecker(graph, config).check();
     expect(result.violations).toHaveLength(1);
-    expect(result.violations[0].toFile).toBe('src/.internal/secrets.ts');
+    expect(result.violations[0]!.toFile).toBe('src/.internal/secrets.ts');
   });
 
   it('defaults severity to "error" when omitted in rule', () => {
