@@ -18,6 +18,14 @@ describe('buildCodeownersBlock', () => {
     expect(block).toContain(MARKER_START_DETECT);
     expect(block).toContain(MARKER_END);
   });
+
+  it('empty rules array produces valid block with just markers', () => {
+    const block = buildCodeownersBlock([]);
+    expect(block).toContain(MARKER_START_DETECT);
+    expect(block).toContain(MARKER_END);
+    const lines = block.split('\n').filter(l => l.trim() !== '');
+    expect(lines).toHaveLength(2); // start marker + end marker only
+  });
 });
 
 describe('mergeIntoFile', () => {
@@ -47,5 +55,14 @@ describe('mergeIntoFile', () => {
     const result = mergeIntoFile(existing, block);
     expect(result.startsWith('before\n')).toBe(true);
     expect(result.endsWith('after\n')).toBe(true);
+  });
+
+  it('orphaned end marker only — appends without corrupting file', () => {
+    const existing = `# header\n${MARKER_END}\n`;
+    const block = `${MARKER_START_DETECT}\nnew/rule/** @owner\n${MARKER_END}`;
+    const result = mergeIntoFile(existing, block);
+    expect(result).toContain('# header');
+    expect(result).toContain('new/rule/** @owner');
+    expect(result.indexOf('# header')).toBeLessThan(result.indexOf(MARKER_START_DETECT));
   });
 });
