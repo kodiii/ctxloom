@@ -13,7 +13,7 @@
     "apps/*"
   ],
   "publishConfig": {
-    "access": "restricted"
+    "access": "public"
   },
   "bin": {
     "ctxloom": "dist/index.js"
