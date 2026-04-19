@@ -94,7 +94,7 @@ describe('RulesChecker', () => {
       rules: [{ name: 'no-infra', type: 'no-import', from: 'src/domain/**', to: 'src/infra/**' }],
     };
     const graph = makeGraph([['src/domain/user.ts', 'src/infra/db.ts']]);
-    const result = new RulesChecker(graph, baseConfig).check();
+    const result = new RulesChecker(graph, config).check();
     expect(result.violations[0]!.severity).toBe('error');
   });
 
