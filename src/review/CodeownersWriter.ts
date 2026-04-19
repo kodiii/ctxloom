@@ -37,6 +37,7 @@ export function mergeIntoFile(existing: string, block: string): string {
   }
 
   // No markers — append at end
+  if (existing.length === 0) return `${block}\n`;
   const base = existing.endsWith('\n') ? existing : `${existing}\n`;
   return `${base}\n${block}\n`;
 }
