@@ -18,17 +18,16 @@ export function registerRulesCheckTool(registry: ToolRegistry, ctx: ServerContex
       try {
         config = await loadRulesConfig(ctx.projectRoot);
       } catch (err) {
-        if (err instanceof RulesConfigError) {
-          return JSON.stringify({
-            schemaVersion: 1,
-            violations: [],
-            warnings: [`Config error: ${err.message}`],
-            rulesChecked: 0,
-            filesChecked: 0,
-            durationMs: 0,
-          });
-        }
-        throw err;
+        // MCP tools must never throw — return all errors as warnings.
+        const msg = err instanceof Error ? err.message : String(err);
+        return JSON.stringify({
+          schemaVersion: 1,
+          violations: [],
+          warnings: [`Config error: ${msg}`],
+          rulesChecked: 0,
+          filesChecked: 0,
+          durationMs: 0,
+        });
       }
 
       if (config === null) {

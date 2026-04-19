@@ -429,7 +429,7 @@ async function main(): Promise<void> {
       }
 
       if (config.rules.length === 0) {
-        console.log('[ctxloom] 0 rules configured. 0 violations.');
+        process.stderr.write('[ctxloom] 0 rules configured. 0 violations.\n');
         process.exit(0);
       }
 
@@ -437,14 +437,15 @@ async function main(): Promise<void> {
       if (useSnapshot) {
         const { DependencyGraph } = await import('./graph/DependencyGraph.js');
         graph = new DependencyGraph();
-        try {
-          await graph.buildFromDirectory(root);
-        } catch {
+        // loadSnapshotOnly sets up paths and hydrates from the persisted JSON
+        // without triggering a full AST rebuild. Returns false when no snapshot exists.
+        const loaded = await graph.loadSnapshotOnly(root);
+        if (!loaded) {
           process.stderr.write('[ctxloom] --use-snapshot: no graph snapshot found. Run `ctxloom index` first.\n');
           process.exit(2);
         }
       } else {
-        console.log('[ctxloom] Building dependency graph...');
+        process.stderr.write('[ctxloom] Building dependency graph...\n');
         const { ASTParser } = await import('./ast/ASTParser.js');
         const { DependencyGraph } = await import('./graph/DependencyGraph.js');
         let parser;
@@ -463,9 +464,9 @@ async function main(): Promise<void> {
       const result = new RulesChecker(graph, config).check();
 
       if (jsonMode) {
-        console.log(formatJson(result));
+        process.stdout.write(formatJson(result) + '\n');
       } else {
-        console.log(formatText(result, limit));
+        process.stdout.write(formatText(result, limit) + '\n');
       }
 
       const hasErrorViolation = result.violations.some(v => v.severity === 'error');
@@ -493,6 +494,7 @@ Usage:
   ctxloom rules check              Check architecture rules (.ctxloom/rules.yml)
   ctxloom rules check --json       Output violations as JSON
   ctxloom rules check --use-snapshot  Fast mode: use existing graph snapshot
+  ctxloom rules check --limit=N   Show first N violations (default 50, 0=unlimited)
   ctxloom --help               Show this help
 
 Flags (for MCP server mode):
