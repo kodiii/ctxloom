@@ -406,6 +406,10 @@ async function main(): Promise<void> {
       const jsonMode = hasFlag('--json');
       const rawLimit = getFlagValue('--limit=');
       const limit = rawLimit !== undefined ? parseInt(rawLimit, 10) : 50;
+      if (rawLimit !== undefined && (isNaN(limit) || limit < 0)) {
+        process.stderr.write('[ctxloom] --limit must be a non-negative integer (0 for unlimited)\n');
+        process.exit(2);
+      }
 
       const { loadRulesConfig, RulesChecker, formatText, formatJson, RulesConfigError } = await import('./rules/index.js');
 
@@ -429,7 +433,7 @@ async function main(): Promise<void> {
       }
 
       if (config.rules.length === 0) {
-        process.stderr.write('[ctxloom] 0 rules configured. 0 violations.\n');
+        process.stdout.write('[ctxloom] 0 rules configured. 0 violations.\n');
         process.exit(0);
       }
 
@@ -543,6 +547,7 @@ Tools Exposed:
   ctx_cross_repo_search      Federated semantic search across all registered repos
   ctx_git_coupling           Co-change coupling between files from git history
   ctx_risk_overlay           Risk score overlay: churn, coupling, ownership bus-factor
+  ctx_rules_check            Check architecture rules against live dependency graph
 `);
       break;
     }
