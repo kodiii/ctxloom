@@ -21,6 +21,13 @@ import { GitOverlayStore } from './git/GitOverlayStore.js';
 import { runSetupWizard } from './setup/setup-wizard.js';
 import { GrammarLoader } from './grammars/GrammarLoader.js';
 import { RepoRegistry } from './tools/cross-repo-search.js';
+import { scoreReviewers } from './review/ReviewerScorer.js';
+import { AuthorResolver, resolveViaGitHubApi } from './review/AuthorResolver.js';
+import { generateCODEOWNERS, writeCODEOWNERS } from './review/CodeownersWriter.js';
+import { loadReviewConfig } from './review/loadConfig.js';
+import type { CandidateActivity } from './review/types.js';
+import type { CodeownersRule } from './review/CodeownersWriter.js';
+import { execSync } from 'node:child_process';
 import os from 'node:os';
 import path from 'node:path';
 
@@ -58,6 +65,54 @@ if (isNaN(parsed) || parsed <= 0) {
   process.exit(1);
 }
 const gitWindowDays = parsed;
+
+function getStagedFiles(root: string): string[] {
+  try {
+    const out = execSync('git diff --cached --name-only --diff-filter=ACM', {
+      cwd: root, encoding: 'utf8',
+    });
+    return out.trim().split('\n').filter(Boolean);
+  } catch {
+    return [];
+  }
+}
+
+function getGitUserEmail(root: string): string | undefined {
+  try {
+    return execSync('git config user.email', { cwd: root, encoding: 'utf8' }).trim();
+  } catch {
+    return undefined;
+  }
+}
+
+function getGitHubRepoSlug(root: string): string | undefined {
+  try {
+    const remote = execSync('git remote get-url origin', { cwd: root, encoding: 'utf8' }).trim();
+    const match = remote.match(/github\.com[:/]([^/]+\/[^/.]+)/);
+    return match?.[1];
+  } catch {
+    return undefined;
+  }
+}
+
+function buildActivityFromOverlay(store: GitOverlayStore): CandidateActivity[] {
+  const lastTouchMap = new Map<string, number>();
+  for (const file of store.ownership.allNodes()) {
+    const ownerStats = store.ownership.statsFor(file);
+    const churnStats = store.churn.statsFor(file);
+    if (!ownerStats || !churnStats) continue;
+    for (const owner of ownerStats.owners) {
+      const existing = lastTouchMap.get(owner.email) ?? 0;
+      if (churnStats.lastTouch > existing) {
+        lastTouchMap.set(owner.email, churnStats.lastTouch);
+      }
+    }
+  }
+  return Array.from(lastTouchMap.entries()).map(([email, lastCommitTimestamp]) => ({
+    email,
+    lastCommitTimestamp,
+  }));
+}
 
 async function main(): Promise<void> {
   switch (command) {
@@ -175,6 +230,164 @@ async function main(): Promise<void> {
       break;
     }
 
+    case 'review-suggest': {
+      const root = process.cwd();
+      const ctxloomDir = path.join(root, '.ctxloom');
+      const max = parseInt(getFlagValue('--max=') ?? '3', 10);
+      const emitCodeowners = hasFlag('--emit-codeowners');
+      const writeFlag = hasFlag('--write');
+      const explainFlag = hasFlag('--explain');
+      const minShare = parseFloat(getFlagValue('--min-share=') ?? '0.3');
+      const excludeFlags = args.filter(a => a.startsWith('--exclude=')).map(a => a.slice('--exclude='.length));
+      const authorFlag = getFlagValue('--author=');
+      const jsonFlag = hasFlag('--json');
+
+      const store = new GitOverlayStore(root);
+      await store.loadSnapshot();
+
+      const positionalFiles = args.filter(a => !a.startsWith('-'));
+      const files: string[] = positionalFiles.length > 0
+        ? positionalFiles
+        : getStagedFiles(root);
+
+      if (files.length === 0) {
+        console.error('[ctxloom] No files specified and no staged changes found.');
+        process.exit(1);
+      }
+
+      const config = await loadReviewConfig(root);
+      if (excludeFlags.length > 0) config.exclude.push(...excludeFlags);
+      config.defaults.max = max;
+
+      const prAuthorEmail = authorFlag ?? getGitUserEmail(root) ?? '';
+      const activity = buildActivityFromOverlay(store);
+      const resolver = new AuthorResolver(ctxloomDir);
+      await resolver.load();
+
+      if (emitCodeowners) {
+        const allFiles = store.ownership.allNodes();
+        const ruleMap = new Map<string, Set<string>>();
+        for (const file of allFiles) {
+          const dir = path.dirname(file);
+          const stats = store.ownership.statsFor(file);
+          if (!stats) continue;
+          const topOwners = stats.owners.filter(o => o.share >= minShare).slice(0, 2);
+          for (const owner of topOwners) {
+            const handle = resolver.resolve(owner.email);
+            if (!handle) continue;
+            const pattern = `${dir}/**`;
+            const set = ruleMap.get(pattern) ?? new Set<string>();
+            set.add(handle);
+            ruleMap.set(pattern, set);
+          }
+        }
+        const rules: CodeownersRule[] = Array.from(ruleMap.entries())
+          .map(([pattern, handles]) => ({ pattern, handles: Array.from(handles) }))
+          .sort((a, b) => a.pattern.localeCompare(b.pattern));
+        const codeownersPath = path.join(root, '.github', 'CODEOWNERS');
+        const content = await generateCODEOWNERS(codeownersPath, rules);
+        if (writeFlag) {
+          await writeCODEOWNERS(codeownersPath, content);
+          console.log(`[ctxloom] Updated ${codeownersPath} (${rules.length} rules).`);
+        } else {
+          console.log('--- dry run (pass --write to save) ---\n');
+          console.log(content);
+        }
+        break;
+      }
+
+      const result = scoreReviewers(
+        files,
+        store.ownership,
+        store.coChange,
+        activity,
+        prAuthorEmail,
+        config,
+      );
+
+      if (jsonFlag) {
+        console.log(JSON.stringify(result, null, 2));
+        break;
+      }
+
+      if (result.suggestions.length === 0) {
+        console.log('[ctxloom] No suggestions — all candidates filtered by staleness/exclusion rules.');
+        break;
+      }
+
+      console.log(`\nSuggested reviewers for ${files.length} file(s):`);
+      for (let i = 0; i < result.suggestions.length; i++) {
+        const s = result.suggestions[i]!;
+        const handle = resolver.resolve(s.breakdown.email);
+        const displayName = (typeof handle === 'string')
+          ? `@${handle}`
+          : s.breakdown.email;
+        const score = s.breakdown.total.toFixed(2);
+        console.log(`  ${i + 1}. ${displayName.padEnd(20)} ${score}   ${s.reason}`);
+        if (explainFlag) {
+          const b = s.breakdown;
+          console.log(`     ownership=${b.ownership.toFixed(2)}  coChange=${b.coChange.toFixed(2)}  activity=${b.activity.toFixed(2)}  busBoost=${b.busFactorBoost.toFixed(2)}  stale=×${b.stalenessMultiplier}`);
+        }
+      }
+
+      if (result.warnings.length > 0) {
+        console.log('');
+        for (const w of result.warnings) {
+          if (w.busFactor <= 2) {
+            console.log(`  ⚠  Bus factor is ${w.busFactor} for ${w.pattern}. Consider pairing a second reviewer.`);
+          }
+          if (w.topOwnerStalenessDays > 90) {
+            console.log(`  ⚠  Top owner last touched ${w.pattern} ${w.topOwnerStalenessDays}d ago. Ownership may be stale.`);
+          }
+        }
+      }
+      console.log('');
+      break;
+    }
+
+    case 'authors-sync': {
+      const root = process.cwd();
+      const ctxloomDir = path.join(root, '.ctxloom');
+      const token = process.env.GITHUB_TOKEN;
+      if (!token) {
+        console.error('[ctxloom] GITHUB_TOKEN env var required for authors-sync.');
+        process.exit(1);
+      }
+      const repoSlug = getFlagValue('--repo=') ?? getGitHubRepoSlug(root);
+      if (!repoSlug) {
+        console.error('[ctxloom] Could not detect GitHub repo. Pass --repo=owner/name.');
+        process.exit(1);
+      }
+      const [owner, repo] = repoSlug.split('/') as [string, string];
+      const store = new GitOverlayStore(root);
+      await store.loadSnapshot();
+      const resolver = new AuthorResolver(ctxloomDir);
+      await resolver.load();
+      const allEmails = Array.from(new Set(
+        store.ownership.allNodes().flatMap(f => {
+          const s = store.ownership.statsFor(f);
+          return s?.owners.map(o => o.email) ?? [];
+        }),
+      ));
+      const unmapped = resolver.unmapped(allEmails);
+      if (unmapped.length === 0) {
+        console.log('[ctxloom] All authors already mapped.');
+        break;
+      }
+      console.log(`[ctxloom] Resolving ${unmapped.length} unmapped author(s)...`);
+      let resolved = 0;
+      for (const email of unmapped) {
+        const handle = await resolveViaGitHubApi(email, owner, repo, token);
+        if (handle) {
+          await resolver.writeCache(email, handle);
+          resolved++;
+          console.log(`  ${email} → @${handle}`);
+        }
+      }
+      console.log(`[ctxloom] Done. Resolved ${resolved}/${unmapped.length}.`);
+      break;
+    }
+
     case '--help':
     case '-h': {
       console.log(`
@@ -191,6 +404,8 @@ Usage:
   ctxloom dashboard            Start the web dashboard (port 7842)
   ctxloom dashboard --port=N   Start on custom port
   ctxloom dashboard --open     Open browser automatically
+  ctxloom review-suggest [files]   Suggest reviewers from ownership index
+  ctxloom authors-sync             Map git emails to GitHub handles (needs GITHUB_TOKEN)
   ctxloom --help               Show this help
 
 Flags (for MCP server mode):
