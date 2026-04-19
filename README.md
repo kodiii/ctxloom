@@ -55,6 +55,122 @@ See [`apps/pr-bot/README.md`](apps/pr-bot/README.md) for full installation and s
 
 ---
 
+## Web Dashboard
+
+![Beta](https://img.shields.io/badge/status-beta-orange)
+
+A local web dashboard that visualises your codebase's graph, risk, ownership, and community data in real time.
+
+```bash
+# Index first (with git history for full data)
+ctxloom index --with-git
+
+# Launch the dashboard
+ctxloom dashboard
+```
+
+Visit `http://localhost:7842` — no browser extension required.
+
+### Views
+
+| View | What it shows |
+|------|---------------|
+| **Overview** | File count, edge count, communities, git status, risk breakdown donut, top architectural hubs |
+| **Dependency Graph** | Interactive D3 force-directed graph — hover for details, click to highlight neighbours, search to pan, community legend, risk rings |
+| **Risk** | Sortable table: composite risk score (churn × 0.3 + bug density × 0.3 + bus factor × 0.2 + coupling × 0.2), filterable by filename |
+| **Communities** | Auto-detected Louvain modules — expandable cluster cards showing member files |
+| **Ownership** | Per-file primary owner, share %, bus factor warnings — filterable by file or contributor |
+| **Guide** | In-app reference explaining every metric and how to interpret it |
+
+### Interactivity
+
+- **Click any filename** across Risk, Ownership, and Communities to open a file preview drawer with the full source and an **Open in IDE** button (launches VS Code, Cursor, or system default)
+- **↻ Refresh** button in Overview re-indexes the context in-place without restarting the server
+- The server **auto-reloads** when `.ctxloom/graph-snapshot.json` changes — run `ctxloom index` in a separate terminal and the dashboard updates automatically
+
+### Risk tiers
+
+| Tier | Score | Meaning |
+|------|-------|---------|
+| critical | > 0.8 | Urgent — high churn, sole owner, heavily coupled |
+| high | > 0.6 | Address soon |
+| medium | > 0.3 | Monitor |
+| low | ≤ 0.3 | Acceptable |
+
+---
+
+## Reviewer Suggestions
+
+Suggest PR reviewers based on git ownership, co-change history, and recent activity — no static CODEOWNERS to maintain:
+
+```bash
+# Suggest reviewers for staged files
+ctxloom review-suggest
+
+# Suggest reviewers for specific files
+ctxloom review-suggest src/auth.ts src/api/session.ts
+
+# Show per-factor score breakdown
+ctxloom review-suggest src/auth.ts --explain
+
+# Generate / update .github/CODEOWNERS
+ctxloom review-suggest --emit-codeowners --write
+
+# Map git author emails to GitHub handles
+GITHUB_TOKEN=<token> ctxloom authors-sync
+```
+
+### Scoring
+
+Each candidate is scored across four factors:
+
+| Factor | Weight | Source |
+|--------|--------|--------|
+| Ownership share | 50% | Blame-weighted commit history |
+| Co-change recency | 25% | Files changed together in last 90 days |
+| Recent activity | 15% | Commits in last 30/90 days |
+| Bus-factor boost | 10% | Diversity nudge when bus factor ≤ 2 |
+
+Candidates inactive for > 180 days are excluded automatically.
+
+### GitHub Action
+
+Add to `.github/workflows/review.yml`:
+
+```yaml
+name: Reviewer suggestions
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+jobs:
+  suggest:
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: kodiii/ctxloom-review-suggest@v1
+        with:
+          max: 3
+```
+
+### Email → GitHub handle mapping
+
+Create `.ctxloom/authors.yml` to map or exclude authors:
+
+```yaml
+mappings:
+  alice@company.com: alice-gh
+  bob@company.com: bobsmith
+ignore:
+  - bot@dependabot.com
+```
+
+---
+
 ## How ctxloom Compares
 
 | Feature | ctxloom | code-review-graph | Others |
@@ -181,6 +297,9 @@ Pass `--no-git` to disable the overlay entirely. Tools degrade gracefully — th
 ```
 ctxloom                      Start MCP server (Stdio transport)
 ctxloom index                Index current directory + build dependency graph
+ctxloom dashboard            Open the web dashboard (port 7842)
+ctxloom dashboard --port=N   Start on a custom port
+ctxloom dashboard --open     Open browser automatically
 ctxloom setup                Detect and configure MCP-compatible AI tools (interactive)
 ctxloom register <path>      Register a repo for cross-repo search
 ctxloom repos                List all registered repos
