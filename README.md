@@ -171,6 +171,115 @@ ignore:
 
 ---
 
+## Architecture Rules Engine
+
+Enforce architectural boundaries as a CI lint step — no runtime overhead, no flaky tests.
+
+```bash
+# Check rules against the indexed dependency graph
+ctxloom rules check
+
+# JSON output (for CI parsers)
+ctxloom rules check --json
+
+# Skip re-indexing, use existing snapshot
+ctxloom rules check --use-snapshot
+
+# Limit text output to N violations (default: 50)
+ctxloom rules check --limit=20
+```
+
+### Configuration
+
+Create `.ctxloom/rules.yml` in your project root:
+
+```yaml
+version: 1
+rules:
+  - name: domain must not import infra
+    type: no-import
+    from: "src/domain/**"
+    to: "src/infra/**"
+    severity: error        # optional — defaults to "error"
+
+  - name: no circular via shared
+    type: no-import
+    from: "src/features/**"
+    to: "src/shared/legacy/**"
+    severity: warning
+```
+
+### Rule fields
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| `name` | ✅ | Human-readable rule label (shown in violations) |
+| `type` | ✅ | Always `no-import` in v1 |
+| `from` | ✅ | picomatch glob — files that must not import |
+| `to` | ✅ | picomatch glob — files that must not be imported |
+| `severity` | ❌ | `error` (default) or `warning` |
+
+Globs use [picomatch](https://github.com/micromatch/picomatch) syntax with `{ dot: true }` for dotfiles.
+
+### Exit codes
+
+| Code | Meaning |
+|------|---------|
+| 0 | Clean (or warnings only) |
+| 1 | One or more `error`-severity violations found |
+| 2 | Config file invalid or I/O error |
+
+### CI integration
+
+```yaml
+# .github/workflows/rules.yml
+name: Architecture rules
+on: [push, pull_request]
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '20' }
+      - run: npm install -g ctxloom
+      - run: ctxloom index
+      - run: ctxloom rules check --json
+```
+
+### MCP tool
+
+The `ctx_rules_check` tool exposes the same engine to your AI assistant:
+
+```json
+// Request
+{}
+
+// Response (schemaVersion: 1)
+{
+  "schemaVersion": 1,
+  "violations": [
+    {
+      "rule": "domain must not import infra",
+      "severity": "error",
+      "from": "src/domain/user.ts",
+      "to": "src/infra/db.ts"
+    }
+  ],
+  "warnings": []
+}
+```
+
+The tool reads `.ctxloom/rules.yml` and the live dependency graph on every call — no restart required when config changes.
+
+### Limitations (v1)
+
+- **Direct imports only** — transitive violations are not detected
+- **Snapshot staleness** — `--use-snapshot` skips re-indexing; stale graphs may miss recent violations
+- Rule type `no-import` only; more rule types planned for v2
+
+---
+
 ## How ctxloom Compares
 
 | Feature | ctxloom | code-review-graph | Others |
@@ -196,7 +305,7 @@ ignore:
 
 ---
 
-## Tools — 31 total
+## Tools — 32 total
 
 ### Search & Context
 
@@ -251,6 +360,7 @@ ignore:
 | `ctx_get_rules` | Inject project rules from `.cursorrules`, `CLAUDE.md`, `CONTEXT.md`, `.ctxloomrc` |
 | `ctx_status` | Server status: graph size, vector store count, initialization state |
 | `ctx_get_workflow` | Return a pre-written tool sequence for review/debug/onboard/refactor/audit workflows |
+| `ctx_rules_check` | Check `.ctxloom/rules.yml` against the live dependency graph — returns `{schemaVersion:1, violations, warnings}` |
 
 ---
 
@@ -295,17 +405,21 @@ Pass `--no-git` to disable the overlay entirely. Tools degrade gracefully — th
 ## CLI Commands
 
 ```
-ctxloom                      Start MCP server (Stdio transport)
-ctxloom index                Index current directory + build dependency graph
-ctxloom dashboard            Open the web dashboard (port 7842)
-ctxloom dashboard --port=N   Start on a custom port
-ctxloom dashboard --open     Open browser automatically
-ctxloom setup                Detect and configure MCP-compatible AI tools (interactive)
-ctxloom register <path>      Register a repo for cross-repo search
-ctxloom repos                List all registered repos
-ctxloom grammars             Show grammar cache status
-ctxloom grammars --download  Pre-download all language grammars
-ctxloom --help               Show help
+ctxloom                          Start MCP server (Stdio transport)
+ctxloom index                    Index current directory + build dependency graph
+ctxloom dashboard                Open the web dashboard (port 7842)
+ctxloom dashboard --port=N       Start on a custom port
+ctxloom dashboard --open         Open browser automatically
+ctxloom setup                    Detect and configure MCP-compatible AI tools (interactive)
+ctxloom register <path>          Register a repo for cross-repo search
+ctxloom repos                    List all registered repos
+ctxloom grammars                 Show grammar cache status
+ctxloom grammars --download      Pre-download all language grammars
+ctxloom rules check              Check .ctxloom/rules.yml against the dependency graph
+ctxloom rules check --json       JSON output (schemaVersion: 1)
+ctxloom rules check --use-snapshot  Skip re-indexing, use existing graph snapshot
+ctxloom rules check --limit=N    Limit text output to N violations (default: 50)
+ctxloom --help                   Show help
 ```
 
 ---
@@ -337,7 +451,7 @@ ctxloom --help               Show help
 │                      MCP Interface                       │
 │                   (Stdio transport)                      │
 ├──────────────────────────────────────────────────────────┤
-│                    31 Tools (ToolRegistry)                │
+│                    32 Tools (ToolRegistry)                │
 │  Search · Graph Intelligence · Navigation · Review       │
 ├──────────────────────────────────────────────────────────┤
 │                    Context Engine                         │
@@ -443,6 +557,7 @@ src/
 │   ├── call-graph.ts          # ctx_get_call_graph
 │   ├── definition.ts          # ctx_get_definition
 │   ├── rules.ts               # ctx_get_rules
+│   ├── rules-check.ts         # ctx_rules_check
 │   ├── similar-files.ts       # ctx_similar_files
 │   ├── status.ts              # ctx_status
 │   ├── blast-radius.ts        # ctx_blast_radius
@@ -458,6 +573,12 @@ src/
 │   ├── refactor-preview.ts    # ctx_refactor_preview
 │   ├── execution-flow.ts      # ctx_execution_flow
 │   └── cross-repo-search.ts   # ctx_cross_repo_search
+├── rules/
+│   ├── types.ts               # Rule, RulesConfig, Violation, CheckResult, RulesConfigError
+│   ├── loadConfig.ts          # YAML + zod config loader
+│   ├── RulesChecker.ts        # picomatch glob engine — graph edges → violations
+│   ├── reporter.ts            # formatText (human) + formatJson (schemaVersion: 1)
+│   └── index.ts               # barrel export
 ├── graph/
 │   ├── DependencyGraph.ts     # In-memory graph + snapshot + multi-language
 │   ├── CallGraphIndex.ts      # Symbol-level call edges (TypeScript/JS)
