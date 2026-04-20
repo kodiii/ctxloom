@@ -8,34 +8,34 @@
 
 > **ctxloom** gives engineering teams instant structural understanding of any codebase — powered by a persistent knowledge graph, git history intelligence, and an AI-native PR bot.
 >
-> Free and open-source at the core. Powerful paid addons when you need more.
+> Free at the core. One license unlocks everything when you need more.
 
 ---
 
 ## 2. Business Model
 
-**Open core. Addon-based revenue. Zero hosting.**
+**Open core. Single bundle. Zero hosting.**
 
 - Core product is **AGPL-3.0** — free, open source, self-hosted forever
-- Paid **addons** are closed source, sold as separate npm packages
-- Addons integrate with the core but are independent products — AGPL does not infect them
+- All Pro/Team features ship **inside the same `ctxloom` package** — no separate installs
+- A license key activates the features already present in the binary
 - Customers self-host everything — we never touch their servers
-- Revenue comes entirely from addon license sales
+- Revenue comes entirely from license sales
 
 **Why this works:**
 - Free core = maximum distribution, no barrier to try
-- Addons = natural upgrade path once users see value
-- Each addon priced and iterated independently
+- Single package = zero install friction on upgrade — users just activate
+- No addon sprawl to maintain or version-align
 - Near 100% gross margin — no infra to run
-- Same model as Sentry, GitLab, Metabase, and PostHog
+- Similar to Zed, Ghostty, and Warp: one binary, features unlocked by license
 
 ---
 
-## 3. Core vs Addons
+## 3. Core vs Licensed Features
 
 ### Core — Free forever (AGPL-3.0)
 
-`npm install ctxloom`
+`npm install -g ctxloom`
 
 - Local graph indexing + CLI
 - AST analysis + dependency graph
@@ -47,28 +47,24 @@ Anyone can use, modify, and self-host. Modifications must be released under AGPL
 
 ---
 
-### Paid Addons (Closed Source)
+### Licensed Features (bundled in core binary)
 
-Each addon is a separate npm package, activated by a license key via Keygen.sh.
+All features below are **already inside `ctxloom`** — a license key unlocks them.
 
-| Addon | What it does | Price |
-|-------|-------------|-------|
-| `ctxloom-prbot` | GitHub PR bot with risk-scored reviews | included in Pro |
-| `ctxloom-history` | Full git history: churn, co-change, ownership maps | included in Pro |
-| `ctxloom-teams` | Cross-repo analysis + team dashboards | included in Team |
-| `ctxloom-ide` | VS Code + JetBrains extension | included in Team |
-| `ctxloom-integrations` | Slack + Linear integration | included in Team |
+| Feature | What it does | Available in |
+|---------|-------------|--------------|
+| PR bot | GitHub PR bot with risk-scored reviews | Pro + Team |
+| Git history | Full git history: churn, co-change, ownership maps | Pro + Team |
+| Cross-repo analysis | Multi-repo graph + team dashboards | Team |
+| IDE extension | VS Code + JetBrains integration | Team |
+| Slack + Linear | Workflow integrations | Team |
 
 ---
 
-## 4. Bundled Pricing Tiers
-
-Addons can also be purchased as bundles for convenience:
+## 4. Pricing Tiers
 
 ### Pro — $9.90 / month · $99 / year
 _1 seat — save 2 months with annual_
-
-Includes: `ctxloom-prbot` + `ctxloom-history`
 
 - PR bot with risk-scored reviews on every PR
 - Git history analysis: churn, co-change, ownership maps
@@ -81,9 +77,7 @@ Includes: `ctxloom-prbot` + `ctxloom-history`
 ---
 
 ### Team — $19.90 / month · $199 / year
-_Up to 5 seats — save 2 months with annual_
-
-Includes: all Pro addons + `ctxloom-teams` + `ctxloom-ide` + `ctxloom-integrations`
+_Up to 3 seats — save 2 months with annual_
 
 - Everything in Pro
 - Cross-repository analysis
@@ -98,8 +92,6 @@ Includes: all Pro addons + `ctxloom-teams` + `ctxloom-ide` + `ctxloom-integratio
 ---
 
 ### Enterprise — Custom pricing
-
-Includes: all addons + enterprise features
 
 - Air-gapped / offline license (72h validation cache)
 - SSO / SAML
@@ -117,7 +109,7 @@ Includes: all addons + enterprise features
 
 **7-day free trial — no credit card required**
 
-- Full addon access during trial
+- Full Pro feature access during trial
 - 1 repository limit
 - Machine fingerprint limited (one trial per device)
 - "Trial — X days remaining" shown in CLI
@@ -128,7 +120,7 @@ Includes: all addons + enterprise features
 | Signal | Method | Action |
 |--------|--------|--------|
 | Same machine | Hardware ID + hostname fingerprint | Hard block |
-| Same email | Email deduplication in Keygen | Hard block |
+| Same email | Email deduplication in Creem | Hard block |
 | IP pattern abuse | Rate-limit per /24 subnet | Require email verification |
 
 ---
@@ -137,19 +129,19 @@ Includes: all addons + enterprise features
 
 ### Purchase Flow
 
-1. Customer installs core: `npm install ctxloom`
-2. Runs `ctxloom trial` → Keygen issues 7-day trial key (email required, no card)
-3. Trial expires → purchase via **LemonSqueezy**
+1. Customer installs: `npm install -g ctxloom`
+2. Runs `ctxloom trial` → Creem issues 7-day trial key (email required, no card)
+3. Trial expires → purchase via **Creem.io**
 4. License key delivered instantly by email
 5. Customer runs `ctxloom activate <LICENSE_KEY>` — done
-6. Addon packages unlock automatically
+6. Licensed features unlock automatically — same binary, no reinstall
 
 ### What the License Key Encodes
 
 | Field | Description |
 |-------|-------------|
 | `seats` | Number of concurrent activations |
-| `tier` | Addons unlocked (pro / team / enterprise) |
+| `tier` | Features unlocked (`pro` / `team` / `enterprise`) |
 | `expiry` | Renewal date |
 | `fingerprint` | Machine binding (enterprise node-lock option) |
 
@@ -172,11 +164,11 @@ Includes: all addons + enterprise features
 - Modifications must be open-sourced under AGPL-3.0
 - Companies embedding ctxloom in a **closed-source product** must contact us for a **commercial license**
 
-### Addons — Proprietary
+### Licensed Features — Proprietary (source-available gating)
 
-- Closed source, distributed as compiled binaries
-- Sold via LemonSqueezy + activated via Keygen.sh
-- AGPL does not apply — addons are separate products
+- Feature code ships inside the AGPL package but is **license-gated at runtime**
+- No separate packages to distribute or version
+- Creem.io handles payment + license key generation
 
 ### Commercial License (for core)
 
@@ -190,20 +182,20 @@ Companies whose legal team blocks AGPL, or who need to embed the core in a close
 
 ## 8. Distribution Channels
 
-### 8a. Direct via LemonSqueezy (Primary)
+### 8a. Direct via Creem.io (Primary)
 
-- Self-serve for Pro and Team bundles
+- Self-serve for Pro and Team
 - Handles global VAT automatically
-- Instant license key delivery
-- Enterprise via contact form → manual quote → LemonSqueezy invoice
+- Instant license key delivery via email
+- Enterprise via contact form → manual quote → Creem invoice
 
 ### 8b. GitHub Marketplace (Secondary)
 
-- `ctxloom-prbot` listed as a paid GitHub App
+- PR bot feature listed as a paid GitHub App entry point
 - 75% revenue share (GitHub keeps 25%)
 - Good for top-of-funnel acquisition, lower margin
 
-> **Strategy:** GitHub Marketplace for discovery. LemonSqueezy direct for full bundle sales.
+> **Strategy:** GitHub Marketplace for discovery. Creem.io direct for full license sales.
 
 ---
 
@@ -213,36 +205,36 @@ Companies whose legal team blocks AGPL, or who need to embed the core in a close
 
 | Component | Tool | Cost |
 |-----------|------|------|
-| Payments + licensing | LemonSqueezy + Keygen.sh | ~$30–50 + 5% txn |
+| Payments + licensing | Creem.io | ~$0 fixed + 1–3% txn |
 | License delivery email | Resend | $20 |
 | Error monitoring | Sentry | $26 |
 | Analytics | PostHog | $0–20 |
 | Domain + CDN | Cloudflare | ~$2 |
-| **Total fixed** | | **~$80–120/mo** |
+| **Total fixed** | | **~$50–70/mo** |
 
 ### Margin per Tier
 
 | Tier | Monthly | Annual | Our cost | Gross margin |
 |------|---------|--------|----------|-------------|
-| Pro | $9.90/seat | $99/seat | ~$0.50 | ~95% |
-| Team | $19.90/mo | $199/mo | ~$0.50 | ~97% |
+| Pro | $9.90/seat | $99/seat | ~$0.30 | ~97% |
+| Team | $19.90/mo | $199/mo | ~$0.30 | ~98% |
 | Enterprise | Custom | Custom | ~$0 | ~100% |
 
 ---
 
 ## 10. MRR Model (2% free → paid conversion)
 
-_Assumes 60% buy annual (counted as MRR equivalent), 40% monthly. Team = flat $19.90/mo per account up to 5 seats._
+_Assumes 60% buy annual (counted as MRR equivalent), 40% monthly. Team = flat $19.90/mo per account up to 3 seats._
 
-| Free MAU | Paid Users | Pro (80%) | Team (20%) | Est. MRR | vs. Break-even ($120) |
+| Free MAU | Paid Users | Pro (80%) | Team (20%) | Est. MRR | vs. Break-even ($70) |
 |----------|-----------|-----------|------------|---------|----------------------|
-| 200 | 4 | 3 × $9.90 | 1 × $19.90 | ~$50 | -$70 |
-| 500 | 10 | 8 × $9.90 | 2 × $19.90 | ~$119 | **+$0 ✓** |
-| 1,000 | 20 | 16 × $9.90 | 4 × $19.90 | ~$238 | +$118 |
-| 5,000 | 100 | 80 × $9.90 | 20 × $19.90 | ~$1,190 | +$1,070 |
-| 20,000 | 400 | 320 × $9.90 | 80 × $19.90 | ~$4,752 | +$4,632 |
+| 200 | 4 | 3 × $9.90 | 1 × $19.90 | ~$50 | -$20 |
+| 400 | 8 | 6 × $9.90 | 2 × $19.90 | ~$99 | **+$29 ✓** |
+| 1,000 | 20 | 16 × $9.90 | 4 × $19.90 | ~$238 | +$168 |
+| 5,000 | 100 | 80 × $9.90 | 20 × $19.90 | ~$1,190 | +$1,120 |
+| 20,000 | 400 | 320 × $9.90 | 80 × $19.90 | ~$4,752 | +$4,682 |
 
-> **First milestone: 500 free MAU.** Break-even at ~10 paying users — very achievable.
+> **First milestone: 400 free MAU.** Break-even at ~8 paying users — very achievable.
 
 ---
 
@@ -250,7 +242,6 @@ _Assumes 60% buy annual (counted as MRR equivalent), 40% monthly. Team = flat $1
 
 | Stream | Description | When to pursue |
 |--------|-------------|----------------|
-| **Per-addon purchases** | Users buy only the addons they need | Now |
 | **API access (usage-based)** | Graph API sold to AI tools, linters, CI systems | After product-market fit |
 | **Consulting / onboarding** | $2k–10k setup fee for enterprise | Immediately, on request |
 | **Training data licensing** | Anonymised coupling + ownership patterns (opt-in) | At scale, with legal review |
@@ -261,10 +252,9 @@ _Assumes 60% buy annual (counted as MRR equivalent), 40% monthly. Team = flat $1
 
 | Need | Tool | Why |
 |------|------|-----|
-| Payments + VAT | [LemonSqueezy](https://lemonsqueezy.com) | Handles global VAT, simple API |
-| License issuance + validation | [Keygen.sh](https://keygen.sh) | Trial support, machine fingerprinting |
+| Payments + license issuance | [Creem.io](https://creem.io) | Handles VAT, generates license keys automatically |
 | Transactional email | [Resend](https://resend.com) | Key delivery, trial expiry, renewal reminders |
-| npm distribution | Private npm packages (addons) | Compiled output only — no source |
+| npm distribution | Public `ctxloom` package | Single binary, features gated by license at runtime |
 | Analytics | [PostHog](https://posthog.com) | Funnel + conversion tracking |
 
 ---
@@ -275,10 +265,9 @@ _Assumes 60% buy annual (counted as MRR equivalent), 40% monthly. Team = flat $1
 |-------|-------|
 | Primary domain | `ctxloom.com` |
 | Developer alias | `ctxloom.dev` (redirects to .com) |
-| npm package (core) | `ctxloom` (public) |
-| npm packages (addons) | `ctxloom-prbot`, `ctxloom-history`, etc. (private) |
+| npm package | `ctxloom` (public, single package) |
 | GitHub org | `github.com/ctxloom` |
 
 ---
 
-*Last updated: 2026-04-18*
+*Last updated: 2026-04-20*
