@@ -33,7 +33,6 @@ import os from 'node:os';
 import path from 'node:path';
 import {
   isActive,
-  requireActive,
   getLicenseInfo,
   activateLicense,
   deactivateLicense,
@@ -45,6 +44,7 @@ import {
   FingerprintAlreadyUsedError,
   EmailAlreadyUsedError,
 } from './license/index.js';
+import { track, captureError } from './license/telemetry.js';
 
 // ─── CLI flag parsing ────────────────────────────────────────────────────────
 
@@ -159,6 +159,7 @@ async function checkLicense(): Promise<void> {
 
   const active = await isActive();
   if (!active) {
+    track('license_gate_hit', os.hostname());
     process.stdout.write(
       `\nctxloom requires an active license.\n\n  Start a free 7-day trial:   ctxloom trial\n  Activate a purchased key:   ctxloom activate <KEY>\n  Buy a license:              https://ctxloom.com/pricing\n\n`,
     );
@@ -193,6 +194,7 @@ async function runTrial(): Promise<void> {
       `  Your license key will be emailed to ${email} after checkout.\n` +
       `  Then run: ctxloom activate <KEY>\n\n`,
     );
+    track('trial_started', os.hostname(), { email });
   } catch (err) {
     if (err instanceof FingerprintAlreadyUsedError) {
       process.stdout.write(`✗ A trial has already been used on this machine.\n  Purchase a license at https://ctxloom.com/pricing\n`);
@@ -214,6 +216,7 @@ async function runActivate(key: string): Promise<void> {
     const tier = license.tier.charAt(0).toUpperCase() + license.tier.slice(1);
     const expires = license.expiresAt ? new Date(license.expiresAt).toISOString().slice(0, 10) : 'Never';
     process.stdout.write(`✓ ctxloom ${tier} activated\n  Expires: ${expires}\n`);
+    track('license_activated', os.hostname(), { tier: license.tier });
   } catch (err) {
     if (err instanceof SeatLimitError) {
       process.stdout.write(
@@ -239,6 +242,7 @@ async function runDeactivate(): Promise<void> {
   try {
     await deactivateLicense();
     process.stdout.write('✓ Deactivated. Run `ctxloom activate <KEY>` on a new machine.\n');
+    track('license_deactivated', os.hostname());
   } catch (err) {
     if (err instanceof NetworkError) {
       process.stderr.write('[ctxloom] Deactivation failed (network error). Please try again.\n');
@@ -751,6 +755,7 @@ Tools Exposed:
 }
 
 main().catch(err => {
+  captureError(err, { command: command ?? 'mcp-server' });
   console.error('[ctxloom] Fatal error:', err);
   process.exit(1);
 });
