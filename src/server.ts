@@ -34,7 +34,16 @@ export interface ServerOptions {
   gitWindowDays?: number;
 }
 
-const PROJECT_ROOT = process.env.CTXLOOM_ROOT ?? process.cwd();
+const PROJECT_ROOT = (() => {
+  if (process.env.CTXLOOM_ROOT) return process.env.CTXLOOM_ROOT;
+  const cwd = process.cwd();
+  logger.warn(
+    'CTXLOOM_ROOT not set — defaulting to cwd. ' +
+    'Set CTXLOOM_ROOT in your MCP server config to point at the project you want to index.',
+    { cwd }
+  );
+  return cwd;
+})();
 const DB_PATH = path.join(PROJECT_ROOT, '.ctxloom', 'vectors.lancedb');
 
 // ─── Lazy singletons ────────────────────────────────────────────────────────
