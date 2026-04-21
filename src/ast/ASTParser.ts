@@ -43,11 +43,11 @@ function findWasmDir(): string {
     }
   }
 
-  // Fallback: try to find web-tree-sitter in node_modules
+  // Fallback: resolve web-tree-sitter main entry (package.json subpath is blocked by exports)
   try {
     const _require = createRequire(import.meta.url);
-    const pkgPath = _require.resolve('web-tree-sitter/package.json');
-    const pkgDir = path.dirname(pkgPath);
+    const mainPath = _require.resolve('web-tree-sitter');
+    const pkgDir = path.dirname(mainPath);
     if (fs.existsSync(path.join(pkgDir, 'tree-sitter.wasm'))) {
       return pkgDir;
     }
@@ -106,6 +106,8 @@ export class ASTParser {
     const grammarCandidates = [
       path.join(WASM_DIR, 'tree-sitter-typescript.wasm'),
       path.join(WASM_DIR, 'tree-sitter-typescript', 'tree-sitter-typescript.wasm'),
+      // Derive from node_modules sibling of web-tree-sitter
+      path.join(path.dirname(WASM_DIR), 'tree-sitter-typescript', 'tree-sitter-typescript.wasm'),
       // Also check node_modules for the grammar
       path.join(__dirname, '..', 'node_modules', 'web-tree-sitter', 'tree-sitter-typescript.wasm'),
       path.join(__dirname, '..', '..', 'node_modules', 'web-tree-sitter', 'tree-sitter-typescript.wasm'),
