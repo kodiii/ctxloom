@@ -2,25 +2,65 @@
 
 A local-first MCP server that gives AI coding assistants deep structural understanding of your codebase through hybrid **Vector + AST + Graph** search, with **Skeletonization** for 92% token reduction.
 
-No API keys. No cloud. No Python. Everything runs on your machine.
+No cloud indexing. No Python. Everything runs on your machine.
 
-## Quick Start
+> **ctxloom requires a license.** Start a free 7-day trial — no credit card required.
+
+## Getting Started
 
 **Prerequisites:** Node.js 20+ and an MCP-compatible AI tool (Claude Code, Cursor, Windsurf, etc.)
 
+### 1 — Install
+
 ```bash
-# 1. Install globally
 npm install -g ctxloom
-
-# 2. Auto-configure your AI tools (one-time)
-ctxloom setup
-
-# 3. Index your project (once per project)
-cd /path/to/your/project
-ctxloom index
 ```
 
-### Manual Configuration
+### 2 — Start your free trial
+
+```bash
+ctxloom trial
+# Enter your email — a checkout link opens in your browser.
+# No credit card. After checkout, Polar emails you a license key.
+```
+
+Already have a key?
+
+```bash
+ctxloom activate ctxl_pro_<your-key>
+```
+
+### 3 — Auto-configure your AI tools
+
+```bash
+ctxloom setup          # detects Claude Code, Cursor, Windsurf, etc.
+```
+
+### 4 — Index your project
+
+```bash
+cd /path/to/your/project
+ctxloom index          # builds vector + graph + git overlay
+```
+
+Your AI assistant now has full structural context. Ask it anything about the codebase.
+
+### License commands
+
+```bash
+ctxloom status         # show tier, expiry, last validation
+ctxloom deactivate     # release this machine's seat (to move to a new machine)
+```
+
+### CI / headless environments
+
+```bash
+CTXLOOM_LICENSE_KEY=ctxl_pro_<key> ctxloom index
+```
+
+Set `CTXLOOM_LICENSE_KEY` in your CI secrets. The key is validated on every run — no local state written to the runner.
+
+### Manual MCP Configuration
 
 ```jsonc
 // ~/.claude/claude_desktop_config.json  (or equivalent)
@@ -35,6 +75,8 @@ ctxloom index
 ```
 
 > If installed globally: `"command": "ctxloom"` with `"args": []`.
+>
+> Pricing: **Pro** €9.90/mo or €99/yr (1 machine) · **Team** €19.90/mo or €199/yr (3 machines) · [ctxloom.com/pricing](https://ctxloom.com/pricing)
 
 ---
 

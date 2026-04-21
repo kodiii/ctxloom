@@ -18,7 +18,7 @@ async function runCheck(
     const result = await execAsync(
       'node',
       ['--import', 'tsx/esm', indexTs, 'rules', 'check', ...args],
-      { cwd: path.join(fixturesDir, fixture), env: { ...process.env, FORCE_COLOR: '0' } },
+      { cwd: path.join(fixturesDir, fixture), env: { ...process.env, FORCE_COLOR: '0', CTXLOOM_LICENSE_BYPASS: '1' } },
     );
     return { stdout: result.stdout, stderr: result.stderr, exitCode: 0 };
   } catch (err: unknown) {
