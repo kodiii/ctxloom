@@ -7,9 +7,9 @@
  * Both are no-ops when the env vars are absent. Never throws.
  */
 
-const POSTHOG_HOST = 'https://app.posthog.com';
-const POSTHOG_KEY = process.env['POSTHOG_API_KEY'] ?? '';
-const SENTRY_DSN = process.env['SENTRY_DSN'] ?? '';
+const POSTHOG_HOST = 'https://eu.i.posthog.com';
+const POSTHOG_KEY = process.env['POSTHOG_API_KEY'] ?? 'phc_REDACTED';
+const SENTRY_DSN = process.env['SENTRY_DSN'] ?? 'https://REDACTED@REDACTED.ingest.de.sentry.io/REDACTED';
 
 export type TelemetryEvent =
   | 'trial_started'
