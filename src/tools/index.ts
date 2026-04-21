@@ -32,6 +32,7 @@ import { registerFindLargeFunctionsTool } from './find-large-functions.js';
 import { registerGitCouplingTool } from './git-coupling.js';
 import { registerRiskOverlayTool } from './risk-overlay.js';
 import { registerRulesCheckTool } from './rules-check.js';
+import { registerGetAffectedFlowsTool } from './get-affected-flows.js';
 
 export function createToolRegistry(ctx: ServerContext): ToolRegistry {
   const registry = new ToolRegistry();
@@ -67,5 +68,6 @@ export function createToolRegistry(ctx: ServerContext): ToolRegistry {
   registerFindLargeFunctionsTool(registry, ctx);
   registerGitCouplingTool(registry, ctx);
   registerRiskOverlayTool(registry, ctx);
+  registerGetAffectedFlowsTool(registry, ctx);
   return registry;
 }
