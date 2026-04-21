@@ -73,7 +73,15 @@ export class FileWatcher {
     this.watcher
       .on('add', handler('add'))
       .on('change', handler('change'))
-      .on('unlink', handler('unlink'));
+      .on('unlink', handler('unlink'))
+      .on('error', (err: Error) => {
+        // Non-fatal: log and continue. Common on macOS when watching paths like
+        // /dev/apfs-raw-device.* where CTXLOOM_ROOT defaults to a system directory.
+        logger.warn('FileWatcher: skipping inaccessible path', {
+          detail: err.message,
+          code: (err as NodeJS.ErrnoException).code ?? 'UNKNOWN',
+        });
+      });
   }
 
   /** Resolves once chokidar has finished its initial scan and is ready to receive events. */
