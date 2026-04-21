@@ -146,7 +146,10 @@ async function checkLicense(): Promise<void> {
     try {
       const result = await client.validate(ciKey, 'ci-ephemeral');
       if (result.status === 'revoked' || result.status === 'expired') {
-        process.stdout.write(`\nctxloom license is ${result.status}.\n  Purchase a new license at https://ctxloom.com/pricing\n\n`);
+        // BUG-002: Must use stderr — stdout is the MCP JSON-RPC channel when
+        // running as an MCP server. Writing plain text to stdout corrupts the
+        // protocol and causes "Server disconnected" in the client.
+        process.stderr.write(`\nctxloom license is ${result.status}.\n  Purchase a new license at https://ctxloom.com/pricing\n\n`);
         process.exit(2);
       }
     } catch {
@@ -160,7 +163,10 @@ async function checkLicense(): Promise<void> {
   const active = await isActive();
   if (!active) {
     track('license_gate_hit', os.hostname());
-    process.stdout.write(
+    // BUG-002: Must use stderr — stdout is the MCP JSON-RPC channel when
+    // running as an MCP server. Writing plain text to stdout corrupts the
+    // protocol and causes "Server disconnected" in the client.
+    process.stderr.write(
       `\nctxloom requires an active license.\n\n  Start a free 7-day trial:   ctxloom trial\n  Activate a purchased key:   ctxloom activate <KEY>\n  Buy a license:              https://ctxloom.com/pricing\n\n`,
     );
     process.exit(2);
