@@ -28,8 +28,23 @@ import { loadReviewConfig } from './review/loadConfig.js';
 import type { CandidateActivity } from './review/types.js';
 import type { CodeownersRule } from './review/CodeownersWriter.js';
 import { execSync } from 'node:child_process';
+import * as readline from 'node:readline';
 import os from 'node:os';
 import path from 'node:path';
+import {
+  isActive,
+  getLicenseInfo,
+  activateLicense,
+  deactivateLicense,
+  startTrial,
+  LicenseRequiredError,
+  NetworkError,
+  SeatLimitError,
+  InvalidKeyError,
+  FingerprintAlreadyUsedError,
+  EmailAlreadyUsedError,
+} from './license/index.js';
+import { track, captureError } from './license/telemetry.js';
 
 // ─── CLI flag parsing ────────────────────────────────────────────────────────
 
@@ -114,8 +129,183 @@ function buildActivityFromOverlay(store: GitOverlayStore): CandidateActivity[] {
   }));
 }
 
+// ─── License gate ────────────────────────────────────────────────────────────
+
+const LICENSE_BYPASS = process.env['CTXLOOM_LICENSE_BYPASS'] === '1';
+const LICENSE_GATE_BYPASS_COMMANDS = new Set(['trial', 'activate', 'deactivate', 'status', '--help']);
+
+async function checkLicense(): Promise<void> {
+  if (LICENSE_BYPASS) return;
+  if (command !== undefined && LICENSE_GATE_BYPASS_COMMANDS.has(command)) return;
+
+  const ciKey = process.env['CTXLOOM_LICENSE_KEY'];
+  if (ciKey) {
+    // CI path: validate on every invocation, no local state
+    const { ApiClient } = await import('./license/ApiClient.js');
+    const client = new ApiClient(process.env['CTXLOOM_API_BASE']);
+    try {
+      const result = await client.validate(ciKey, 'ci-ephemeral');
+      if (result.status === 'revoked' || result.status === 'expired') {
+        process.stdout.write(`\nctxloom license is ${result.status}.\n  Purchase a new license at https://ctxloom.com/pricing\n\n`);
+        process.exit(2);
+      }
+    } catch {
+      // Network failure in CI — fail hard (no offline grace for ephemeral runners)
+      process.stderr.write(`[ctxloom] License validation failed. Check CTXLOOM_LICENSE_KEY.\n`);
+      process.exit(2);
+    }
+    return;
+  }
+
+  const active = await isActive();
+  if (!active) {
+    track('license_gate_hit', os.hostname());
+    process.stdout.write(
+      `\nctxloom requires an active license.\n\n  Start a free 7-day trial:   ctxloom trial\n  Activate a purchased key:   ctxloom activate <KEY>\n  Buy a license:              https://ctxloom.com/pricing\n\n`,
+    );
+    process.exit(2);
+  }
+}
+
+// ─── License command handlers ─────────────────────────────────────────────────
+
+async function promptEmail(): Promise<string> {
+  const flagEmail = getFlagValue('--email=');
+  if (flagEmail) return flagEmail;
+  if (!process.stdin.isTTY) {
+    process.stderr.write('[ctxloom] Use --email=<address> in non-interactive mode.\n');
+    process.exit(1);
+  }
+  return new Promise(resolve => {
+    const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+    rl.question('Email: ', answer => { rl.close(); resolve(answer.trim()); });
+  });
+}
+
+async function runTrial(): Promise<void> {
+  process.stdout.write('Start your 7-day free trial — no credit card required.\n');
+  const email = await promptEmail();
+  if (!email) { process.stderr.write('[ctxloom] Email is required.\n'); process.exit(1); }
+  process.stdout.write('⏳ Creating trial checkout...\n');
+  try {
+    const result = await startTrial(email);
+    process.stdout.write(
+      `✓ Open this link to start your trial:\n  ${result.checkoutUrl}\n\n` +
+      `  Your license key will be emailed to ${email} after checkout.\n` +
+      `  Then run: ctxloom activate <KEY>\n\n`,
+    );
+    track('trial_started', os.hostname(), { email });
+  } catch (err) {
+    if (err instanceof FingerprintAlreadyUsedError) {
+      process.stdout.write(`✗ A trial has already been used on this machine.\n  Purchase a license at https://ctxloom.com/pricing\n`);
+      process.exit(1);
+    }
+    if (err instanceof EmailAlreadyUsedError) {
+      process.stdout.write(`✗ A trial has already been used for this email address.\n  Purchase a license at https://ctxloom.com/pricing\n`);
+      process.exit(1);
+    }
+    process.stderr.write(`[ctxloom] Trial request failed: ${err instanceof Error ? err.message : String(err)}\n`);
+    process.exit(1);
+  }
+}
+
+async function runActivate(key: string): Promise<void> {
+  process.stdout.write('⏳ Activating on this machine...\n');
+  try {
+    const license = await activateLicense(key);
+    const tier = license.tier.charAt(0).toUpperCase() + license.tier.slice(1);
+    const expires = license.expiresAt ? new Date(license.expiresAt).toISOString().slice(0, 10) : 'Never';
+    process.stdout.write(`✓ ctxloom ${tier} activated\n  Expires: ${expires}\n`);
+    track('license_activated', os.hostname(), { tier: license.tier });
+  } catch (err) {
+    if (err instanceof SeatLimitError) {
+      process.stdout.write(
+        `✗ Seat limit reached.\n  Deactivate another machine: https://ctxloom.com/account/licenses\n  Or upgrade to Team: https://ctxloom.com/pricing\n`,
+      );
+      process.exit(1);
+    }
+    if (err instanceof InvalidKeyError) {
+      process.stdout.write(`✗ Invalid license key. Double-check the key from your purchase email.\n`);
+      process.exit(1);
+    }
+    if (err instanceof NetworkError) {
+      process.stderr.write(`[ctxloom] Activation failed (network error). Please try again.\n`);
+      process.exit(1);
+    }
+    process.stderr.write(`[ctxloom] Activation failed: ${err instanceof Error ? err.message : String(err)}\n`);
+    process.exit(1);
+  }
+}
+
+async function runDeactivate(): Promise<void> {
+  process.stdout.write('⏳ Releasing this seat...\n');
+  try {
+    await deactivateLicense();
+    process.stdout.write('✓ Deactivated. Run `ctxloom activate <KEY>` on a new machine.\n');
+    track('license_deactivated', os.hostname());
+  } catch (err) {
+    if (err instanceof NetworkError) {
+      process.stderr.write('[ctxloom] Deactivation failed (network error). Please try again.\n');
+      process.exit(1);
+    }
+    process.stderr.write(`[ctxloom] Deactivation failed: ${err instanceof Error ? err.message : String(err)}\n`);
+    process.exit(1);
+  }
+}
+
+async function runStatus(): Promise<void> {
+  const license = await getLicenseInfo();
+  if (!license) {
+    process.stdout.write(
+      `No active license.\n\n  Start a free 7-day trial:   ctxloom trial\n  Activate a purchased key:   ctxloom activate <KEY>\n  Buy a license:              https://ctxloom.com/pricing\n\n`,
+    );
+    return;
+  }
+  const expires = license.expiresAt ? new Date(license.expiresAt).toISOString().slice(0, 10) : 'Never';
+  const daysLeft = license.expiresAt
+    ? Math.ceil((new Date(license.expiresAt).getTime() - Date.now()) / 86400000)
+    : null;
+  const expiresLabel = daysLeft !== null ? `${expires} (in ${daysLeft} days)` : expires;
+  const lastCheck = license.lastValidatedAt
+    ? (() => {
+        const h = Math.floor((Date.now() - new Date(license.lastValidatedAt).getTime()) / 3600000);
+        return h < 1 ? 'just now' : `${h} hour${h === 1 ? '' : 's'} ago`;
+      })()
+    : 'never';
+  const tier = license.tier.charAt(0).toUpperCase() + license.tier.slice(1);
+  const status = license.status.charAt(0).toUpperCase() + license.status.slice(1);
+
+  process.stdout.write(
+    `Tier:       ${tier}\nStatus:     ${status}\nEmail:      ${license.email || '(none)'}\nExpires:    ${expiresLabel}\nMachine:    ${os.hostname()} (${os.platform()}-${os.arch()})\nLast check: ${lastCheck}\n`,
+  );
+}
+
 async function main(): Promise<void> {
+  await checkLicense();
+
   switch (command) {
+    case 'trial': {
+      await runTrial();
+      break;
+    }
+
+    case 'activate': {
+      const key = args.find(a => !a.startsWith('-') && a !== 'activate');
+      if (!key) { process.stderr.write('[ctxloom] Usage: ctxloom activate <KEY>\n'); process.exit(1); }
+      await runActivate(key);
+      break;
+    }
+
+    case 'deactivate': {
+      await runDeactivate();
+      break;
+    }
+
+    case 'status': {
+      await runStatus();
+      break;
+    }
+
     case 'index': {
       console.log('[ctxloom] Indexing current directory...');
       const root = process.cwd();
@@ -484,6 +674,10 @@ ctxloom — The Universal Code Context Engine
 
 Usage:
   ctxloom                      Start MCP server on Stdio transport
+  ctxloom trial                Start a free 7-day trial (no credit card required)
+  ctxloom activate <KEY>       Activate a purchased license key on this machine
+  ctxloom deactivate           Release this machine's license seat
+  ctxloom status               Show current license status
   ctxloom index                Index the current directory and build dependency graph
   ctxloom setup                Detect and configure MCP-compatible AI tools
   ctxloom grammars             Show grammar cache status
@@ -561,6 +755,7 @@ Tools Exposed:
 }
 
 main().catch(err => {
+  captureError(err, { command: command ?? 'mcp-server' });
   console.error('[ctxloom] Fatal error:', err);
   process.exit(1);
 });
