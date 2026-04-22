@@ -5,6 +5,7 @@ import type {
   CommunitiesResponse,
   ChurnResponse,
   OwnershipResponse,
+  TokenStatsResponse,
 } from '../../../server/types.js';
 
 const BASE = '/api';
@@ -35,5 +36,6 @@ export const api = {
   churn: () => get<ChurnResponse>('/churn'),
   ownership: () => get<OwnershipResponse>('/ownership'),
   status: () => get<StatusResponse>('/status'),
+  tokens: () => get<TokenStatsResponse>('/tokens'),
   refresh: () => fetch(`${BASE}/refresh`, { method: 'POST' }).then(r => r.json()) as Promise<RefreshResponse>,
 };
