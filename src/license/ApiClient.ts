@@ -5,6 +5,7 @@ import {
   LicenseRevokedError,
   FingerprintAlreadyUsedError,
   EmailAlreadyUsedError,
+  TrialUnavailableError,
 } from './errors.js';
 import type { ActivateResult, ValidateResult, TrialStartResult } from './types.js';
 
@@ -27,6 +28,11 @@ async function post<T>(url: string, body: unknown): Promise<T> {
         if (err === 'fingerprint_already_used') throw new FingerprintAlreadyUsedError();
         if (err === 'email_already_used') throw new EmailAlreadyUsedError();
       }
+      // 503 from /v1/trial/start means the trial backend (Polar) is down —
+      // surface a distinct error so the CLI can guide the user to `activate` instead.
+      if (res.status === 503 && url.endsWith('/v1/trial/start')) {
+        throw new TrialUnavailableError();
+      }
       throw new NetworkError(`HTTP ${res.status}: ${err ?? 'unknown error'}`);
     }
     return data as T;
@@ -37,7 +43,8 @@ async function post<T>(url: string, body: unknown): Promise<T> {
       err instanceof InvalidKeyError ||
       err instanceof LicenseRevokedError ||
       err instanceof FingerprintAlreadyUsedError ||
-      err instanceof EmailAlreadyUsedError
+      err instanceof EmailAlreadyUsedError ||
+      err instanceof TrialUnavailableError
     ) {
       throw err;
     }
