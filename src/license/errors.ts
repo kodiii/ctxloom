@@ -46,6 +46,14 @@ export class FingerprintAlreadyUsedError extends Error {
   }
 }
 
+export class TrialUnavailableError extends Error {
+  readonly code = 'trial_unavailable';
+  constructor(message = 'Trial service is temporarily unavailable.') {
+    super(message);
+    this.name = 'TrialUnavailableError';
+  }
+}
+
 export class EmailAlreadyUsedError extends Error {
   readonly code = 'email_already_used';
   constructor() {

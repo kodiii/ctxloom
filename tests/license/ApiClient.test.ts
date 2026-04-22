@@ -155,5 +155,17 @@ describe('ApiClient', () => {
       const client = new ApiClient('https://api.ctxloom.com');
       await expect(client.startTrial('user@example.com', VALID_FINGERPRINT)).rejects.toThrow(EmailAlreadyUsedError);
     });
+
+    it('throws TrialUnavailableError on 503 internal_error', async () => {
+      fetchMock.mockResolvedValue({
+        ok: false,
+        status: 503,
+        json: async () => ({ error: 'internal_error' }),
+      });
+
+      const { TrialUnavailableError } = await import('../../src/license/errors.js');
+      const client = new ApiClient('https://api.ctxloom.com');
+      await expect(client.startTrial('user@example.com', VALID_FINGERPRINT)).rejects.toThrow(TrialUnavailableError);
+    });
   });
 });
