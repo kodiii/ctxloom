@@ -79,3 +79,11 @@ export interface OwnershipResponse {
   entries: OwnerEntry[];
   totalAuthors: number;
 }
+
+export interface TokenStatsResponse {
+  fullTokens: number;
+  skeletonTokens: number;
+  savedTokens: number;
+  reductionPercent: number;
+  fileCount: number;
+}
