@@ -18,6 +18,7 @@ import {
   resolveImport as resolveMultiLangImport,
 } from '../utils/importExtractor.js';
 import { GoModuleResolver } from '../utils/GoModuleResolver.js';
+import { TsConfigPathsResolver } from '../utils/TsConfigPathsResolver.js';
 import { CallGraphIndex } from './CallGraphIndex.js';
 
 /** Extensions handled by the TypeScript/JS AST parser. */
@@ -50,6 +51,7 @@ export class DependencyGraph {
   private parser: ASTParser | null = null;
   private rootDir: string = '';
   private snapshotDir: string = '';
+  private tsPathsResolver: TsConfigPathsResolver | null = null;
 
   /**
    * Build the graph from all supported files in rootDir using AST parsing.
@@ -57,6 +59,7 @@ export class DependencyGraph {
   async buildFromDirectory(rootDir: string): Promise<void> {
     this.rootDir = rootDir;
     this.snapshotDir = path.join(rootDir, '.ctxloom');
+    this.tsPathsResolver = new TsConfigPathsResolver(rootDir);
 
     // Collect files first so we can pass the count to the snapshot staleness check
     const files = collectFiles(rootDir);
@@ -92,9 +95,16 @@ export class DependencyGraph {
             const importNodes = nodes.filter(n => n.type === 'import');
             for (const imp of importNodes) {
               const src = imp.source ?? '';
-              if (!src.startsWith('.')) continue; // skip node_modules
-              const resolved = this.resolveImport(absPath, src, rootDir);
-              if (resolved) this.addEdge(relPath, resolved);
+              if (src.startsWith('.')) {
+                // Relative import — resolve against the importing file's directory
+                const resolved = this.resolveImport(absPath, src, rootDir);
+                if (resolved) this.addEdge(relPath, resolved);
+              } else if (this.tsPathsResolver?.isAlias(src)) {
+                // Path alias (e.g. "@/lib/movies") — resolve via tsconfig paths
+                const resolved = this.tsPathsResolver.resolve(src);
+                if (resolved) this.addEdge(relPath, resolved);
+              }
+              // Otherwise it is a bare node_modules specifier — skip
             }
           } else if (ext === '.go') {
             // Go: use AST import nodes + GoModuleResolver for module-path imports
@@ -343,6 +353,11 @@ export class DependencyGraph {
       return;
     }
 
+    // Ensure tsPathsResolver is ready when updateFile is called without a prior buildFromDirectory
+    if (!this.tsPathsResolver || this.rootDir !== rootDir) {
+      this.tsPathsResolver = new TsConfigPathsResolver(rootDir);
+    }
+
     const relPath = path.relative(rootDir, absPath);
 
     // 1. Remove stale edges and symbol index entries for this file
@@ -373,9 +388,15 @@ export class DependencyGraph {
           const importNodes = nodes.filter(n => n.type === 'import');
           for (const importNode of importNodes) {
             const src = importNode.source ?? '';
-            if (!src.startsWith('.')) continue;
-            const resolved = this.resolveImport(absPath, src, rootDir);
-            if (resolved) this.addEdge(relPath, resolved);
+            if (src.startsWith('.')) {
+              // Relative import
+              const resolved = this.resolveImport(absPath, src, rootDir);
+              if (resolved) this.addEdge(relPath, resolved);
+            } else if (this.tsPathsResolver?.isAlias(src)) {
+              // Path alias (e.g. "@/lib/movies") — resolve via tsconfig paths
+              const resolved = this.tsPathsResolver.resolve(src);
+              if (resolved) this.addEdge(relPath, resolved);
+            }
           }
         } else if (ext === '.go') {
           const goResolver = new GoModuleResolver(rootDir);

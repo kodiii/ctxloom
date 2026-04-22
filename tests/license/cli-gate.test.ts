@@ -61,9 +61,9 @@ async function run(
 describe('license gate', () => {
   it('exits 2 for gated command (repos) with no license', async () => {
     const home = tmpHome();
-    const { exitCode, stdout } = await run(['repos'], { HOME: home });
+    const { exitCode, stderr } = await run(['repos'], { HOME: home });
     expect(exitCode).toBe(2);
-    expect(stdout).toContain('ctxloom trial');
+    expect(stderr).toContain('ctxloom trial');
   }, 20_000);
 
   it('exits 0 for gated command when CTXLOOM_LICENSE_BYPASS=1', async () => {

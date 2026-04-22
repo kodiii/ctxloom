@@ -67,6 +67,28 @@ export class WikiGenerator {
     const detector = new CommunityDetector(this.graph);
     const communities = detector.detect();
 
+    // Build slug map (id → slug): when multiple communities share the same name,
+    // append the community id to disambiguate (e.g. "components-11.md", "components-22.md").
+    const nameCount = new Map<string, number>();
+    for (const c of communities) {
+      nameCount.set(c.name, (nameCount.get(c.name) ?? 0) + 1);
+    }
+    const slugMap = new Map<number, string>();
+    for (const c of communities) {
+      const baseSlug = slugify(c.name);
+      const slug = (nameCount.get(c.name) ?? 1) > 1 ? `${baseSlug}-${c.id}` : baseSlug;
+      slugMap.set(c.id, slug);
+    }
+
+    // Build name → slug map for cross-community link generation.
+    // For duplicate names the first community encountered wins (links are best-effort).
+    const nameToSlugMap = new Map<string, string>();
+    for (const c of communities) {
+      if (!nameToSlugMap.has(c.name)) {
+        nameToSlugMap.set(c.name, slugMap.get(c.id)!);
+      }
+    }
+
     // Build file → community name map (for cross-community import detection)
     const fileToComm = new Map<string, string>();
     for (const c of communities) {
@@ -76,9 +98,9 @@ export class WikiGenerator {
     fs.mkdirSync(this.wikiDir, { recursive: true });
 
     const communityPages: WikiPage[] = await Promise.all(
-      communities.map(c => this.buildPage(c, fileToComm)),
+      communities.map(c => this.buildPage(c, fileToComm, slugMap, nameToSlugMap)),
     );
-    const indexPage = this.buildIndex(communities);
+    const indexPage = this.buildIndex(communities, slugMap);
     const pages = [...communityPages, indexPage];
 
     const written: WikiPage[] = [];
@@ -100,8 +122,10 @@ export class WikiGenerator {
   private async buildPage(
     community: Community,
     fileToComm: Map<string, string>,
+    slugMap: Map<number, string>,
+    nameToSlugMap: Map<string, string>,
   ): Promise<WikiPage> {
-    const slug = slugify(community.name);
+    const slug = slugMap.get(community.id) ?? slugify(community.name);
     const filePath = path.join(this.wikiDir, `${slug}.md`);
     const fileSet = new Set(community.files);
 
@@ -171,7 +195,7 @@ export class WikiGenerator {
     if (crossImports.size > 0) {
       lines.push('', '## Dependencies', '', '| Community | Import Count |', '|-----------|-------------|');
       for (const [name, count] of [...crossImports.entries()].sort((a, b) => b[1] - a[1])) {
-        const targetSlug = slugify(name);
+        const targetSlug = nameToSlugMap.get(name) ?? slugify(name);
         lines.push(`| [${name}](${targetSlug}.md) | ${count} |`);
       }
     }
@@ -183,7 +207,7 @@ export class WikiGenerator {
     return { slug, communityName: community.name, filePath, content, hash };
   }
 
-  private buildIndex(communities: Community[]): WikiPage {
+  private buildIndex(communities: Community[], slugMap: Map<number, string>): WikiPage {
     const filePath = path.join(this.wikiDir, 'index.md');
     const totalFiles = this.graph.allFiles().length;
     const edgeCount = this.graph.edgeCount();
@@ -199,7 +223,7 @@ export class WikiGenerator {
 
     const sortedComms = [...communities].sort((a, b) => b.files.length - a.files.length);
     for (const c of sortedComms) {
-      const slug = slugify(c.name);
+      const slug = slugMap.get(c.id) ?? slugify(c.name);
       lines.push(`| \`${c.name}\` | ${c.files.length} | [${slug}.md](${slug}.md) |`);
     }
 
