@@ -43,6 +43,7 @@ import {
   InvalidKeyError,
   FingerprintAlreadyUsedError,
   EmailAlreadyUsedError,
+  TrialUnavailableError,
 } from './license/index.js';
 import { track, captureError } from './license/telemetry.js';
 
@@ -208,6 +209,15 @@ async function runTrial(): Promise<void> {
     }
     if (err instanceof EmailAlreadyUsedError) {
       process.stdout.write(`✗ A trial has already been used for this email address.\n  Purchase a license at https://ctxloom.com/pricing\n`);
+      process.exit(1);
+    }
+    if (err instanceof TrialUnavailableError) {
+      process.stderr.write(
+        `✗ Trial service is temporarily unavailable.\n\n` +
+        `  You can still activate a purchased key:   ctxloom activate <KEY>\n` +
+        `  Or buy a license now:                     https://ctxloom.com/pricing\n` +
+        `  Status updates:                           https://ctxloom.com/status\n\n`,
+      );
       process.exit(1);
     }
     process.stderr.write(`[ctxloom] Trial request failed: ${err instanceof Error ? err.message : String(err)}\n`);
