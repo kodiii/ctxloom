@@ -24,6 +24,12 @@ function useRelativeTime(iso: string | undefined) {
   return label;
 }
 
+function fmtTokens(n: number): string {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}k`;
+  return String(n);
+}
+
 const RISK_COLOURS: Record<string, string> = {
   critical: '#ef4444',
   high: '#f97316',
@@ -34,6 +40,7 @@ const RISK_COLOURS: Record<string, string> = {
 export function Overview() {
   const state = useApi(api.overview);
   const statusState = useApi(api.status);
+  const tokenState = useApi(api.tokens);
   const [refreshing, setRefreshing] = useState(false);
   const [lastIndexed, setLastIndexed] = useState<string | undefined>();
   const timeLabel = useRelativeTime(lastIndexed);
@@ -129,6 +136,40 @@ export function Overview() {
             </div>
           </div>
         </div>
+
+        {tokenState.status === 'success' && (
+          <div className="bg-[#1e1d2a] border border-white/10 rounded-xl p-5 lg:col-span-2">
+            <h2 className="text-white/50 text-xs uppercase tracking-wider mb-4">Token consumption</h2>
+            <div className="flex flex-col gap-4">
+              <div className="flex items-end justify-between">
+                <div>
+                  <p className="text-white/50 text-xs mb-1">Actual tokens used (with skeletonization)</p>
+                  <p className="text-white text-3xl font-semibold">{fmtTokens(tokenState.data.skeletonTokens)}</p>
+                </div>
+                <div className="text-right">
+                  <p className="text-white/50 text-xs mb-1">Would have been (full files)</p>
+                  <p className="text-white/60 text-3xl font-semibold line-through decoration-white/30">{fmtTokens(tokenState.data.fullTokens)}</p>
+                </div>
+              </div>
+              <div>
+                <div className="flex items-center justify-between mb-1.5">
+                  <span className="text-white/40 text-xs">{fmtTokens(tokenState.data.savedTokens)} tokens saved</span>
+                  <span className="text-[#a78bfa] text-sm font-semibold">{tokenState.data.reductionPercent}% reduction</span>
+                </div>
+                <div className="w-full bg-white/10 rounded-full h-2">
+                  <div
+                    className="bg-[#603dc6] h-2 rounded-full transition-all"
+                    style={{ width: `${tokenState.data.reductionPercent}%` }}
+                  />
+                </div>
+                <div className="flex justify-between mt-1">
+                  <span className="text-white/20 text-xs">0</span>
+                  <span className="text-white/20 text-xs">100%</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
 
         <div className="bg-[#1e1d2a] border border-white/10 rounded-xl p-5">
           <h2 className="text-white/50 text-xs uppercase tracking-wider mb-4">Top architectural hubs</h2>
