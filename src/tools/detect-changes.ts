@@ -19,7 +19,7 @@ import { exec } from 'node:child_process';
 import { promisify } from 'node:util';
 import type { ToolRegistry } from './registry.js';
 import type { ServerContext } from './context.js';
-import { detectChanges } from '../lib/analysis.js';
+import { detectChanges } from '../../packages/core/src/lib/analysis.js';
 import { logger } from '../utils/logger.js';
 
 const execAsync = promisify(exec);

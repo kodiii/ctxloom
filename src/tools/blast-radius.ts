@@ -19,8 +19,8 @@ import type { DependencyGraph } from '../graph/DependencyGraph.js';
 import type { EdgeConfidence } from '../graph/CallGraphIndex.js';
 import type { ToolRegistry } from './registry.js';
 import type { ServerContext } from './context.js';
-import { getImpactRadius } from '../lib/analysis.js';
-import type { HistoricalCouplingEntry } from '../lib/analysis.js';
+import { getImpactRadius } from '../../packages/core/src/lib/analysis.js';
+import type { HistoricalCouplingEntry } from '../../packages/core/src/lib/analysis.js';
 import { logger } from '../utils/logger.js';
 
 export type { HistoricalCouplingEntry };
