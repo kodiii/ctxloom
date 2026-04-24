@@ -10,7 +10,7 @@
  * today. Task 22 replaces this with a curated public API once all
  * subdirectories are migrated from src/ into packages/core/src/.
  */
-export * from '../../../src/graph/DependencyGraph.js';
+export * from './graph/DependencyGraph.js';
 export * from '../../../src/git/GitOverlayStore.js';
 export * from './lib/index.js';
 export * from './utils/logger.js';
