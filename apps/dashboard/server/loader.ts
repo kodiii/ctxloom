@@ -1,6 +1,5 @@
 import path from 'node:path';
-import { DependencyGraph } from '../../../src/graph/DependencyGraph.js';
-import { GitOverlayStore } from '../../../src/git/GitOverlayStore.js';
+import { DependencyGraph, GitOverlayStore } from '@ctxloom/core';
 
 export interface DashboardContext {
   root: string;

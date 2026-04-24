@@ -9,6 +9,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@ctxloom/core": "*",
     "probot": "^13.4.7",
     "yaml": "^2.5.0",
     "zod": "^3.22.0"

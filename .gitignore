@@ -1,7 +1,10 @@
 node_modules/
 dist/
+.claude/
+.planning/
 .contextmesh/
 .ctxloom/
+.superpowers/
 coverage/
 .DS_Store
 *.log
