@@ -11,7 +11,7 @@
  * subdirectories are migrated from src/ into packages/core/src/.
  */
 export * from './graph/DependencyGraph.js';
-export * from '../../../src/git/GitOverlayStore.js';
+export * from './git/GitOverlayStore.js';
 export * from './lib/index.js';
 export * from './utils/logger.js';
 export * from './utils/GoModuleResolver.js';
