@@ -4,6 +4,7 @@ dist/
 .planning/
 .contextmesh/
 .ctxloom/
+.superpowers/
 coverage/
 .DS_Store
 *.log
