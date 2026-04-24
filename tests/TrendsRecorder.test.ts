@@ -86,3 +86,65 @@ describe('recordTrendSnapshot — basic append', () => {
     expect(fs.existsSync(path.join(rootDir, '.ctxloom', 'trends', 'snapshots.jsonl'))).toBe(true);
   });
 });
+
+describe('recordTrendSnapshot — collapse logic', () => {
+  let rootDir: string;
+  beforeEach(() => { rootDir = makeTmpRoot(); });
+  afterEach(() => { fs.rmSync(rootDir, { recursive: true, force: true }); });
+
+  it('collapses a second snapshot within 5 min and <1% delta', async () => {
+    await recordTrendSnapshot(makeOpts({
+      rootDir,
+      graph: fakeGraph({ files: ['a.ts'], edges: 100 }),
+      now: () => 1_000_000_000_000,
+    }));
+    await recordTrendSnapshot(makeOpts({
+      rootDir,
+      graph: fakeGraph({ files: ['a.ts'], edges: 100 }),
+      now: () => 1_000_000_060_000,
+    }));
+    expect(readJsonl(rootDir)).toHaveLength(1);
+  });
+
+  it('appends when more than 5 minutes elapsed regardless of delta', async () => {
+    await recordTrendSnapshot(makeOpts({
+      rootDir,
+      graph: fakeGraph({ files: ['a.ts'], edges: 100 }),
+      now: () => 1_000_000_000_000,
+    }));
+    await recordTrendSnapshot(makeOpts({
+      rootDir,
+      graph: fakeGraph({ files: ['a.ts'], edges: 100 }),
+      now: () => 1_000_000_000_000 + 301 * 1000,
+    }));
+    expect(readJsonl(rootDir)).toHaveLength(2);
+  });
+
+  it('appends within 5 min when an integer metric changes by ≥ 1', async () => {
+    await recordTrendSnapshot(makeOpts({
+      rootDir,
+      graph: fakeGraph({ files: ['a.ts'], edges: 100 }),
+      now: () => 1_000_000_000_000,
+    }));
+    await recordTrendSnapshot(makeOpts({
+      rootDir,
+      graph: fakeGraph({ files: ['a.ts', 'b.ts'], edges: 100 }),
+      now: () => 1_000_000_060_000,
+    }));
+    expect(readJsonl(rootDir)).toHaveLength(2);
+  });
+
+  it('appends within 5 min when a numeric metric changes by > 1%', async () => {
+    await recordTrendSnapshot(makeOpts({
+      rootDir,
+      graph: fakeGraph({ files: ['a.ts'], edges: 100 }),
+      now: () => 1_000_000_000_000,
+    }));
+    await recordTrendSnapshot(makeOpts({
+      rootDir,
+      graph: fakeGraph({ files: ['a.ts'], edges: 102 }),
+      now: () => 1_000_000_060_000,
+    }));
+    expect(readJsonl(rootDir)).toHaveLength(2);
+  });
+});

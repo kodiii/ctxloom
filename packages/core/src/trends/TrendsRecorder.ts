@@ -6,6 +6,14 @@ import type { RecordOptions, TrendSnapshot } from './types.js';
 const FILE_SUBPATH = path.join('.ctxloom', 'trends', 'snapshots.jsonl');
 const ENTRY_PATTERN = /(^|\/)(index|main|server|app|cli)\.[^/]+$/;
 const SEVEN_DAYS_SECONDS = 7 * 24 * 3600;
+const COLLAPSE_WINDOW_SECONDS = 300;
+const PERCENT_THRESHOLD = 0.01;
+const INTEGER_FLOOR_FIELDS: ReadonlyArray<keyof TrendSnapshot> = [
+  'totalFiles',
+  'totalEdges',
+  'deadFiles',
+  'highRiskFiles',
+];
 
 function computeMetrics(opts: RecordOptions, unixSeconds: number): Pick<TrendSnapshot, 'totalFiles' | 'totalEdges' | 'deadFiles' | 'avgBusFactor' | 'highRiskFiles' | 'churnLinesLast7d'> {
   const { graph, overlay, gitEnabled } = opts;
@@ -74,6 +82,65 @@ async function ensureDir(dir: string): Promise<void> {
   await fs.mkdir(dir, { recursive: true });
 }
 
+async function readLastLine(filePath: string): Promise<string | null> {
+  try {
+    const buf = await fs.readFile(filePath);
+    if (buf.length === 0) return null;
+    const text = buf.toString('utf-8').replace(/\n+$/, '');
+    const idx = text.lastIndexOf('\n');
+    return idx >= 0 ? text.slice(idx + 1) : text;
+  } catch {
+    return null;
+  }
+}
+
+async function readLastSnapshot(filePath: string): Promise<TrendSnapshot | null> {
+  const line = await readLastLine(filePath);
+  if (line === null || line.trim() === '') return null;
+  try {
+    return JSON.parse(line) as TrendSnapshot;
+  } catch {
+    return null;
+  }
+}
+
+function shouldCollapse(prev: TrendSnapshot, next: TrendSnapshot): boolean {
+  if (next.unixSeconds - prev.unixSeconds >= COLLAPSE_WINDOW_SECONDS) return false;
+
+  for (const key of INTEGER_FLOOR_FIELDS) {
+    const a = prev[key];
+    const b = next[key];
+    if (typeof a === 'number' && typeof b === 'number' && Math.abs(b - a) >= 1) {
+      return false;
+    }
+  }
+
+  const numericKeys: ReadonlyArray<keyof TrendSnapshot> = [
+    'totalFiles', 'totalEdges', 'deadFiles', 'avgBusFactor', 'highRiskFiles', 'churnLinesLast7d',
+  ];
+  for (const key of numericKeys) {
+    const a = prev[key];
+    const b = next[key];
+    if (typeof a !== 'number' || typeof b !== 'number') continue;
+    if (a === 0) {
+      if (b !== 0) return false;
+      continue;
+    }
+    if (Math.abs((b - a) / a) > PERCENT_THRESHOLD) return false;
+  }
+
+  return true;
+}
+
+async function overwriteLastLine(filePath: string, replacement: string): Promise<void> {
+  const buf = await fs.readFile(filePath);
+  const text = buf.toString('utf-8');
+  const trimmed = text.replace(/\n+$/, '');
+  const idx = trimmed.lastIndexOf('\n');
+  const head = idx >= 0 ? trimmed.slice(0, idx + 1) : '';
+  await fs.writeFile(filePath, head + replacement + '\n');
+}
+
 export async function recordTrendSnapshot(opts: RecordOptions): Promise<TrendSnapshot | null> {
   const now = opts.now ?? Date.now;
   const ms = now();
@@ -93,7 +160,13 @@ export async function recordTrendSnapshot(opts: RecordOptions): Promise<TrendSna
     };
 
     await ensureDir(path.dirname(filePath));
-    await fs.appendFile(filePath, JSON.stringify(snapshot) + '\n');
+
+    const prev = await readLastSnapshot(filePath);
+    if (prev !== null && shouldCollapse(prev, snapshot)) {
+      await overwriteLastLine(filePath, JSON.stringify(snapshot));
+    } else {
+      await fs.appendFile(filePath, JSON.stringify(snapshot) + '\n');
+    }
 
     return snapshot;
   } catch (err) {
