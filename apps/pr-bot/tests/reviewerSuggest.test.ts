@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { suggestReviewers } from '../src/review/reviewerSuggest.js';
-import { GitOverlayStore } from '../../../src/git/GitOverlayStore.js';
+import { GitOverlayStore } from '@ctxloom/core';
 
 function seedOwnership(
   store: GitOverlayStore,
