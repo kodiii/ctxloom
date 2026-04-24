@@ -57,7 +57,8 @@
     "golang",
     "java"
   ],
-  "license": "UNLICENSED",
+  "license": "SEE LICENSE IN LICENSE",
+
   "repository": {
     "type": "git",
     "url": "https://github.com/kodiii/ctxloom"
