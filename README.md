@@ -13,7 +13,15 @@ No cloud indexing. No Python. Everything runs on your machine.
 ### 1 — Install
 
 ```bash
-npm install -g ctxloom
+# 1. Install globally
+npm install -g ctxloom-pro
+
+# 2. Auto-configure your AI tools (one-time)
+ctxloom setup
+
+# 3. Index your project (once per project)
+cd /path/to/your/project
+ctxloom index
 ```
 
 ### 2 — Start your free trial
@@ -284,7 +292,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with: { node-version: '20' }
-      - run: npm install -g ctxloom
+      - run: npm install -g ctxloom-pro
       - run: ctxloom index
       - run: ctxloom rules check --json
 ```
