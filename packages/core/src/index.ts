@@ -18,3 +18,5 @@ export * from './utils/GoModuleResolver.js';
 export * from './utils/TsConfigPathsResolver.js';
 export * from './utils/importExtractor.js';
 export * from './utils/notebookExtractor.js';
+export * from './grammars/GrammarLoader.js';
+export * from './grammars/grammar-manifest.js';
