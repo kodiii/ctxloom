@@ -51,7 +51,7 @@ function makeLicense(overrides: Partial<LicenseFile> = {}): LicenseFile {
   };
 }
 
-vi.mock('../../src/license/ApiClient.js', () => ({
+vi.mock('../../packages/core/src/license/ApiClient.js', () => ({
   ApiClient: vi.fn().mockImplementation(() => ({
     validate: vi.fn(),
   })),
@@ -64,7 +64,7 @@ describe('license.isActive() state machine', () => {
   beforeEach(async () => {
     vi.resetModules();
     home = tmpHome();
-    const { ApiClient } = await import('../../src/license/ApiClient.js');
+    const { ApiClient } = await import('../../packages/core/src/license/ApiClient.js');
     mockValidate = vi.fn();
     vi.mocked(ApiClient).mockImplementation(() => ({ validate: mockValidate } as never));
   });
