@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 
-vi.mock('../../../src/graph/DependencyGraph.js', () => ({
+vi.mock('@ctxloom/core', () => ({
   DependencyGraph: vi.fn().mockImplementation(() => ({
     buildFromDirectory: vi.fn().mockResolvedValue(undefined),
     allFiles: vi.fn().mockReturnValue(['src/a.ts', 'src/b.ts']),
@@ -8,9 +8,6 @@ vi.mock('../../../src/graph/DependencyGraph.js', () => ({
     getImports: vi.fn().mockReturnValue([]),
     getImporters: vi.fn().mockReturnValue([]),
   })),
-}));
-
-vi.mock('../../../src/git/GitOverlayStore.js', () => ({
   GitOverlayStore: vi.fn().mockImplementation(() => ({
     loadSnapshot: vi.fn().mockResolvedValue(true),
     churn: { statsFor: vi.fn().mockReturnValue(null) },
@@ -20,7 +17,7 @@ vi.mock('../../../src/git/GitOverlayStore.js', () => ({
 }));
 
 import { loadContext } from '../server/loader.js';
-import { GitOverlayStore } from '../../../src/git/GitOverlayStore.js';
+import { GitOverlayStore } from '@ctxloom/core';
 
 describe('loadContext', () => {
   it('returns graph and overlay for a valid root', async () => {

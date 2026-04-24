@@ -5,10 +5,8 @@
  * independent of any MCP formatting or server context.
  */
 import { describe, it, expect } from 'vitest';
-import { detectChanges, getImpactRadius } from '../src/lib/analysis.js';
-import { DependencyGraph } from '../src/graph/DependencyGraph.js';
-import { GitOverlayStore } from '../src/git/GitOverlayStore.js';
-import type { GitCommitEvent } from '../src/git/GitHistoryMiner.js';
+import { detectChanges, getImpactRadius, DependencyGraph, GitOverlayStore } from '@ctxloom/core';
+import type { GitCommitEvent } from '@ctxloom/core';
 
 // ---------------------------------------------------------------------------
 // Graph fixtures

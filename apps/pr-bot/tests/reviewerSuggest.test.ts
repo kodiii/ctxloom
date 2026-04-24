@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { suggestReviewers } from '../src/review/reviewerSuggest.js';
-import { GitOverlayStore } from '../../../src/git/GitOverlayStore.js';
+import { GitOverlayStore } from '@ctxloom/core';
 
 function seedOwnership(
   store: GitOverlayStore,
@@ -30,7 +30,7 @@ function makeOverlay(
     owners: Array<{ author: string; email: string; share: number }>;
   }>,
 ): GitOverlayStore {
-  const store = new GitOverlayStore();
+  const store = new GitOverlayStore('/fake/root');
   for (const { file, owners } of entries) {
     seedOwnership(store, file, owners);
   }
@@ -140,7 +140,7 @@ describe('suggestReviewers', () => {
   });
 
   it('handles file not in overlay gracefully (returns empty)', () => {
-    const overlay = new GitOverlayStore();
+    const overlay = new GitOverlayStore('/fake/root');
 
     const suggestions = suggestReviewers({
       filesTouched: ['src/unknown.ts'],

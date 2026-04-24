@@ -12,18 +12,20 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
 import path from 'node:path';
 import fs from 'node:fs';
-import { PathValidator } from './security/PathValidator.js';
-import { VectorStore } from './db/VectorStore.js';
-import { generateEmbedding } from './indexer/embedder.js';
-import { DependencyGraph } from './graph/DependencyGraph.js';
-import { ASTParser } from './ast/ASTParser.js';
-import { Skeletonizer } from './ast/Skeletonizer.js';
-import { FileWatcher } from './watcher/FileWatcher.js';
-import { RuleManager } from './tools/ruleManager.js';
-import { GitOverlayStore } from './git/GitOverlayStore.js';
-import { logger } from './utils/logger.js';
-import { createToolRegistry } from './tools/index.js';
-import type { ServerContext } from './tools/context.js';
+import {
+  PathValidator,
+  VectorStore,
+  generateEmbedding,
+  DependencyGraph,
+  ASTParser,
+  Skeletonizer,
+  FileWatcher,
+  RuleManager,
+  GitOverlayStore,
+  logger,
+  createToolRegistry,
+} from '@ctxloom/core';
+import type { ServerContext } from '@ctxloom/core';
 
 // ─── Server startup options ──────────────────────────────────────────────────
 

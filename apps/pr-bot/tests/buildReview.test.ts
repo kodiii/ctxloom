@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { buildReview } from '../src/review/buildReview.js';
 import { riskLabelFromScore } from '../src/review/types.js';
-import { DependencyGraph } from '../../../src/graph/DependencyGraph.js';
+import { DependencyGraph } from '@ctxloom/core';
 import { DEFAULT_CONFIG } from '../src/config.js';
 
 function makeGraph(): DependencyGraph {
