@@ -14,24 +14,20 @@
  */
 
 import { startServer } from './server.js';
-import { indexDirectory } from './indexer/embedder.js';
-import { DependencyGraph } from './graph/DependencyGraph.js';
-import { ASTParser } from './ast/ASTParser.js';
-import { GitOverlayStore } from './git/GitOverlayStore.js';
 import { runSetupWizard } from './setup/setup-wizard.js';
-import { GrammarLoader } from './grammars/GrammarLoader.js';
-import { RepoRegistry } from './tools/cross-repo-search.js';
-import { scoreReviewers } from './review/ReviewerScorer.js';
-import { AuthorResolver, resolveViaGitHubApi } from './review/AuthorResolver.js';
-import { generateCODEOWNERS, writeCODEOWNERS } from './review/CodeownersWriter.js';
-import { loadReviewConfig } from './review/loadConfig.js';
-import type { CandidateActivity } from './review/types.js';
-import type { CodeownersRule } from './review/CodeownersWriter.js';
-import { execSync } from 'node:child_process';
-import * as readline from 'node:readline';
-import os from 'node:os';
-import path from 'node:path';
 import {
+  indexDirectory,
+  DependencyGraph,
+  ASTParser,
+  GitOverlayStore,
+  GrammarLoader,
+  RepoRegistry,
+  scoreReviewers,
+  AuthorResolver,
+  resolveViaGitHubApi,
+  generateCODEOWNERS,
+  writeCODEOWNERS,
+  loadReviewConfig,
   isActive,
   getLicenseInfo,
   activateLicense,
@@ -44,8 +40,15 @@ import {
   FingerprintAlreadyUsedError,
   EmailAlreadyUsedError,
   TrialUnavailableError,
-} from './license/index.js';
-import { track, captureError } from './license/telemetry.js';
+  track,
+  captureError,
+} from '@ctxloom/core';
+import type { CandidateActivity } from '@ctxloom/core';
+import type { CodeownersRule } from '@ctxloom/core';
+import { execSync } from 'node:child_process';
+import * as readline from 'node:readline';
+import os from 'node:os';
+import path from 'node:path';
 
 // ─── CLI flag parsing ────────────────────────────────────────────────────────
 
@@ -142,7 +145,7 @@ async function checkLicense(): Promise<void> {
   const ciKey = process.env['CTXLOOM_LICENSE_KEY'];
   if (ciKey) {
     // CI path: validate on every invocation, no local state
-    const { ApiClient } = await import('./license/ApiClient.js');
+    const { ApiClient } = await import('@ctxloom/core');
     const client = new ApiClient(process.env['CTXLOOM_API_BASE']);
     try {
       const result = await client.validate(ciKey, 'ci-ephemeral');
@@ -617,7 +620,7 @@ async function main(): Promise<void> {
         process.exit(2);
       }
 
-      const { loadRulesConfig, RulesChecker, formatText, formatJson, RulesConfigError } = await import('./rules/index.js');
+      const { loadRulesConfig, RulesChecker, formatText, formatJson, RulesConfigError } = await import('@ctxloom/core');
 
       let config;
       try {
@@ -645,8 +648,8 @@ async function main(): Promise<void> {
 
       let graph;
       if (useSnapshot) {
-        const { DependencyGraph } = await import('./graph/DependencyGraph.js');
-        graph = new DependencyGraph();
+        const { DependencyGraph: DG } = await import('@ctxloom/core');
+        graph = new DG();
         // loadSnapshotOnly sets up paths and hydrates from the persisted JSON
         // without triggering a full AST rebuild. Returns false when no snapshot exists.
         const loaded = await graph.loadSnapshotOnly(root);
@@ -656,8 +659,7 @@ async function main(): Promise<void> {
         }
       } else {
         process.stderr.write('[ctxloom] Building dependency graph...\n');
-        const { ASTParser } = await import('./ast/ASTParser.js');
-        const { DependencyGraph } = await import('./graph/DependencyGraph.js');
+        const { ASTParser, DependencyGraph } = await import('@ctxloom/core');
         let parser;
         try {
           parser = new ASTParser();
