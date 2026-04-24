@@ -13,6 +13,7 @@ export default defineConfig({
   dts: true,
   sourcemap: true,
   clean: true,
+  noExternal: ['@ctxloom/core', '@ctxloom/mcp-client'],
   async onSuccess() {
     mkdirSync('dist/wasm', { recursive: true });
 

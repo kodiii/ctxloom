@@ -70,6 +70,7 @@
   },
   "author": "Codzign",
   "dependencies": {
+    "@ctxloom/core": "*",
     "@huggingface/transformers": "^3.0.0",
     "@lancedb/lancedb": "^0.27.0",
     "@modelcontextprotocol/sdk": "^1.12.0",
