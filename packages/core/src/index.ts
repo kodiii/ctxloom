@@ -12,3 +12,4 @@
  */
 export * from '../../../src/graph/DependencyGraph.js';
 export * from '../../../src/git/GitOverlayStore.js';
+export * from './lib/index.js';

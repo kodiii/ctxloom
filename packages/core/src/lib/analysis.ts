@@ -5,8 +5,8 @@
  * These functions operate on DependencyGraph and GitOverlayStore directly,
  * with no MCP formatting or I/O side effects.
  */
-import type { DependencyGraph } from '../graph/DependencyGraph.js';
-import type { GitOverlayStore } from '../git/GitOverlayStore.js';
+import type { DependencyGraph } from '../../../../src/graph/DependencyGraph.js';
+import type { GitOverlayStore } from '../../../../src/git/GitOverlayStore.js';
 
 // ---------------------------------------------------------------------------
 // Shared types
