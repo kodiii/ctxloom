@@ -10,7 +10,7 @@ No API keys. No cloud. No Python. Everything runs on your machine.
 
 ```bash
 # 1. Install globally
-npm install -g ctxloom
+npm install -g ctxloom-pro
 
 # 2. Auto-configure your AI tools (one-time)
 ctxloom setup
@@ -242,7 +242,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with: { node-version: '20' }
-      - run: npm install -g ctxloom
+      - run: npm install -g ctxloom-pro
       - run: ctxloom index
       - run: ctxloom rules check --json
 ```

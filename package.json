@@ -1,5 +1,5 @@
 {
-  "name": "ctxloom",
+  "name": "ctxloom-pro",
   "version": "1.0.4",
   "description": "ctxloom — The Universal Code Context Engine. A local-first MCP server providing intelligent code context via hybrid Vector + AST + Graph search with Skeletonization (92% token reduction).",
   "type": "module",
