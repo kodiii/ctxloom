@@ -59,7 +59,7 @@ describe('MCP Server', () => {
       ];
       const fs = await import('node:fs');
       const path = await import('node:path');
-      const toolsDir = path.resolve(process.cwd(), 'src/tools');
+      const toolsDir = path.resolve(process.cwd(), 'packages/core/src/tools');
       const toolFiles = fs.readdirSync(toolsDir)
         .filter((f: string) => f.endsWith('.ts'))
         .map((f: string) => fs.readFileSync(path.join(toolsDir, f), 'utf-8'));
