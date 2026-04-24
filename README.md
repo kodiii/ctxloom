@@ -614,4 +614,6 @@ benchmarks/
 
 ## License
 
-MIT © [Codzign](https://github.com/kodiii)
+[AGPL-3.0](./LICENSE) © [Codzign](https://github.com/kodiii)
+
+ctxloom is open-source under the GNU Affero General Public License v3.0. You are free to use, modify, and distribute it under the same terms. Commercial use requires a paid license — see [ctxloom.com/pricing](https://ctxloom.com/pricing).
