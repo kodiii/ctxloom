@@ -1,5 +1,7 @@
 node_modules/
 dist/
+.claude/
+.planning/
 .contextmesh/
 .ctxloom/
 coverage/
