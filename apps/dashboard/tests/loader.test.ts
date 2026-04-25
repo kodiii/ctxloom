@@ -14,6 +14,7 @@ vi.mock('@ctxloom/core', () => ({
     ownership: { statsFor: vi.fn().mockReturnValue(null) },
     coChange: { topFor: vi.fn().mockReturnValue([]) },
   })),
+  recordTrendSnapshot: vi.fn().mockResolvedValue(undefined),
 }));
 
 import { loadContext } from '../server/loader.js';
