@@ -42,6 +42,7 @@ import {
   TrialUnavailableError,
   track,
   captureError,
+  recordTrendSnapshot,
 } from '@ctxloom/core';
 import type { CandidateActivity } from '@ctxloom/core';
 import type { CodeownersRule } from '@ctxloom/core';
@@ -339,7 +340,13 @@ async function main(): Promise<void> {
       await parser.init();
       const graph = new DependencyGraph();
       graph.setParser(parser);
-      await graph.buildFromDirectory(root);
+      const trendOverlay = new GitOverlayStore(root);
+      const trendGitEnabled = await trendOverlay.loadSnapshot();
+      await graph.buildFromDirectory(root, {
+        afterReady: async () => {
+          await recordTrendSnapshot({ graph, overlay: trendOverlay, gitEnabled: trendGitEnabled, rootDir: root, source: 'cli' });
+        },
+      });
       console.log(`[ctxloom] Graph built with ${graph.edgeCount()} edges.`);
 
       // Mine git history if requested
@@ -646,7 +653,7 @@ async function main(): Promise<void> {
         process.exit(0);
       }
 
-      let graph;
+      let graph: InstanceType<typeof DependencyGraph>;
       if (useSnapshot) {
         const { DependencyGraph: DG } = await import('@ctxloom/core');
         graph = new DG();
@@ -666,7 +673,13 @@ async function main(): Promise<void> {
           await parser.init();
           graph = new DependencyGraph();
           graph.setParser(parser);
-          await graph.buildFromDirectory(root);
+          const rulesOverlay = new GitOverlayStore(root);
+          const rulesGitEnabled = await rulesOverlay.loadSnapshot();
+          await graph.buildFromDirectory(root, {
+            afterReady: async () => {
+              await recordTrendSnapshot({ graph, overlay: rulesOverlay, gitEnabled: rulesGitEnabled, rootDir: root, source: 'cli' });
+            },
+          });
         } catch (err) {
           process.stderr.write(`[ctxloom] Failed to build dependency graph: ${String(err)}\n`);
           process.exit(2);
