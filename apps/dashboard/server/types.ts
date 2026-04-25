@@ -87,3 +87,14 @@ export interface TokenStatsResponse {
   reductionPercent: number;
   fileCount: number;
 }
+
+import type { TrendSnapshot } from '@ctxloom/core';
+
+export type TrendRange = '7d' | '30d' | '90d' | 'all';
+
+export interface TrendsResponse {
+  snapshots: TrendSnapshot[];
+  gitEnabled: boolean;
+  totalCount: number;
+  range: TrendRange;
+}

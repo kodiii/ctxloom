@@ -33,6 +33,17 @@ export { ChurnIndex } from './git/ChurnIndex.js';
 export type { GitCommitEvent, MinerOptions } from './git/GitHistoryMiner.js';
 export { GitHistoryMiner } from './git/GitHistoryMiner.js';
 
+// ─── Trends ──────────────────────────────────────────────────────────────────
+export type {
+  TrendSnapshot,
+  TrendSeries,
+  TrendSource,
+  RecordOptions as TrendRecordOptions,
+  LoadOptions as TrendLoadOptions,
+} from './trends/types.js';
+export { recordTrendSnapshot } from './trends/TrendsRecorder.js';
+export { loadTrendSeries } from './trends/TrendsStore.js';
+
 // ─── AST ─────────────────────────────────────────────────────────────────────
 export type { MethodRange, CallSite, ParsedNode } from './ast/ASTParser.js';
 export { ASTParser } from './ast/ASTParser.js';
