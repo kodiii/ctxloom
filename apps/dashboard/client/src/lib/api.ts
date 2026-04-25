@@ -6,6 +6,8 @@ import type {
   ChurnResponse,
   OwnershipResponse,
   TokenStatsResponse,
+  TrendsResponse,
+  TrendRange,
 } from '../../../server/types.js';
 
 const BASE = '/api';
@@ -37,5 +39,6 @@ export const api = {
   ownership: () => get<OwnershipResponse>('/ownership'),
   status: () => get<StatusResponse>('/status'),
   tokens: () => get<TokenStatsResponse>('/tokens'),
+  trends: (range: TrendRange = '30d') => get<TrendsResponse>(`/trends?range=${range}`),
   refresh: () => fetch(`${BASE}/refresh`, { method: 'POST' }).then(r => r.json()) as Promise<RefreshResponse>,
 };
