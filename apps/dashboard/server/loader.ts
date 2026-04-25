@@ -1,5 +1,5 @@
 import path from 'node:path';
-import { DependencyGraph, GitOverlayStore } from '@ctxloom/core';
+import { DependencyGraph, GitOverlayStore, recordTrendSnapshot } from '@ctxloom/core';
 
 export interface DashboardContext {
   root: string;
@@ -12,11 +12,21 @@ export interface DashboardContext {
 export async function loadContext(root: string): Promise<DashboardContext> {
   const absRoot = path.resolve(root);
 
-  const graph = new DependencyGraph();
-  await graph.buildFromDirectory(absRoot);
-
   const overlay = new GitOverlayStore(absRoot);
   const gitEnabled = await overlay.loadSnapshot();
+
+  const graph = new DependencyGraph();
+  await graph.buildFromDirectory(absRoot, {
+    afterReady: async () => {
+      await recordTrendSnapshot({
+        graph,
+        overlay,
+        gitEnabled,
+        rootDir: absRoot,
+        source: 'dashboard',
+      });
+    },
+  });
 
   return { root: absRoot, graph, overlay, gitEnabled, lastIndexed: new Date() };
 }
