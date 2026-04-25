@@ -148,3 +148,33 @@ describe('recordTrendSnapshot — collapse logic', () => {
     expect(readJsonl(rootDir)).toHaveLength(2);
   });
 });
+
+describe('recordTrendSnapshot — git-disabled and error paths', () => {
+  let rootDir: string;
+  beforeEach(() => { rootDir = makeTmpRoot(); });
+  afterEach(() => { fs.rmSync(rootDir, { recursive: true, force: true }); });
+
+  it('records null git fields when gitEnabled=false', async () => {
+    const result = await recordTrendSnapshot(makeOpts({
+      rootDir,
+      graph: fakeGraph({ files: ['a.ts'] }),
+      gitEnabled: false,
+    }));
+    expect(result).not.toBeNull();
+    expect(result!.avgBusFactor).toBeNull();
+    expect(result!.highRiskFiles).toBeNull();
+    expect(result!.churnLinesLast7d).toBeNull();
+  });
+
+  it('returns null and does not throw when the filesystem rejects writes', async () => {
+    // Use a path that cannot be created (regular file segment in the middle).
+    const blocker = path.join(rootDir, 'blocker');
+    fs.writeFileSync(blocker, 'not a directory');
+    const insideBlocker = path.join(blocker, 'cannot-create-here');
+    const result = await recordTrendSnapshot(makeOpts({
+      rootDir: insideBlocker,
+      graph: fakeGraph({ files: [] }),
+    }));
+    expect(result).toBeNull();
+  });
+});
