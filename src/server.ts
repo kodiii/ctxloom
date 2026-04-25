@@ -24,6 +24,7 @@ import {
   GitOverlayStore,
   logger,
   createToolRegistry,
+  recordTrendSnapshot,
 } from '@ctxloom/core';
 import type { ServerContext } from '@ctxloom/core';
 
@@ -153,6 +154,17 @@ export async function startServer(opts: ServerOptions = {}): Promise<void> {
         }
         await overlay.saveSnapshot();
         ctx.overlay = overlay;
+        try {
+          await recordTrendSnapshot({
+            graph,
+            overlay,
+            gitEnabled: true,
+            rootDir: PROJECT_ROOT,
+            source: 'mcp',
+          });
+        } catch (err) {
+          logger.warn('initial mcp trend record failed', { detail: String(err) });
+        }
         logger.info('Git overlay ready', { commits: overlay.stats().commits });
       } catch (err) {
         logger.warn('Git overlay bootstrap failed — overlay disabled', { detail: String(err) });
@@ -207,6 +219,23 @@ export async function startServer(opts: ServerOptions = {}): Promise<void> {
           logger.warn('Git overlay refresh failed', { detail: String(err) });
         }
       }, 30_000);
+    }
+
+    // Record a trend snapshot after every watcher-driven reindex.
+    // The recorder's own throttle collapses rapid successive saves.
+    if (ctx.overlay && ctx.isGraphInitialized()) {
+      try {
+        const graph = await ctx.getGraph();
+        await recordTrendSnapshot({
+          graph,
+          overlay: ctx.overlay,
+          gitEnabled: true,
+          rootDir: PROJECT_ROOT,
+          source: 'watcher',
+        });
+      } catch (err) {
+        logger.warn('watcher trend record failed', { detail: String(err) });
+      }
     }
   });
 

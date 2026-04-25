@@ -4,6 +4,7 @@ const NAV = [
   { to: '/', label: 'Overview', icon: '◈' },
   { to: '/graph', label: 'Graph', icon: '⬡' },
   { to: '/risk', label: 'Risk', icon: '⚠' },
+  { to: '/trends', label: 'Trends', icon: '⤴' },
   { to: '/communities', label: 'Communities', icon: '⬡⬡' },
   { to: '/ownership', label: 'Ownership', icon: '◎' },
   { to: '/guide', label: 'Guide', icon: '◉' },
