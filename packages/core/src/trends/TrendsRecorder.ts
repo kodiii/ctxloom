@@ -107,6 +107,13 @@ async function readLastSnapshot(filePath: string): Promise<TrendSnapshot | null>
 function shouldCollapse(prev: TrendSnapshot, next: TrendSnapshot): boolean {
   if (next.unixSeconds - prev.unixSeconds >= COLLAPSE_WINDOW_SECONDS) return false;
 
+  const nullableKeys: ReadonlyArray<keyof TrendSnapshot> = [
+    'avgBusFactor', 'highRiskFiles', 'churnLinesLast7d',
+  ];
+  for (const key of nullableKeys) {
+    if ((prev[key] === null) !== (next[key] === null)) return false;
+  }
+
   for (const key of INTEGER_FLOOR_FIELDS) {
     const a = prev[key];
     const b = next[key];
@@ -132,6 +139,16 @@ function shouldCollapse(prev: TrendSnapshot, next: TrendSnapshot): boolean {
   return true;
 }
 
+/**
+ * Replace the last line of the JSONL file with `replacement` (newline-terminated).
+ *
+ * NOTE on concurrency: this is a read-modify-write cycle and is NOT atomic.
+ * If two processes simultaneously decide to collapse, the second write wins
+ * and the first row is lost. The append path (fs.appendFile, O_APPEND) IS
+ * atomic for lines under PIPE_BUF, so concurrent appends never interleave.
+ * At current project scale (few concurrent recorders), data loss is rare.
+ * If this becomes a problem, wrap in a file lock (e.g. proper-lockfile).
+ */
 async function overwriteLastLine(filePath: string, replacement: string): Promise<void> {
   const buf = await fs.readFile(filePath);
   const text = buf.toString('utf-8');

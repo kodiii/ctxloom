@@ -147,6 +147,23 @@ describe('recordTrendSnapshot — collapse logic', () => {
     }));
     expect(readJsonl(rootDir)).toHaveLength(2);
   });
+
+  it('appends when avgBusFactor flips between number and null', async () => {
+    await recordTrendSnapshot(makeOpts({
+      rootDir,
+      graph: fakeGraph({ files: ['a.ts'], edges: 100 }),
+      overlay: fakeOverlay({ ownership: { 'a.ts': 2 } }),
+      gitEnabled: true,
+      now: () => 1_000_000_000_000,
+    }));
+    await recordTrendSnapshot(makeOpts({
+      rootDir,
+      graph: fakeGraph({ files: ['a.ts'], edges: 100 }),
+      gitEnabled: false,
+      now: () => 1_000_000_060_000,
+    }));
+    expect(readJsonl(rootDir)).toHaveLength(2);
+  });
 });
 
 describe('recordTrendSnapshot — git-disabled and error paths', () => {
