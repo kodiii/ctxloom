@@ -83,20 +83,7 @@ function buildContext(): ServerContext {
           const parser = await ctx.getParser();
           const graph = new DependencyGraph();
           graph.setParser(parser);
-          await graph.buildFromDirectory(PROJECT_ROOT, {
-            afterReady: async () => {
-              const overlay = ctx.overlay;
-              if (overlay) {
-                await recordTrendSnapshot({
-                  graph,
-                  overlay,
-                  gitEnabled: true,
-                  rootDir: PROJECT_ROOT,
-                  source: 'mcp',
-                });
-              }
-            },
-          });
+          await graph.buildFromDirectory(PROJECT_ROOT);
           return graph;
         })();
       }
@@ -167,6 +154,17 @@ export async function startServer(opts: ServerOptions = {}): Promise<void> {
         }
         await overlay.saveSnapshot();
         ctx.overlay = overlay;
+        try {
+          await recordTrendSnapshot({
+            graph,
+            overlay,
+            gitEnabled: true,
+            rootDir: PROJECT_ROOT,
+            source: 'mcp',
+          });
+        } catch (err) {
+          logger.warn('initial mcp trend record failed', { detail: String(err) });
+        }
         logger.info('Git overlay ready', { commits: overlay.stats().commits });
       } catch (err) {
         logger.warn('Git overlay bootstrap failed — overlay disabled', { detail: String(err) });
