@@ -5,6 +5,8 @@ import { ErrorBanner } from '../components/ErrorBanner.js';
 import type { TrendsResponse } from '../../../server/types.js';
 import type { TrendSnapshot } from '@ctxloom/core';
 
+// Local picker offers 7d/30d/90d only; the API also accepts 'all' but
+// we don't expose it via the picker UI.
 type Range = '7d' | '30d' | '90d';
 
 type FetchState =
@@ -20,11 +22,16 @@ function fmtChurn(n: number): string {
   return String(Math.round(n));
 }
 
-function pick(snapshots: TrendSnapshot[], key: keyof TrendSnapshot) {
-  return snapshots.map(s => ({ t: s.unixSeconds, v: (s[key] ?? null) as number | null }));
+// Constrain to keys whose values are number | null
+type NumericSnapshotKey = {
+  [K in keyof TrendSnapshot]: TrendSnapshot[K] extends number | null ? K : never
+}[keyof TrendSnapshot];
+
+function pick(snapshots: TrendSnapshot[], key: NumericSnapshotKey) {
+  return snapshots.map(s => ({ t: s.unixSeconds, v: s[key] }));
 }
 
-function lastNonNull(snapshots: TrendSnapshot[], key: keyof TrendSnapshot): number | null {
+function lastNonNull(snapshots: TrendSnapshot[], key: NumericSnapshotKey): number | null {
   for (let i = snapshots.length - 1; i >= 0; i--) {
     const v = snapshots[i][key];
     if (typeof v === 'number') return v;

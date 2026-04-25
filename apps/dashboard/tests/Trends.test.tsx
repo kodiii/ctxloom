@@ -1,5 +1,6 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { describe, it, expect, afterEach, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom/vitest';
 import { MemoryRouter } from 'react-router-dom';
 import { Trends } from '../client/src/pages/Trends.js';
@@ -79,7 +80,7 @@ describe('Trends page', () => {
       json: () => Promise.resolve({ snapshots: [], gitEnabled: false, totalCount: 0, range: '30d' }),
     } as unknown as Response);
     global.fetch = fetchMock;
-    const user = (await import('@testing-library/user-event')).default.setup();
+    const user = userEvent.setup();
     render(<MemoryRouter><Trends /></MemoryRouter>);
     await screen.findByText('30d');
     await user.click(screen.getByText('7d'));
