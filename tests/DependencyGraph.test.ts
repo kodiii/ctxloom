@@ -195,3 +195,29 @@ describe('DependencyGraph snapshot', () => {
     expect(graph2.edgeCount()).toBeGreaterThanOrEqual(edges1);
   });
 });
+
+describe('buildFromDirectory afterReady callback', () => {
+  it('fires the afterReady callback after a fresh build', async () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'graph-after-'));
+    fs.writeFileSync(path.join(tmp, 'a.ts'), 'export const a = 1;');
+    const graph = new DependencyGraph();
+    const calls: number[] = [];
+    await graph.buildFromDirectory(tmp, { afterReady: async () => { calls.push(Date.now()); } });
+    expect(calls).toHaveLength(1);
+    fs.rmSync(tmp, { recursive: true, force: true });
+  });
+
+  it('fires the afterReady callback when hydrating from snapshot', async () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'graph-after-snap-'));
+    fs.writeFileSync(path.join(tmp, 'a.ts'), 'export const a = 1;');
+    // First build to create the snapshot
+    const g1 = new DependencyGraph();
+    await g1.buildFromDirectory(tmp);
+    // Second build should hydrate from snapshot
+    const g2 = new DependencyGraph();
+    const calls: number[] = [];
+    await g2.buildFromDirectory(tmp, { afterReady: async () => { calls.push(Date.now()); } });
+    expect(calls).toHaveLength(1);
+    fs.rmSync(tmp, { recursive: true, force: true });
+  });
+});
