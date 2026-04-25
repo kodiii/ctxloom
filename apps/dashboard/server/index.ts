@@ -13,6 +13,7 @@ import { buildOwnershipRouter } from './routes/ownership.js';
 import { buildFileRouter } from './routes/file.js';
 import { buildOpenRouter } from './routes/open.js';
 import { buildTokensRouter } from './routes/tokens.js';
+import { buildTrendsRouter } from './routes/trends.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -40,6 +41,7 @@ export async function startDashboard(options: {
   app.use('/api/file', buildFileRouter(ctx));
   app.use('/api/open', buildOpenRouter(ctx));
   app.use('/api/tokens', buildTokensRouter(ctx));
+  app.use('/api/trends', buildTrendsRouter(ctx));
 
   app.get('/api/health', (_req, res) => res.json({ ok: true, root, gitEnabled: ctx.gitEnabled }));
 

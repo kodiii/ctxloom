@@ -56,7 +56,10 @@ export class DependencyGraph {
   /**
    * Build the graph from all supported files in rootDir using AST parsing.
    */
-  async buildFromDirectory(rootDir: string): Promise<void> {
+  async buildFromDirectory(
+    rootDir: string,
+    options?: { afterReady?: () => Promise<void> },
+  ): Promise<void> {
     this.rootDir = rootDir;
     this.snapshotDir = path.join(rootDir, '.ctxloom');
     this.tsPathsResolver = new TsConfigPathsResolver(rootDir);
@@ -67,6 +70,10 @@ export class DependencyGraph {
     // Try to hydrate from snapshot, passing current file count for staleness detection
     if (await this.loadSnapshot(files.length)) {
       logger.info('Loaded graph from snapshot', { edges: this.edgeCount() });
+      if (options?.afterReady) {
+        try { await options.afterReady(); }
+        catch (err) { logger.warn('afterReady callback threw', { detail: String(err) }); }
+      }
       return;
     }
 
@@ -179,6 +186,10 @@ export class DependencyGraph {
     // Save snapshot
     await this.saveSnapshot();
     logger.info('Graph built', { files: files.length, edges: this.edgeCount() });
+    if (options?.afterReady) {
+      try { await options.afterReady(); }
+      catch (err) { logger.warn('afterReady callback threw', { detail: String(err) }); }
+    }
   }
 
   /**
