@@ -14,6 +14,7 @@ import { TtlCache } from './shared/cache.js';
 import { createStatusBarItem, type StatusBarHandle } from './license/statusBar.js';
 import { CtxloomCodeLensProvider } from './providers/CodeLensProvider.js';
 import { GutterDecorations } from './providers/GutterDecorations.js';
+import { CtxloomQuickFixProvider, applyRefactorCommand } from './providers/QuickFixProvider.js';
 import { registerCommands } from './commands/index.js';
 
 let panel: SettingsPanel | null = null;
@@ -181,6 +182,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   }
   refreshGutter();
   context.subscriptions.push(vscode.workspace.onDidChangeConfiguration(e => { if (e.affectsConfiguration('ctxloom.features.gutterDecorations') || e.affectsConfiguration('ctxloom.gutter')) refreshGutter(); }));
+
+  if (tools && vscode.workspace.getConfiguration('ctxloom').get<boolean>('features.quickFixes')) {
+    context.subscriptions.push(vscode.languages.registerCodeActionsProvider({ scheme: 'file' }, new CtxloomQuickFixProvider(tools), { providedCodeActionKinds: [vscode.CodeActionKind.QuickFix] }));
+    context.subscriptions.push(vscode.commands.registerCommand('ctxloom.applyRefactor', (a: never) => applyRefactorCommand(tools, a)));
+  }
 
   registerCommands(context, {
     tools, logger: logger!,
