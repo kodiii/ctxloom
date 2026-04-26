@@ -17,6 +17,7 @@ import { GutterDecorations } from './providers/GutterDecorations.js';
 import { CtxloomQuickFixProvider, applyRefactorCommand } from './providers/QuickFixProvider.js';
 import { registerCommands } from './commands/index.js';
 import { LicenseGate, type LicenseInfo } from './license/LicenseGate.js';
+import { McpBridge } from './providers/McpBridge.js';
 
 let panel: SettingsPanel | null = null;
 let logger: Logger | null = null;
@@ -254,6 +255,19 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     context.subscriptions.push(vscode.languages.registerCodeActionsProvider({ scheme: 'file' }, new CtxloomQuickFixProvider(tools), { providedCodeActionKinds: [vscode.CodeActionKind.QuickFix] }));
     context.subscriptions.push(vscode.commands.registerCommand('ctxloom.applyRefactor', (a: never) => applyRefactorCommand(tools, a)));
   }
+
+  let mcpBridge: McpBridge | null = null;
+  function refreshMcpBridge() {
+    mcpBridge?.dispose(); mcpBridge = null;
+    if (!vscode.workspace.getConfiguration('ctxloom').get<boolean>('features.mcpBridge')) return;
+    const folder = vscode.workspace.workspaceFolders?.[0]; if (!folder) return;
+    const cliPath = resolveCliPath({ extensionRoot: context.extensionPath, override: vscode.workspace.getConfiguration('ctxloom').get<string | null>('cliPath') ?? null }).path;
+    mcpBridge = new McpBridge({ cliPath, cwd: folder.uri.fsPath, logger: logger! });
+    mcpBridge.register();
+    context.subscriptions.push({ dispose: () => mcpBridge?.dispose() });
+  }
+  refreshMcpBridge();
+  context.subscriptions.push(vscode.workspace.onDidChangeConfiguration(e => { if (e.affectsConfiguration('ctxloom.features.mcpBridge')) refreshMcpBridge(); }));
 
   registerCommands(context, {
     tools, logger: logger!,
