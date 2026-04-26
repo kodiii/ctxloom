@@ -12,6 +12,7 @@ import { BlastRadiusView } from './providers/BlastRadiusView.js';
 import { CodeHealthView } from './providers/CodeHealthView.js';
 import { TtlCache } from './shared/cache.js';
 import { createStatusBarItem, type StatusBarHandle } from './license/statusBar.js';
+import { CtxloomCodeLensProvider } from './providers/CodeLensProvider.js';
 
 let panel: SettingsPanel | null = null;
 let logger: Logger | null = null;
@@ -145,6 +146,20 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       await vscode.env.openExternal(vscode.Uri.parse(url));
     }));
   }
+
+  const lensCache = new TtlCache<string, RiskInfo | null>({ ttlMs: 30_000 });
+  let lensDisposable: vscode.Disposable | null = null;
+  let lensProvider: CtxloomCodeLensProvider | null = null;
+  function refreshLens() {
+    lensDisposable?.dispose(); lensDisposable = null;
+    if (vscode.workspace.getConfiguration('ctxloom').get<boolean>('features.codeLens') && tools) {
+      lensProvider = new CtxloomCodeLensProvider({ tools, cache: lensCache });
+      lensDisposable = vscode.languages.registerCodeLensProvider({ scheme: 'file' }, lensProvider);
+      context.subscriptions.push(lensDisposable);
+    }
+  }
+  refreshLens();
+  context.subscriptions.push(vscode.workspace.onDidChangeConfiguration(e => { if (e.affectsConfiguration('ctxloom.features.codeLens')) refreshLens(); }));
 }
 
 export async function deactivate(): Promise<void> {
