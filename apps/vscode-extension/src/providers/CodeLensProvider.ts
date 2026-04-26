@@ -18,11 +18,27 @@ export class CtxloomCodeLensProvider implements vscode.CodeLensProvider {
       try { risk = await this.deps.tools.riskOverlay(file); } catch { risk = null; }
       this.deps.cache.set(file, risk);
     }
-    const top = new vscode.Range(0, 0, 0, 0);
+
     const lenses: vscode.CodeLens[] = [];
+    const top = new vscode.Range(0, 0, 0, 0);
     if (risk !== null) {
       const owner = risk.topOwner !== null ? ` · @${risk.topOwner}` : '';
       lenses.push(new vscode.CodeLens(top, { title: `risk ${risk.score.toFixed(2)} (${risk.label})${owner}`, command: '' }));
+    }
+
+    const symbols = await vscode.commands.executeCommand<vscode.DocumentSymbol[] | undefined>('vscode.executeDocumentSymbolProvider', document.uri);
+    if (Array.isArray(symbols)) {
+      for (const sym of symbols) {
+        if (sym.kind === vscode.SymbolKind.Function || sym.kind === vscode.SymbolKind.Method || sym.kind === vscode.SymbolKind.Class) {
+          const start = sym.range.start;
+          const lensRange = new vscode.Range(start.line, 0, start.line, 0);
+          lenses.push(new vscode.CodeLens(lensRange, {
+            title: '↗ Copy AI context',
+            command: 'ctxloom.copyContextPacket',
+            arguments: [{ file, symbol: sym.name }],
+          }));
+        }
+      }
     }
     return lenses;
   }
