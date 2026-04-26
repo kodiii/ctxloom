@@ -1,8 +1,10 @@
 import * as esbuild from 'esbuild';
+import * as fs from 'node:fs';
 
 const watch = process.argv.includes('--watch');
 
-const ctx = await esbuild.context({
+// Extension bundle (Node CJS, externalizes vscode).
+const extensionCtx = await esbuild.context({
   entryPoints: ['src/extension.ts'],
   bundle: true,
   platform: 'node',
@@ -15,5 +17,26 @@ const ctx = await esbuild.context({
   logLevel: 'info',
 });
 
-if (watch) { await ctx.watch(); }
-else       { await ctx.rebuild(); await ctx.dispose(); }
+// Webview bundle (browser ESM, no externals).
+const webviewCtx = await esbuild.context({
+  entryPoints: ['src/settings/webview/main.ts'],
+  bundle: true,
+  platform: 'browser',
+  target: 'es2022',
+  format: 'iife',
+  outfile: 'dist/webview/main.js',
+  sourcemap: true,
+  minify: !watch,
+  logLevel: 'info',
+});
+
+// Copy CSS as-is.
+fs.mkdirSync('dist/webview', { recursive: true });
+fs.copyFileSync('src/settings/webview/styles.css', 'dist/webview/styles.css');
+
+if (watch) {
+  await Promise.all([extensionCtx.watch(), webviewCtx.watch()]);
+} else {
+  await extensionCtx.rebuild(); await extensionCtx.dispose();
+  await webviewCtx.rebuild(); await webviewCtx.dispose();
+}
