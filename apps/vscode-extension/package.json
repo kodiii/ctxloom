@@ -1,5 +1,5 @@
 {
-  "name": "@ctxloom/vscode-extension",
+  "name": "ctxloom-vscode",
   "displayName": "ctxloom — Code Context for Code Review",
   "description": "AST + git + graph context, in your editor. Hover risk, blast radius, dead code, MCP bridge for AI assistants.",
   "version": "0.1.0",

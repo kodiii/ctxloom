@@ -17,14 +17,14 @@ jobs:
       - uses: actions/setup-node@v4
         with: { node-version: '20', cache: 'npm' }
       - run: npm ci
-      - run: npm run lint --workspace=@ctxloom/vscode-extension
+      - run: npm run lint --workspace=ctxloom-vscode
       - run: npx vitest run --root apps/vscode-extension
       - run: cd apps/vscode-extension && node scripts/prepare-bundle.mjs
       - run: cd apps/vscode-extension && node esbuild.config.mjs
       - if: matrix.os == 'ubuntu-latest'
-        run: xvfb-run -a npm run test:integration --workspace=@ctxloom/vscode-extension
+        run: xvfb-run -a npm run test:integration --workspace=ctxloom-vscode
       - if: matrix.os == 'macos-latest'
-        run: npm run test:integration --workspace=@ctxloom/vscode-extension
+        run: npm run test:integration --workspace=ctxloom-vscode
       - run: cd apps/vscode-extension && npx vsce package --no-dependencies -o ctxloom-vscode.vsix
       - uses: actions/upload-artifact@v4
         if: matrix.os == 'ubuntu-latest'

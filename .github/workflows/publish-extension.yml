@@ -10,10 +10,10 @@ jobs:
       - uses: actions/setup-node@v4
         with: { node-version: '20', cache: 'npm' }
       - run: npm ci
-      - run: npm run lint --workspace=@ctxloom/vscode-extension
+      - run: npm run lint --workspace=ctxloom-vscode
       - run: npx vitest run --root apps/vscode-extension
       - run: cd apps/vscode-extension && node scripts/prepare-bundle.mjs && node esbuild.config.mjs
-      - run: xvfb-run -a npm run test:integration --workspace=@ctxloom/vscode-extension
+      - run: xvfb-run -a npm run test:integration --workspace=ctxloom-vscode
       - run: xvfb-run -a npx vscode-test --label smoke --root apps/vscode-extension
       - run: cd apps/vscode-extension && npx vsce package --no-dependencies -o ctxloom-vscode.vsix
       # v1: sideload-only — VSIX attached to the GitHub release for users to install via
