@@ -13,6 +13,7 @@ import { CodeHealthView } from './providers/CodeHealthView.js';
 import { TtlCache } from './shared/cache.js';
 import { createStatusBarItem, type StatusBarHandle } from './license/statusBar.js';
 import { CtxloomCodeLensProvider } from './providers/CodeLensProvider.js';
+import { GutterDecorations } from './providers/GutterDecorations.js';
 import { registerCommands } from './commands/index.js';
 
 let panel: SettingsPanel | null = null;
@@ -161,6 +162,25 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   }
   refreshLens();
   context.subscriptions.push(vscode.workspace.onDidChangeConfiguration(e => { if (e.affectsConfiguration('ctxloom.features.codeLens')) refreshLens(); }));
+
+  let gutter: GutterDecorations | null = null;
+  function refreshGutter() {
+    gutter?.dispose(); gutter = null;
+    if (vscode.workspace.getConfiguration('ctxloom').get<boolean>('features.gutterDecorations') && tools) {
+      gutter = new GutterDecorations({
+        tools,
+        debounceMs: vscode.workspace.getConfiguration('ctxloom').get<number>('debounceMs') ?? 250,
+        thresholds: { high: vscode.workspace.getConfiguration('ctxloom').get<number>('gutter.churnThresholdHigh') ?? 1000, medium: vscode.workspace.getConfiguration('ctxloom').get<number>('gutter.churnThresholdMedium') ?? 200 },
+        showDeadCodeMarker: vscode.workspace.getConfiguration('ctxloom').get<boolean>('gutter.showDeadCodeMarker') ?? true,
+      });
+      context.subscriptions.push({ dispose: () => gutter?.dispose() });
+      context.subscriptions.push(vscode.window.onDidChangeActiveTextEditor(e => { if (e && gutter) gutter.apply(e); }));
+      context.subscriptions.push(vscode.workspace.onDidChangeTextDocument(e => { const ed = vscode.window.visibleTextEditors.find(x => x.document === e.document); if (ed && gutter) gutter.apply(ed); }));
+      if (vscode.window.activeTextEditor) gutter.apply(vscode.window.activeTextEditor);
+    }
+  }
+  refreshGutter();
+  context.subscriptions.push(vscode.workspace.onDidChangeConfiguration(e => { if (e.affectsConfiguration('ctxloom.features.gutterDecorations') || e.affectsConfiguration('ctxloom.gutter')) refreshGutter(); }));
 
   registerCommands(context, {
     tools, logger: logger!,
