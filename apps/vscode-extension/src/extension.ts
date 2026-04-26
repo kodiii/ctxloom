@@ -16,6 +16,7 @@ import { CtxloomCodeLensProvider } from './providers/CodeLensProvider.js';
 import { GutterDecorations } from './providers/GutterDecorations.js';
 import { CtxloomQuickFixProvider, applyRefactorCommand } from './providers/QuickFixProvider.js';
 import { registerCommands } from './commands/index.js';
+import { LicenseGate, type LicenseInfo } from './license/LicenseGate.js';
 
 let panel: SettingsPanel | null = null;
 let logger: Logger | null = null;
@@ -38,11 +39,13 @@ function readSettings(): Record<string, unknown> {
   return out;
 }
 
+let licenseGate: LicenseGate | null = null;
+
 function computeState(): PanelState {
-  return { license: { kind: 'NO_LICENSE' }, settings: readSettings() };
+  return { license: licenseGate?.current() ?? { kind: 'NO_LICENSE' }, settings: readSettings() };
 }
 
-async function handleMessage(msg: WebviewToHost): Promise<void> {
+async function handleMessage(msg: WebviewToHost, licenseOps?: { startTrial: (email: string) => Promise<{ checkoutUrl: string }>; activate: (key: string) => Promise<void>; deactivate: () => Promise<void> }): Promise<void> {
   if (msg.kind === 'setSetting') {
     await vscode.workspace.getConfiguration('ctxloom').update(msg.key, msg.value, vscode.ConfigurationTarget.Global);
     return;
@@ -52,6 +55,20 @@ async function handleMessage(msg: WebviewToHost): Promise<void> {
   if (msg.kind === 'restartServer') {
     if (serverManager) { await serverManager.dispose(); serverManager = null; }
     await startServer();
+    return;
+  }
+  if (msg.kind === 'startTrial' && licenseOps) {
+    try { const { checkoutUrl } = await licenseOps.startTrial((msg as unknown as { email: string }).email); await vscode.env.openExternal(vscode.Uri.parse(checkoutUrl)); panel?.send({ kind: 'trialCheckoutOpened', checkoutUrl } as never); }
+    catch (err) { panel?.send({ kind: 'activationResult', ok: false, error: String(err) } as never); }
+    return;
+  }
+  if (msg.kind === 'activateLicense' && licenseOps) {
+    try { await licenseOps.activate((msg as unknown as { key: string }).key); await licenseGate?.evaluate(); panel?.send({ kind: 'activationResult', ok: true } as never); panel?.refresh(); }
+    catch (err) { panel?.send({ kind: 'activationResult', ok: false, error: String(err) } as never); }
+    return;
+  }
+  if (msg.kind === 'deactivateLicense' && licenseOps) {
+    await licenseOps.deactivate(); await licenseGate?.evaluate(); panel?.send({ kind: 'deactivationResult', ok: true } as never); panel?.refresh();
     return;
   }
 }
@@ -79,7 +96,54 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   logger = createOutputLogger();
   context.subscriptions.push({ dispose: () => logger?.dispose() });
 
-  panel = new SettingsPanel({ context, logger, computeState, handleMessage });
+  // Load license module dynamically (ESM-only package). Gracefully degrade if
+  // the module cannot be loaded (e.g., in headless test environments).
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let license: any = null;
+  try {
+    license = await import('@ctxloom/core');
+  } catch (err) {
+    logger?.warn(`@ctxloom/core could not be loaded — license features disabled: ${String(err)}`);
+  }
+
+  async function readLicenseInfo(): Promise<LicenseInfo | null> {
+    if (!license) return null;
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-assignment
+      const f: { tier: string; status: string; expiresAt: string; instanceId: string } | null = await license.getLicenseInfo();
+      if (!f) return null;
+      return { tier: f.tier as LicenseInfo['tier'], status: f.status as LicenseInfo['status'], expiresAt: f.expiresAt, fingerprint: f.instanceId };
+    } catch (err) {
+      logger?.warn(`license read failed: ${String(err)}`);
+      return null;
+    }
+  }
+
+  licenseGate = new LicenseGate({ getInfo: readLicenseInfo, recheckMs: 60_000 });
+  await licenseGate.evaluate();
+  licenseGate.startRechecking();
+  context.subscriptions.push({ dispose: () => licenseGate?.dispose() });
+  licenseGate.onStateChange(() => panel?.refresh());
+
+  const licenseOps = {
+    startTrial: async (email: string): Promise<{ checkoutUrl: string }> => {
+      if (!license) throw new Error('License module unavailable.');
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-call
+      return license.startTrial(email) as Promise<{ checkoutUrl: string }>;
+    },
+    activate: async (key: string): Promise<void> => {
+      if (!license) throw new Error('License module unavailable.');
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-call
+      await (license.activateLicense(key) as Promise<unknown>);
+    },
+    deactivate: async (): Promise<void> => {
+      if (!license) throw new Error('License module unavailable.');
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-call
+      await (license.deactivateLicense() as Promise<unknown>);
+    },
+  };
+
+  panel = new SettingsPanel({ context, logger, computeState, handleMessage: msg => handleMessage(msg, licenseOps) });
   context.subscriptions.push({ dispose: () => panel?.dispose() });
   context.subscriptions.push(vscode.commands.registerCommand('ctxloom.openSettings', () => panel?.reveal()));
   context.subscriptions.push(vscode.workspace.onDidChangeConfiguration(e => { if (e.affectsConfiguration('ctxloom')) panel?.refresh(); }));
@@ -94,7 +158,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       try { const r = await tools.riskOverlay(vscode.workspace.asRelativePath(editor.document.uri)); riskScore = r?.score ?? null; }
       catch { riskScore = null; }
     }
-    statusBar?.update({ licenseState: { kind: 'LICENSED', tier: 'pro', expiresAt: '' }, riskScore });
+    const ls = licenseGate?.current() ?? { kind: 'NO_LICENSE' as const };
+    const licenseState = ls.kind === 'LICENSED' ? ls : ls.kind === 'TRIALING' ? ls : { kind: 'NO_LICENSE' as const };
+    statusBar?.update({ licenseState, riskScore });
   };
 
   context.subscriptions.push(vscode.window.onDidChangeActiveTextEditor(() => { void updateStatusBar(); }));
@@ -143,12 +209,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     context.subscriptions.push(vscode.window.onDidChangeActiveTextEditor(e => { if (e) blastView?.refreshFor(e.document.uri); }));
     if (vscode.window.activeTextEditor) void blastView.refreshFor(vscode.window.activeTextEditor.document.uri);
     void healthView.refresh();
-    context.subscriptions.push(vscode.commands.registerCommand('ctxloom.refreshCodeHealth', () => healthView?.refresh()));
-    context.subscriptions.push(vscode.commands.registerCommand('ctxloom.openDashboard', async () => {
-      const url = vscode.workspace.getConfiguration('ctxloom').get<string>('dashboardUrl') ?? 'http://localhost:7842';
-      await vscode.env.openExternal(vscode.Uri.parse(url));
-    }));
   }
+  // These commands are always registered regardless of server availability.
+  context.subscriptions.push(vscode.commands.registerCommand('ctxloom.refreshCodeHealth', () => healthView?.refresh()));
+  context.subscriptions.push(vscode.commands.registerCommand('ctxloom.openDashboard', async () => {
+    const url = vscode.workspace.getConfiguration('ctxloom').get<string>('dashboardUrl') ?? 'http://localhost:7842';
+    await vscode.env.openExternal(vscode.Uri.parse(url));
+  }));
 
   const lensCache = new TtlCache<string, RiskInfo | null>({ ttlMs: 30_000 });
   let lensDisposable: vscode.Disposable | null = null;
@@ -191,7 +258,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   registerCommands(context, {
     tools, logger: logger!,
     getDashboardUrl: () => vscode.workspace.getConfiguration('ctxloom').get<string>('dashboardUrl') ?? 'http://localhost:7842',
+    licenseGate: licenseGate!,
+    licenseOps,
+    openSettings: () => panel?.reveal(),
+    refreshHealth: () => healthView?.refresh(),
+    refreshBlast: () => { if (vscode.window.activeTextEditor) blastView?.refreshFor(vscode.window.activeTextEditor.document.uri); },
   });
+
+  // Auto-open settings on first run with no license
+  if (licenseGate!.current().kind === 'NO_LICENSE') panel?.reveal('license' as never);
 }
 
 export async function deactivate(): Promise<void> {
