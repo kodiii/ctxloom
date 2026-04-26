@@ -1,0 +1,25 @@
+name: publish-extension
+on:
+  push:
+    tags: [ 'vscode-v*' ]
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '20', cache: 'npm' }
+      - run: npm ci
+      - run: npm run lint --workspace=@ctxloom/vscode-extension
+      - run: npx vitest run --root apps/vscode-extension
+      - run: cd apps/vscode-extension && node scripts/prepare-bundle.mjs && node esbuild.config.mjs
+      - run: xvfb-run -a npm run test:integration --workspace=@ctxloom/vscode-extension
+      - run: xvfb-run -a npx vscode-test --label smoke --root apps/vscode-extension
+      - run: cd apps/vscode-extension && npx vsce package --no-dependencies -o ctxloom-vscode.vsix
+      - run: cd apps/vscode-extension && npx vsce publish --packagePath ctxloom-vscode.vsix
+        env: { VSCE_PAT: '${{ secrets.VSCE_PAT }}' }
+      - run: cd apps/vscode-extension && npx ovsx publish ctxloom-vscode.vsix
+        env: { OVSX_PAT: '${{ secrets.OVSX_PAT }}' }
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: apps/vscode-extension/ctxloom-vscode.vsix
