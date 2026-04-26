@@ -11,12 +11,14 @@ import { CtxloomDiagnosticsProvider } from './providers/DiagnosticsProvider.js';
 import { BlastRadiusView } from './providers/BlastRadiusView.js';
 import { CodeHealthView } from './providers/CodeHealthView.js';
 import { TtlCache } from './shared/cache.js';
+import { createStatusBarItem, type StatusBarHandle } from './license/statusBar.js';
 
 let panel: SettingsPanel | null = null;
 let logger: Logger | null = null;
 let serverManager: ServerManager | null = null;
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 let tools: Tools | null = null;
+let statusBar: StatusBarHandle | null = null;
 
 const SETTINGS_KEYS = [
   'cliPath', 'serverArgs', 'debounceMs', 'cacheTtlSeconds',
@@ -78,7 +80,24 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   context.subscriptions.push(vscode.commands.registerCommand('ctxloom.openSettings', () => panel?.reveal()));
   context.subscriptions.push(vscode.workspace.onDidChangeConfiguration(e => { if (e.affectsConfiguration('ctxloom')) panel?.refresh(); }));
 
+  statusBar = createStatusBarItem('ctxloom.openSettings');
+  context.subscriptions.push({ dispose: () => statusBar?.dispose() });
+
+  const updateStatusBar = async (): Promise<void> => {
+    const editor = vscode.window.activeTextEditor;
+    let riskScore: number | null = null;
+    if (editor && tools) {
+      try { const r = await tools.riskOverlay(vscode.workspace.asRelativePath(editor.document.uri)); riskScore = r?.score ?? null; }
+      catch { riskScore = null; }
+    }
+    statusBar?.update({ licenseState: { kind: 'LICENSED', tier: 'pro', expiresAt: '' }, riskScore });
+  };
+
+  context.subscriptions.push(vscode.window.onDidChangeActiveTextEditor(() => { void updateStatusBar(); }));
+  context.subscriptions.push(vscode.workspace.onDidSaveTextDocument(d => { if (vscode.window.activeTextEditor?.document === d) void updateStatusBar(); }));
+
   await startServer();
+  await updateStatusBar();
 
   const hoverCache = new TtlCache<string, { risk: RiskInfo | null; blast: BlastResult }>({
     ttlMs: (vscode.workspace.getConfiguration('ctxloom').get<number>('cacheTtlSeconds') ?? 30) * 1000,
