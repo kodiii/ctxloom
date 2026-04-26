@@ -8,6 +8,8 @@ import type { PanelState, WebviewToHost } from './settings/messageProtocol.js';
 import { createOutputLogger, type Logger } from './shared/logger.js';
 import { CtxloomHoverProvider } from './providers/HoverProvider.js';
 import { CtxloomDiagnosticsProvider } from './providers/DiagnosticsProvider.js';
+import { BlastRadiusView } from './providers/BlastRadiusView.js';
+import { CodeHealthView } from './providers/CodeHealthView.js';
 import { TtlCache } from './shared/cache.js';
 
 let panel: SettingsPanel | null = null;
@@ -107,6 +109,23 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   }
   refreshDiagnostics();
   context.subscriptions.push(vscode.workspace.onDidChangeConfiguration(e => { if (e.affectsConfiguration('ctxloom.features.diagnostics')) refreshDiagnostics(); }));
+
+  let blastView: BlastRadiusView | null = null;
+  let healthView: CodeHealthView | null = null;
+  if (tools) {
+    blastView = new BlastRadiusView(tools);
+    healthView = new CodeHealthView(tools, () => vscode.workspace.getConfiguration('ctxloom').get<string>('dashboardUrl') ?? 'http://localhost:7842');
+    context.subscriptions.push(vscode.window.registerTreeDataProvider('ctxloom.blastRadius', blastView));
+    context.subscriptions.push(vscode.window.registerTreeDataProvider('ctxloom.codeHealth', healthView));
+    context.subscriptions.push(vscode.window.onDidChangeActiveTextEditor(e => { if (e) blastView?.refreshFor(e.document.uri); }));
+    if (vscode.window.activeTextEditor) void blastView.refreshFor(vscode.window.activeTextEditor.document.uri);
+    void healthView.refresh();
+    context.subscriptions.push(vscode.commands.registerCommand('ctxloom.refreshCodeHealth', () => healthView?.refresh()));
+    context.subscriptions.push(vscode.commands.registerCommand('ctxloom.openDashboard', async () => {
+      const url = vscode.workspace.getConfiguration('ctxloom').get<string>('dashboardUrl') ?? 'http://localhost:7842';
+      await vscode.env.openExternal(vscode.Uri.parse(url));
+    }));
+  }
 }
 
 export async function deactivate(): Promise<void> {
