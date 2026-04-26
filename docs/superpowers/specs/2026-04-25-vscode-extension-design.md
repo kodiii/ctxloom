@@ -60,7 +60,8 @@ apps/vscode-extension/
 │   │   ├── QuickFixProvider.ts    ← feature 10
 │   │   └── McpBridge.ts           ← feature 11
 │   ├── commands/
-│   │   └── index.ts               ← all command handlers
+│   │   ├── index.ts               ← all command handlers
+│   │   └── quickToggle.ts         ← status-bar quick-pick for features.* toggles
 │   └── shared/
 │       ├── debounce.ts            ← shared editor-event debouncer
 │       ├── cache.ts               ← per-file 30s TTL cache
@@ -222,6 +223,29 @@ All under the `ctxloom.*` namespace. All optional. Defaults work zero-config.
 
 `features.*` lets enterprises disable subsystems via `.vscode/settings.json` checked into the repo.
 
+### Settings UX — native + status-bar quick-pick
+
+Two surfaces, no custom settings panel:
+
+1. **Native VS Code Settings UI** (free from `package.json`'s `contributes.configuration`). Users open `Ctrl+,`, search "ctxloom", get the standard typed UI with descriptions, validation, per-workspace overrides. This is how Copilot, GitLens, ESLint all expose configuration.
+2. **Status-bar quick-pick** for friction-free toggling of the six `features.*` switches. Clicking the status-bar item opens a quick-pick:
+   ```
+   ✓ Hover cards
+   ✓ Diagnostics (rules)
+   ✓ Gutter decorations
+   ✓ Code lens
+   ✓ Rules quick-fixes
+   ✓ MCP bridge
+   ─────────────
+   Open all settings…       → VS Code Settings filtered to "ctxloom"
+   Open license status…
+   ```
+   Toggling a checkbox flips the corresponding `features.*` setting via `vscode.workspace.getConfiguration('ctxloom').update(...)`. The extension's `onDidChangeConfiguration` listener picks up the change and registers / unregisters the provider in real time — no reload needed.
+
+Reactivity model: every provider lifecycle is gated by its `features.<name>` setting. When a feature flips off, its provider's `dispose()` is called, its decorations / diagnostics / hover registrations are cleared, and any cached data is dropped. When it flips back on, the provider re-registers with a fresh state.
+
+A custom branded settings webview (with sectioned, designed UI) is logged in the future-implementations file as a v1.1 polish item.
+
 ## Error handling & graceful degradation
 
 | Failure | Detection | Behavior |
@@ -268,6 +292,7 @@ The stub: `class FakeServerManager extends ServerManager` overriding `callTool(n
 | CodeLensProvider | lens above each top-level function; "Copy AI context" command writes skeletonized text to clipboard; toast shows reduction percentage |
 | QuickFixProvider | rules violation produces a CodeAction; accepting it calls `ctx_apply_refactor` with the right args; user cancels via VS Code's confirmation → no file change |
 | StatusBar | shows risk for active file; updates on editor change; trial countdown text correct; expired state turns red |
+| QuickToggle | clicking the status-bar item opens the quick-pick; toggling an item flips the matching `features.*` setting; the corresponding provider registers/unregisters within one event-loop tick; "Open all settings…" item navigates to VS Code Settings filtered to "ctxloom" |
 | Commands | each of the 6 palette commands invokes the right code path |
 
 ~30 integration tests total.
@@ -374,6 +399,7 @@ A companion file at `docs/future_features_vscode.md` is created at the start of 
 - Multi-root workspace support (today: single-root only)
 - Daemon mode (today: extension-spawns-per-workspace)
 - JetBrains port (separate plugin, shares no code — pure UI surface in Kotlin)
+- Custom branded settings webview panel (today: native VS Code Settings UI + status-bar quick-pick)
 - Settings UI for rules config (today: `ctxloom rules` CLI)
 - Inline AI suggestions (out of scope — Copilot's job)
 - GitLens-style blame UI (out of scope — GitLens owns it)
