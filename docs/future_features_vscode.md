@@ -4,6 +4,7 @@ Punted-but-tracked work. Not scoped for v1; logged here so we don't lose them.
 
 ## Deferred to v1.1+
 
+- **Marketplace publish (lazy-download CLI)** — v1 ships sideload-only because the bundled `ctxloom-pro` CLI is ~400 MB (ML-embedding deps `onnxruntime-web/-node` + `@huggingface/transformers` + `@lancedb/lancedb-darwin-arm64` + `tree-sitter-typescript` dominate). The 50 MB Marketplace limit requires lazy-downloading these on first activation. **Plan for v1.1:** ship a ~5 MB VSIX containing only the extension code; on first activation, download the CLI tarball from a CDN (e.g. GitHub Releases asset signed by a release workflow) into `${context.globalStorageUri}/ctxloom-cli/` and update `BinaryResolver` to look there before the bundled path. ~3 days work. Reference implementation: GitHub Copilot Chat, Sourcegraph Cody both use this pattern.
 - **Multi-root workspace support** — v1 uses `workspaceFolders[0]` only. Power users with multi-root workspaces want N child processes.
 - **Daemon mode** — v1 spawns ctxloom per VS Code window. A shared daemon would lower resource cost for users with many windows.
 - **JetBrains port** — separate plugin, shares no code (Kotlin UI, JNI to the same MCP server). Distinct codebase, distinct release cadence.

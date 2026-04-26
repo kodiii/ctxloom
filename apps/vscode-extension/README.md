@@ -16,7 +16,14 @@ AST + git + graph context, in your editor. Hover risk, blast radius, dead code, 
 
 ## Install
 
-Marketplace: `ctxloom.ctxloom-vscode`. Or sideload the VSIX from the [GitHub releases page](https://github.com/kodiii/ctxloom/releases).
+**v1 (current): sideload-only.** Download the VSIX from the [GitHub releases page](https://github.com/kodiii/ctxloom/releases) and install via:
+
+- **Command line:** `code --install-extension ctxloom-vscode-X.Y.Z.vsix`
+- **GUI:** Extensions panel → `…` menu → "Install from VSIX…"
+
+Works in VS Code, Cursor, Windsurf, VSCodium, and any other VS Code fork.
+
+**Marketplace publish is deferred to v1.1** to keep v1 ship-fast for the 2–3-week internal/early-access phase post-launch. The bundled CLI (~400 MB — tree-sitter grammars, LanceDB native libs, ML-embedding deps) exceeds the Marketplace's 50 MB VSIX limit; v1.1 will lazy-download these on first activation. See `docs/future_features_vscode.md` for the plan.
 
 ## License
 
