@@ -1,0 +1,12 @@
+{
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "outDir": "out",
+    "module": "Node16",
+    "moduleResolution": "Node16",
+    "noEmit": true,
+    "types": ["node", "vscode", "mocha"]
+  },
+  "include": ["src/**/*", "tests/**/*", "esbuild.config.mjs", "scripts/**/*"],
+  "exclude": ["node_modules", "dist", "out", "resources/ctxloom-cli"]
+}
