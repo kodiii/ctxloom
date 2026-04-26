@@ -2,9 +2,12 @@ import * as vscode from 'vscode';
 import { resolveCliPath } from './client/BinaryResolver.js';
 import { ServerManager } from './client/ServerManager.js';
 import { Tools } from './client/tools.js';
+import type { RiskInfo, BlastResult } from './client/tools.js';
 import { SettingsPanel } from './settings/SettingsPanel.js';
 import type { PanelState, WebviewToHost } from './settings/messageProtocol.js';
 import { createOutputLogger, type Logger } from './shared/logger.js';
+import { CtxloomHoverProvider } from './providers/HoverProvider.js';
+import { TtlCache } from './shared/cache.js';
 
 let panel: SettingsPanel | null = null;
 let logger: Logger | null = null;
@@ -73,6 +76,22 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   context.subscriptions.push(vscode.workspace.onDidChangeConfiguration(e => { if (e.affectsConfiguration('ctxloom')) panel?.refresh(); }));
 
   await startServer();
+
+  const hoverCache = new TtlCache<string, { risk: RiskInfo | null; blast: BlastResult }>({
+    ttlMs: (vscode.workspace.getConfiguration('ctxloom').get<number>('cacheTtlSeconds') ?? 30) * 1000,
+  });
+
+  let hoverDisposable: vscode.Disposable | null = null;
+  function refreshHover() {
+    hoverDisposable?.dispose(); hoverDisposable = null;
+    if (vscode.workspace.getConfiguration('ctxloom').get<boolean>('features.hover') && tools) {
+      const dashboardUrl = vscode.workspace.getConfiguration('ctxloom').get<string>('dashboardUrl') ?? 'http://localhost:7842';
+      hoverDisposable = vscode.languages.registerHoverProvider({ scheme: 'file' }, new CtxloomHoverProvider({ tools, cache: hoverCache, dashboardUrl }));
+      context.subscriptions.push(hoverDisposable);
+    }
+  }
+  refreshHover();
+  context.subscriptions.push(vscode.workspace.onDidChangeConfiguration(e => { if (e.affectsConfiguration('ctxloom.features.hover') || e.affectsConfiguration('ctxloom.dashboardUrl')) refreshHover(); }));
 }
 
 export async function deactivate(): Promise<void> {
