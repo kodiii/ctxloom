@@ -1,0 +1,33 @@
+name: build-extension
+on:
+  pull_request:
+    paths:
+      - 'apps/vscode-extension/**'
+      - 'packages/core/**'
+      - 'packages/mcp-client/**'
+      - '.github/workflows/build-extension.yml'
+jobs:
+  build:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '20', cache: 'npm' }
+      - run: npm ci
+      - run: npm run lint --workspace=@ctxloom/vscode-extension
+      - run: npx vitest run --root apps/vscode-extension
+      - run: cd apps/vscode-extension && node scripts/prepare-bundle.mjs
+      - run: cd apps/vscode-extension && node esbuild.config.mjs
+      - if: matrix.os == 'ubuntu-latest'
+        run: xvfb-run -a npm run test:integration --workspace=@ctxloom/vscode-extension
+      - if: matrix.os == 'macos-latest'
+        run: npm run test:integration --workspace=@ctxloom/vscode-extension
+      - run: cd apps/vscode-extension && npx vsce package --no-dependencies -o ctxloom-vscode.vsix
+      - uses: actions/upload-artifact@v4
+        if: matrix.os == 'ubuntu-latest'
+        with:
+          name: ctxloom-vscode-vsix
+          path: apps/vscode-extension/ctxloom-vscode.vsix
