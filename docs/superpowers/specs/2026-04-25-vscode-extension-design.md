@@ -48,8 +48,14 @@ apps/vscode-extension/
 │   │   └── tools.ts               ← typed wrappers around the 9 MCP tools we use
 │   ├── license/
 │   │   ├── LicenseGate.ts         ← orchestrates trial / activate / expiry UX
-│   │   ├── ActivationWebview.ts   ← three-path first-run webview (Polar-aware)
 │   │   └── statusBar.ts           ← status-bar item: license + file risk
+│   ├── settings/
+│   │   ├── SettingsPanel.ts       ← branded webview: License + Features + Performance + Display + Telemetry + Advanced
+│   │   ├── webview/               ← static HTML/CSS/JS bundle (Tailwind tokens shared with dashboard)
+│   │   │   ├── index.html
+│   │   │   ├── main.ts            ← React-free, vanilla TS for fast load
+│   │   │   └── styles.css
+│   │   └── messageProtocol.ts     ← typed messages between extension host and webview
 │   ├── providers/
 │   │   ├── HoverProvider.ts       ← feature 1
 │   │   ├── DiagnosticsProvider.ts ← feature 2
@@ -60,8 +66,7 @@ apps/vscode-extension/
 │   │   ├── QuickFixProvider.ts    ← feature 10
 │   │   └── McpBridge.ts           ← feature 11
 │   ├── commands/
-│   │   ├── index.ts               ← all command handlers
-│   │   └── quickToggle.ts         ← status-bar quick-pick for features.* toggles
+│   │   └── index.ts               ← all command handlers
 │   └── shared/
 │       ├── debounce.ts            ← shared editor-event debouncer
 │       ├── cache.ts               ← per-file 30s TTL cache
@@ -129,39 +134,28 @@ extension.activate()
   → ServerManager.start()         // spawn bundled ctxloom child via mcp-client
   → LicenseGate.evaluate()        // calls into license/ — reads ~/.config/ctxloom/license.json
   → branch on result:
-       NO_LICENSE       → first-run webview
+       NO_LICENSE       → auto-open Settings panel with License section pre-focused
+                          (other sections rendered but disabled, "Activate to enable" overlay)
        TRIALING / active→ register all providers; status bar shows "trial Nd left" or risk score
-       expired          → soft-block (all providers unregister; status bar red)
+       expired          → soft-block (all providers unregister; status bar red);
+                          clicking status bar reopens Settings panel at License section
        LICENSED         → register all providers, no banner
 ```
 
-### First-run webview (three paths)
+### License activation flow (lives inside the Settings panel — see Section 4)
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│  ctxloom for VS Code                                         │
-│                                                              │
-│  AST + git + graph context, in your editor.                  │
-│                                                              │
-│  ┌───────────────────────┐  ┌──────────────────────────┐    │
-│  │ Start 7-day free      │  │ I have a license key     │    │
-│  │ trial (no card)       │  │                          │    │
-│  └───────────────────────┘  └──────────────────────────┘    │
-│                                                              │
-│  Buy a license →   Already activated on CLI? Auto-detected. │
-└─────────────────────────────────────────────────────────────┘
-```
+The license section of the Settings panel is the single surface for activation, trial start, and deactivation. There is no separate first-run webview.
 
-**Path 1 — "Start free trial":**
-1. Inline email input appears in the webview.
+**Path 1 — Start free trial:**
+1. User clicks `Start free trial…` in the License section → an inline email input appears.
 2. User submits → extension calls `startTrial(email)` from the bundled license module → receives Polar `checkout_url`.
 3. Extension opens `checkout_url` in the user's default browser via `vscode.env.openExternal(...)`.
-4. Webview transitions to a waiting state: "Check your email — your license key is on its way. Paste it here when it arrives." with a key-entry input.
-5. User pastes the key → extension calls `activateLicense(key)` → success → all providers register.
+4. License section transitions to a waiting state: "Check your email — your license key is on its way. Paste it here when it arrives." with a key-entry input.
+5. User pastes the key → extension calls `activateLicense(key)` → success → all providers register, panel re-renders with the licensed state.
 
-**Path 2 — "I have a license key":** jumps straight to step 5.
+**Path 2 — Activate license key:** clicking `Activate license key…` jumps straight to step 5.
 
-**Path 3 — auto-detect:** if `~/.config/ctxloom/license.json` already valid, skip the webview entirely.
+**Path 3 — Auto-detect:** if `~/.config/ctxloom/license.json` is already valid at activation, the panel does not auto-open; status bar simply shows the licensed state.
 
 ### Polar-aware error states (already mapped in `ApiClient.ts`)
 
@@ -174,19 +168,19 @@ extension.activate()
 - Licensed: `⚠ 0.42 · ctxloom`
 - Trialing: `⚠ 0.42 · trial 5d`
 - Trialing, ≤ 2 d left: `⚠ 0.42 · trial ends Sat` (orange)
-- Expired: `ctxloom expired` (red, click → reopens webview Path 2)
+- Expired: `ctxloom expired` (red, click → reopens Settings panel at License section, Path 2)
 
 ### Soft-block (trial expired / license expired)
 
 - All providers unregister; the extension goes dark.
 - Status-bar item turns red: `ctxloom expired`.
-- One-click reopens the activation webview with Path 2 pre-focused.
+- One-click reopens the Settings panel at the License section with the key-entry input pre-focused.
 - Output channel logs the expiry reason for support diagnostics.
 
 ### License-related commands
 
 - `ctxloom: Activate License Key` — input box for the key, calls `activateLicense`.
-- `ctxloom: Start Free Trial` — opens the webview Path 1.
+- `ctxloom: Start Free Trial` — opens the Settings panel at the License section, Path 1.
 - `ctxloom: Show License Status` — shows tier, expiry, fingerprint.
 - `ctxloom: Deactivate License` — calls `deactivateLicense` (releases the seat).
 
@@ -223,28 +217,73 @@ All under the `ctxloom.*` namespace. All optional. Defaults work zero-config.
 
 `features.*` lets enterprises disable subsystems via `.vscode/settings.json` checked into the repo.
 
-### Settings UX — native + status-bar quick-pick
+### Settings UX — branded ctxloom panel (single source of truth)
 
-Two surfaces, no custom settings panel:
+A custom webview panel — `ctxloom: Settings` — is the primary settings surface, with native VS Code Settings UI as a redundant fallback for power users / IT departments that automate via `.vscode/settings.json`.
 
-1. **Native VS Code Settings UI** (free from `package.json`'s `contributes.configuration`). Users open `Ctrl+,`, search "ctxloom", get the standard typed UI with descriptions, validation, per-workspace overrides. This is how Copilot, GitLens, ESLint all expose configuration.
-2. **Status-bar quick-pick** for friction-free toggling of the six `features.*` switches. Clicking the status-bar item opens a quick-pick:
-   ```
-   ✓ Hover cards
-   ✓ Diagnostics (rules)
-   ✓ Gutter decorations
-   ✓ Code lens
-   ✓ Rules quick-fixes
-   ✓ MCP bridge
-   ─────────────
-   Open all settings…       → VS Code Settings filtered to "ctxloom"
-   Open license status…
-   ```
-   Toggling a checkbox flips the corresponding `features.*` setting via `vscode.workspace.getConfiguration('ctxloom').update(...)`. The extension's `onDidChangeConfiguration` listener picks up the change and registers / unregisters the provider in real time — no reload needed.
+**Why a branded panel:** ctxloom is a paid product and the editor surface is the highest-value touchpoint. A polished sectioned UI (matching the dashboard's Tailwind tokens) signals product quality and gives room for explanatory copy, status indicators, and the license activation flow in one place. It also subsumes the standalone activation webview from Section 3 — instead of two webview surfaces ("first-run activation" + "settings"), there is one.
 
-Reactivity model: every provider lifecycle is gated by its `features.<name>` setting. When a feature flips off, its provider's `dispose()` is called, its decorations / diagnostics / hover registrations are cleared, and any cached data is dropped. When it flips back on, the provider re-registers with a fresh state.
+**Where it lives:**
+- A "ctxloom" view container in the Activity Bar (left edge) groups three views: Blast Radius, Code Health, and a "Settings & License" tree-view button at the top of the container that opens the full panel as a webview tab
+- Command palette: `ctxloom: Open Settings`
+- Status-bar item click: opens the panel
+- First run with no license: panel auto-opens with the License section pre-focused; all other sections rendered but disabled with "Activate to enable" overlay
 
-A custom branded settings webview (with sectioned, designed UI) is logged in the future-implementations file as a v1.1 polish item.
+**Panel sections (top to bottom):**
+
+```
+┌─ ctxloom Settings ──────────────────────────────────────────┐
+│                                                              │
+│  ▸ License                                                   │
+│    Tier: Pro · Trialing · 5 days left                        │
+│    Fingerprint: 7a3f…b21c                                    │
+│    [ Activate license key… ]   [ Start free trial… ]         │
+│    [ Deactivate this seat ]                                  │
+│                                                              │
+│  ▸ Features                                                  │
+│    [✓] Hover cards                                           │
+│    [✓] Rules diagnostics                                     │
+│    [✓] Gutter decorations                                    │
+│    [✓] Code lens                                             │
+│    [✓] Rules quick-fixes                                     │
+│    [✓] MCP bridge for AI assistants  ⓘ requires VS Code 1.95+│
+│                                                              │
+│  ▸ Performance                                               │
+│    Debounce ........................ [ 250 ] ms              │
+│    Cache TTL ....................... [  30 ] s               │
+│                                                              │
+│  ▸ Display                                                   │
+│    Gutter churn threshold (high) ... [ 1000 ] lines/yr       │
+│    Gutter churn threshold (medium) . [  200 ] lines/yr       │
+│    [✓] Show dead-code marker in gutter                       │
+│    Dashboard URL ................... [ http://localhost:… ]  │
+│                                                              │
+│  ▸ Telemetry                                                 │
+│    [ ] Send anonymous usage data                             │
+│    Read our privacy policy →                                 │
+│                                                              │
+│  ▸ Advanced                                                  │
+│    Custom CLI path ................. [          (bundled) ]  │
+│    Server args (JSON array) ........ [ []                 ]  │
+│                                                              │
+│  ─────────────────────────────────────────────────────────  │
+│  Open in VS Code Settings →    Restart server    Open Output│
+└──────────────────────────────────────────────────────────────┘
+```
+
+**Reactivity & sync:** the panel is a thin view over `vscode.workspace.getConfiguration('ctxloom')`. On open: read every value and render. On change in panel: call `update()` on the configuration. On `onDidChangeConfiguration` from any external source (Settings UI, `.vscode/settings.json` edit, sync from another window): re-render the panel if mounted. Native VS Code Settings UI continues to work — both surfaces edit the same underlying configuration.
+
+**Provider lifecycle (unchanged from the simpler design):** every provider's lifecycle is gated by its `features.<name>` setting. When a feature flips off (from either surface), its `dispose()` is called, decorations / diagnostics / hover registrations are cleared, cached data is dropped. When it flips back on, the provider re-registers with a fresh state.
+
+**License section UX details:**
+- `Activate license key…` button → input within the panel (no separate webview), calls `activateLicense(key)`. Errors render inline below the input.
+- `Start free trial…` button → inline email input → `startTrial(email)` → opens Polar checkout in default browser → panel transitions to a "Waiting for your license key…" state with a paste-key input.
+- `Deactivate this seat` button → confirmation dialog → `deactivateLicense()` → all providers unregister, panel re-renders with NO_LICENSE state.
+- Status indicators inline: green dot for active, amber for trialing, red for expired.
+
+**Native VS Code Settings UI is still wired** via `package.json`'s `contributes.configuration`. Users with strong "I prefer settings.json" workflows are unaffected. The custom panel is the primary surface; native settings is the redundant power-user one.
+
+**Build cost:** ~2 days vs. the previous A+B option. Brings total scope to ~14 days.
 
 ## Error handling & graceful degradation
 
@@ -292,7 +331,7 @@ The stub: `class FakeServerManager extends ServerManager` overriding `callTool(n
 | CodeLensProvider | lens above each top-level function; "Copy AI context" command writes skeletonized text to clipboard; toast shows reduction percentage |
 | QuickFixProvider | rules violation produces a CodeAction; accepting it calls `ctx_apply_refactor` with the right args; user cancels via VS Code's confirmation → no file change |
 | StatusBar | shows risk for active file; updates on editor change; trial countdown text correct; expired state turns red |
-| QuickToggle | clicking the status-bar item opens the quick-pick; toggling an item flips the matching `features.*` setting; the corresponding provider registers/unregisters within one event-loop tick; "Open all settings…" item navigates to VS Code Settings filtered to "ctxloom" |
+| SettingsPanel | panel mounts and renders all six sections; toggling a feature checkbox flips the matching `features.*` setting and the corresponding provider registers/unregisters within one event-loop tick; license section transitions correctly through trial-start → waiting → activated; deactivate confirmation dialog calls `deactivateLicense`; native VS Code Settings UI changes propagate back to the panel via `onDidChangeConfiguration`; panel auto-opens on first run when no license is present |
 | Commands | each of the 6 palette commands invokes the right code path |
 
 ~30 integration tests total.
@@ -350,7 +389,7 @@ npm run package  (in apps/vscode-extension)
 
 - Extension code (`dist/extension.js`): ~500 KB
 - Bundled `ctxloom-pro`: ~25 MB (tree-sitter grammars + LanceDB native libs)
-- **Total VSIX: ~26 MB**
+- **Total VSIX: ~27 MB** (slight increase from the bundled webview HTML/CSS/JS for the Settings panel)
 
 ### Marketplace targets
 
@@ -399,7 +438,7 @@ A companion file at `docs/future_features_vscode.md` is created at the start of 
 - Multi-root workspace support (today: single-root only)
 - Daemon mode (today: extension-spawns-per-workspace)
 - JetBrains port (separate plugin, shares no code — pure UI surface in Kotlin)
-- Custom branded settings webview panel (today: native VS Code Settings UI + status-bar quick-pick)
+- Branded settings panel theme variants for high-contrast / colorblind modes (today: standard color tokens)
 - Settings UI for rules config (today: `ctxloom rules` CLI)
 - Inline AI suggestions (out of scope — Copilot's job)
 - GitLens-style blame UI (out of scope — GitLens owns it)
