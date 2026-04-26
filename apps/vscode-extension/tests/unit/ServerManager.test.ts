@@ -103,7 +103,7 @@ describe('ServerManager', () => {
   it('rejects callTool with timeout after 10 seconds', async () => {
     vi.useFakeTimers();
     const { spawn, handle } = makeStubbedSpawner();
-    handle.fakeClient.callTool = vi.fn(() => new Promise(() => { /* never resolves */ }));
+    handle.fakeClient.callTool = vi.fn(() => new Promise<{ content: unknown }>(() => { /* never resolves */ }));
     const sm = new ServerManager({ spawner: spawn, logger: logger() });
     await sm.start();
     const promise = sm.callTool('ctx_status', {});
