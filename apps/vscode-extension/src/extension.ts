@@ -84,13 +84,23 @@ async function startServer(): Promise<void> {
   const resolved = resolveCliPath({ extensionRoot, override });
   if (!resolved.exists) { logger?.error(`ctxloom CLI missing at ${resolved.path}`); return; }
 
-  const { spawnServer } = await import('@ctxloom/mcp-client');
-  serverManager = new ServerManager({
-    spawner: () => spawnServer({ cwd: folder.uri.fsPath, command: resolved.path }) as never,
-    logger: { info: m => logger?.info(m), warn: m => logger?.warn(m), error: m => logger?.error(m) },
-  });
-  await serverManager.start();
-  tools = new Tools(serverManager);
+  try {
+    const { spawnServer } = await import('@ctxloom/mcp-client');
+    serverManager = new ServerManager({
+      spawner: () => spawnServer({ cwd: folder.uri.fsPath, command: resolved.path }) as never,
+      logger: { info: m => logger?.info(m), warn: m => logger?.warn(m), error: m => logger?.error(m) },
+    });
+    await serverManager.start();
+    tools = new Tools(serverManager);
+  } catch (err) {
+    // Don't block activation if the CLI fails to spawn (binary missing,
+    // ESM/CJS mismatch, MCP handshake error, sandboxed CI runner, etc.).
+    // Providers gate on `tools` being non-null, so they degrade gracefully;
+    // commands still register and the user can run `ctxloom: Restart Server`.
+    logger?.error(`ctxloom server failed to start: ${String(err)}`);
+    if (serverManager) { try { await serverManager.dispose(); } catch { /* ignore */ } serverManager = null; }
+    tools = null;
+  }
 }
 
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
