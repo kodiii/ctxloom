@@ -11,7 +11,7 @@ const extensionCtx = await esbuild.context({
   target: 'node20',
   format: 'cjs',
   outfile: 'dist/extension.js',
-  external: ['vscode'],
+  external: ['vscode', '@ctxloom/core', '@ctxloom/mcp-client'],
   sourcemap: true,
   minify: !watch,
   logLevel: 'info',
