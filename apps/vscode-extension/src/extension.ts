@@ -13,6 +13,7 @@ import { CodeHealthView } from './providers/CodeHealthView.js';
 import { TtlCache } from './shared/cache.js';
 import { createStatusBarItem, type StatusBarHandle } from './license/statusBar.js';
 import { CtxloomCodeLensProvider } from './providers/CodeLensProvider.js';
+import { registerCommands } from './commands/index.js';
 
 let panel: SettingsPanel | null = null;
 let logger: Logger | null = null;
@@ -160,6 +161,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   }
   refreshLens();
   context.subscriptions.push(vscode.workspace.onDidChangeConfiguration(e => { if (e.affectsConfiguration('ctxloom.features.codeLens')) refreshLens(); }));
+
+  registerCommands(context, {
+    tools, logger: logger!,
+    getDashboardUrl: () => vscode.workspace.getConfiguration('ctxloom').get<string>('dashboardUrl') ?? 'http://localhost:7842',
+  });
 }
 
 export async function deactivate(): Promise<void> {
