@@ -7,6 +7,7 @@ import { SettingsPanel } from './settings/SettingsPanel.js';
 import type { PanelState, WebviewToHost } from './settings/messageProtocol.js';
 import { createOutputLogger, type Logger } from './shared/logger.js';
 import { CtxloomHoverProvider } from './providers/HoverProvider.js';
+import { CtxloomDiagnosticsProvider } from './providers/DiagnosticsProvider.js';
 import { TtlCache } from './shared/cache.js';
 
 let panel: SettingsPanel | null = null;
@@ -92,6 +93,20 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   }
   refreshHover();
   context.subscriptions.push(vscode.workspace.onDidChangeConfiguration(e => { if (e.affectsConfiguration('ctxloom.features.hover') || e.affectsConfiguration('ctxloom.dashboardUrl')) refreshHover(); }));
+
+  let diagnostics: CtxloomDiagnosticsProvider | null = null;
+  function refreshDiagnostics() {
+    diagnostics?.dispose(); diagnostics = null;
+    if (vscode.workspace.getConfiguration('ctxloom').get<boolean>('features.diagnostics') && tools) {
+      diagnostics = new CtxloomDiagnosticsProvider(tools);
+      context.subscriptions.push({ dispose: () => diagnostics?.dispose() });
+      context.subscriptions.push(vscode.workspace.onDidSaveTextDocument(d => diagnostics?.refresh(d.uri)));
+      context.subscriptions.push(vscode.window.onDidChangeActiveTextEditor(e => { if (e) diagnostics?.refresh(e.document.uri); }));
+      if (vscode.window.activeTextEditor) void diagnostics.refresh(vscode.window.activeTextEditor.document.uri);
+    }
+  }
+  refreshDiagnostics();
+  context.subscriptions.push(vscode.workspace.onDidChangeConfiguration(e => { if (e.affectsConfiguration('ctxloom.features.diagnostics')) refreshDiagnostics(); }));
 }
 
 export async function deactivate(): Promise<void> {
