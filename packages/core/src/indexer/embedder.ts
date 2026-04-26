@@ -22,9 +22,10 @@ let embedder: FeatureExtractionPipeline | null = null;
  */
 async function getEmbedder(): Promise<FeatureExtractionPipeline> {
   if (!embedder) {
-    embedder = await pipeline('feature-extraction', MODEL_ID, {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    embedder = (await (pipeline as any)('feature-extraction', MODEL_ID, {
       dtype: 'fp32',
-    });
+    })) as FeatureExtractionPipeline;
   }
   return embedder;
 }
