@@ -107,8 +107,12 @@ describe('ServerManager', () => {
     const sm = new ServerManager({ spawner: spawn, logger: logger() });
     await sm.start();
     const promise = sm.callTool('ctx_status', {});
+    // Attach the assertion handler BEFORE firing the timer so the rejection
+    // is never momentarily "unhandled" — vitest 3 / Node 20 otherwise surface
+    // it as an unhandled-rejection error that fails the run on macOS CI.
+    const expectation = expect(promise).rejects.toThrow(/timeout/i);
     await vi.advanceTimersByTimeAsync(10_001);
-    await expect(promise).rejects.toThrow(/timeout/i);
+    await expectation;
     await sm.dispose();
   });
 
