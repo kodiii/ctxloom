@@ -57,7 +57,7 @@ export function registerCommands(context: vscode.ExtensionContext, deps: Command
     vscode.commands.registerCommand('ctxloom.activateLicense', async () => {
       const key = await vscode.window.showInputBox({ prompt: 'Paste your ctxloom license key', password: false, ignoreFocusOut: true });
       if (!key) return;
-      try { await deps.licenseOps.activate(key); vscode.window.showInformationMessage('ctxloom license activated.'); deps.licenseGate.evaluate(); }
+      try { await deps.licenseOps.activate(key); vscode.window.showInformationMessage('ctxloom license activated.'); await deps.licenseGate.evaluate(); }
       catch (err) { vscode.window.showErrorMessage(`Activation failed: ${String(err)}`); }
     }),
 
@@ -81,7 +81,7 @@ export function registerCommands(context: vscode.ExtensionContext, deps: Command
       const ok = await vscode.window.showWarningMessage('Deactivate ctxloom on this machine?', { modal: true }, 'Deactivate');
       if (ok !== 'Deactivate') return;
       await deps.licenseOps.deactivate();
-      deps.licenseGate.evaluate();
+      await deps.licenseGate.evaluate();
       vscode.window.showInformationMessage('License deactivated. The seat is free to use elsewhere.');
     }),
 
