@@ -77,13 +77,15 @@ function makeFakeFetch(map: Record<string, { status: number; body?: Buffer | str
     if (!entry) {
       return new Response('not found', { status: 404 });
     }
-    let bodyToSend: string;
+    // Preserve binary data by passing ArrayBuffer to Response
+    let bodyToSend: string | undefined | ArrayBuffer;
     if (entry.body instanceof Buffer) {
-      bodyToSend = entry.body.toString();
+      const ab = entry.body.buffer.slice(entry.body.byteOffset, entry.body.byteOffset + entry.body.byteLength);
+      bodyToSend = ab as ArrayBuffer;
     } else if (typeof entry.body === 'string') {
       bodyToSend = entry.body;
     } else {
-      bodyToSend = '';
+      bodyToSend = undefined;
     }
     return new Response(bodyToSend, { status: entry.status, headers: entry.headers });
   }) as any;
@@ -210,5 +212,85 @@ describe('CliInstaller — extract + commit', () => {
     // No stale staging dirs left behind
     const remaining = fs.existsSync(tmp) ? fs.readdirSync(tmp) : [];
     expect(remaining.filter(f => f.startsWith('staging-'))).toEqual([]);
+  });
+});
+
+describe('CliInstaller — ensureInstalled orchestration', () => {
+  let storage: string;
+  beforeEach(() => { storage = makeStorage(); });
+  afterEach(() => { fs.rmSync(storage, { recursive: true, force: true }); });
+
+  function fixtureFetch(version: string): { fetch: ReturnType<typeof vi.fn>; bytes: Buffer; sha256: string } {
+    // Create a real tarball to be extracted by tests
+    const srcDir = fs.mkdtempSync(path.join(os.tmpdir(), 'src-'));
+    fs.mkdirSync(path.join(srcDir, 'dist'), { recursive: true });
+    fs.writeFileSync(path.join(srcDir, 'dist/index.js'), 'console.log("ok")');
+    const tarPath = path.join(srcDir, 'fixture.tar.gz');
+    packTarball(srcDir, tarPath);
+    const bytes = fs.readFileSync(tarPath);
+    fs.rmSync(srcDir, { recursive: true });
+    const sha256 = crypto.createHash('sha256').update(bytes).digest('hex');
+    // makeFakeFetch requires the body as Buffer to survive the string conversion round-trip
+    const fetch = makeFakeFetch({
+      [`https://example.test/cli-v${version}/ctxloom-cli-${version}-linux-x64.tar.gz`]: { status: 200, body: bytes },
+      [`https://example.test/cli-v${version}/ctxloom-cli-${version}-linux-x64.tar.gz.sha256`]: { status: 200, body: `${sha256}  x.tar.gz\n` },
+    });
+    return { fetch, bytes, sha256 };
+  }
+
+  it('ensureInstalled is a no-op when the version is already installed', async () => {
+    const dir = path.join(storage, 'ctxloom-cli', '1.0.5', 'dist');
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, 'index.js'), '');
+    const { fetch } = fixtureFetch('1.0.5');
+    const installer = new CliInstaller({ globalStorageRoot: storage, fetch, logger: quietLogger(), prompt: nullPrompt(), progress: nullProgress(), releaseBaseUrl: 'https://example.test', platform: 'linux-x64' });
+    const result = await installer.ensureInstalled('1.0.5');
+    expect(result.kind).toBe('already-installed');
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it('ensureInstalled returns "skipped" if user picks Skip for now', async () => {
+    const { fetch } = fixtureFetch('1.0.5');
+    const skipPrompt = { confirmInstall: async () => 'skip' as const, alreadyDismissed: () => false };
+    const installer = new CliInstaller({ globalStorageRoot: storage, fetch, logger: quietLogger(), prompt: skipPrompt, progress: nullProgress(), releaseBaseUrl: 'https://example.test', platform: 'linux-x64' });
+    const result = await installer.ensureInstalled('1.0.5');
+    expect(result.kind).toBe('skipped');
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it('ensureInstalled returns "dismissed" when alreadyDismissed=true', async () => {
+    const { fetch } = fixtureFetch('1.0.5');
+    const dismissedPrompt = { confirmInstall: async () => 'install' as const, alreadyDismissed: () => true };
+    const installer = new CliInstaller({ globalStorageRoot: storage, fetch, logger: quietLogger(), prompt: dismissedPrompt, progress: nullProgress(), releaseBaseUrl: 'https://example.test', platform: 'linux-x64' });
+    const result = await installer.ensureInstalled('1.0.5');
+    expect(result.kind).toBe('dismissed');
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it('ensureInstalled completes the full happy path', async () => {
+    const { fetch } = fixtureFetch('1.0.5');
+    const installer = new CliInstaller({ globalStorageRoot: storage, fetch, logger: quietLogger(), prompt: nullPrompt(), progress: nullProgress(), releaseBaseUrl: 'https://example.test', platform: 'linux-x64' });
+    const result = await installer.ensureInstalled('1.0.5');
+    expect(result.kind).toBe('installed');
+    expect(installer.isInstalled('1.0.5')).toBe(true);
+  });
+
+  it('ensureInstalled cleans up stale staging dirs on entry', async () => {
+    const stale = path.join(storage, 'tmp', 'staging-0.0.0');
+    fs.mkdirSync(stale, { recursive: true });
+    const { fetch } = fixtureFetch('1.0.5');
+    const installer = new CliInstaller({ globalStorageRoot: storage, fetch, logger: quietLogger(), prompt: nullPrompt(), progress: nullProgress(), releaseBaseUrl: 'https://example.test', platform: 'linux-x64' });
+    await installer.ensureInstalled('1.0.5');
+    expect(fs.existsSync(stale)).toBe(false);
+  });
+
+  it('ensureInstalled stops retrying after 3 attempts in one session', async () => {
+    const fetch = vi.fn(async () => new Response('', { status: 503 }));
+    const installer = new CliInstaller({ globalStorageRoot: storage, fetch, logger: quietLogger(), prompt: nullPrompt(), progress: nullProgress(), releaseBaseUrl: 'https://example.test', platform: 'linux-x64' });
+    for (let i = 0; i < 3; i++) {
+      await expect(installer.ensureInstalled('1.0.5')).rejects.toThrow();
+    }
+    const result = await installer.ensureInstalled('1.0.5');
+    expect(result.kind).toBe('exhausted');
   });
 });
