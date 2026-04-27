@@ -139,19 +139,26 @@ async function startServer(context: vscode.ExtensionContext): Promise<void> {
   const cfg = vscode.workspace.getConfiguration('ctxloom');
   const override = cfg.get<string | null>('cliPath') ?? null;
 
-  const resolved = resolveCliPath({ globalStorageRoot: context.globalStorageUri.fsPath, cliVersion, override });
+  const testTag = vscode.workspace.getConfiguration('ctxloom.cli').get<string>('testReleaseTag') ?? '';
+  const overrideVersion = testTag.trim() !== '' ? testTag.replace(/^cli-v/, '') : cliVersion;
+  const releaseBaseUrl = testTag.trim() !== ''
+    ? 'https://github.com/kodiii/ctxloom/releases/download'
+    : undefined;
+
+  const resolved = resolveCliPath({ globalStorageRoot: context.globalStorageUri.fsPath, cliVersion: overrideVersion, override });
 
   if (!resolved.exists) {
     cliInstaller ??= new CliInstaller({
       globalStorageRoot: context.globalStorageUri.fsPath,
       fetch: globalThis.fetch,
       logger: logger!,
-      prompt: makePrompt(context, cliVersion),
+      prompt: makePrompt(context, overrideVersion),
       progress: makeProgress(),
+      releaseBaseUrl,
     });
     statusBar?.update({ licenseState: { kind: 'NO_LICENSE' as const }, riskScore: null, cliInstallState: 'installing' });
     let outcome;
-    try { outcome = await cliInstaller.ensureInstalled(cliVersion); }
+    try { outcome = await cliInstaller.ensureInstalled(overrideVersion); }
     catch (err) {
       logger?.error(`CLI install failed: ${String(err)}`);
       statusBar?.update({ licenseState: { kind: 'NO_LICENSE' as const }, riskScore: null, cliInstallState: 'failed' });
@@ -164,7 +171,7 @@ async function startServer(context: vscode.ExtensionContext): Promise<void> {
   }
 
   // Re-resolve now that install (if any) committed.
-  const ready = resolveCliPath({ globalStorageRoot: context.globalStorageUri.fsPath, cliVersion, override });
+  const ready = resolveCliPath({ globalStorageRoot: context.globalStorageUri.fsPath, cliVersion: overrideVersion, override });
   if (!ready.exists) {
     logger?.error(`ctxloom CLI still missing after install at ${ready.path}`);
     return;
