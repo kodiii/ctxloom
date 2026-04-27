@@ -4,7 +4,16 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 
 suite('Lazy-install smoke (real GitHub Releases)', () => {
+  // Smoke test requires the `cli-v0.0.0-test` GitHub Release tag with platform
+  // tarballs to be published. It is opt-in via CTXLOOM_SMOKE=1 so default CI
+  // does not fail before the tag exists.
+  const SMOKE_ENABLED = process.env.CTXLOOM_SMOKE === '1';
+
   test('downloads + verifies + installs the cli-v0.0.0-test fixture release', async function() {
+    if (!SMOKE_ENABLED) {
+      this.skip();
+      return;
+    }
     this.timeout(60_000);
 
     // Force the installer to fetch from the test tag.
