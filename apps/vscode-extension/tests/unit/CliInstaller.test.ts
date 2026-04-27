@@ -298,4 +298,11 @@ describe('CliInstaller — ensureInstalled orchestration', () => {
     const result = await installer.ensureInstalled('1.0.5');
     expect(result.kind).toBe('exhausted');
   });
+
+  it('rejects invalid version strings (shell injection guard)', async () => {
+    const installer = new CliInstaller({ globalStorageRoot: storage, fetch: vi.fn(), logger: quietLogger(), prompt: nullPrompt(), progress: nullProgress() });
+    await expect(installer.ensureInstalled('1.0.5"; rm -rf /; echo "')).rejects.toThrow(/Invalid version/i);
+    await expect(installer.ensureInstalled('1.0.5 && echo')).rejects.toThrow(/Invalid version/i);
+    await expect(installer.ensureInstalled('../../../../etc')).rejects.toThrow(/Invalid version/i);
+  });
 });
