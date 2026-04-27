@@ -1,4 +1,7 @@
+import { execSync } from 'node:child_process';
 import { defineConfig } from '@vscode/test-cli';
+
+execSync('node tests/fixtures/build-fake-cli.mjs', { stdio: 'inherit' });
 
 export default defineConfig([
   {

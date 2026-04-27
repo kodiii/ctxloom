@@ -12,18 +12,14 @@ jobs:
       - run: npm ci
       - run: npm run lint --workspace=ctxloom-vscode
       - run: npx vitest run --root apps/vscode-extension
-      - run: cd apps/vscode-extension && node scripts/prepare-bundle.mjs && node esbuild.config.mjs
+      - run: cd apps/vscode-extension && node esbuild.config.mjs
       - run: xvfb-run -a npm run test:integration --workspace=ctxloom-vscode
       - run: xvfb-run -a npx vscode-test --label smoke --root apps/vscode-extension
       - run: cd apps/vscode-extension && npx vsce package --no-dependencies -o ctxloom-vscode.vsix
-      # v1: sideload-only — VSIX attached to the GitHub release for users to install via
-      # `code --install-extension`. Marketplace + OpenVSX publish steps are deferred to v1.1
-      # (depends on the CLI lazy-download work tracked in docs/future_features_vscode.md).
-      # When v1.1 lands, uncomment the two `npx vsce/ovsx publish` steps below.
-      # - run: cd apps/vscode-extension && npx vsce publish --packagePath ctxloom-vscode.vsix
-      #   env: { VSCE_PAT: '${{ secrets.VSCE_PAT }}' }
-      # - run: cd apps/vscode-extension && npx ovsx publish ctxloom-vscode.vsix
-      #   env: { OVSX_PAT: '${{ secrets.OVSX_PAT }}' }
+      - run: cd apps/vscode-extension && npx vsce publish --packagePath ctxloom-vscode.vsix
+        env: { VSCE_PAT: '${{ secrets.VSCE_PAT }}' }
+      - run: cd apps/vscode-extension && npx ovsx publish ctxloom-vscode.vsix
+        env: { OVSX_PAT: '${{ secrets.OVSX_PAT }}' }
       - uses: softprops/action-gh-release@v2
         with:
           files: apps/vscode-extension/ctxloom-vscode.vsix

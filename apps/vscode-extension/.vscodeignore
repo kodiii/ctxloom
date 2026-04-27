@@ -5,6 +5,8 @@ tests/**
 out/**
 node_modules/**
 scripts/**
+resources/ctxloom-cli/**
+dist-cli/**
 esbuild.config.mjs
 tsconfig.json
 vitest.config.ts
