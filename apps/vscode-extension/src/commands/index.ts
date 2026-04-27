@@ -18,6 +18,10 @@ export interface CommandDeps {
   openSettings: () => void;
   refreshHealth: () => void;
   refreshBlast: () => void;
+  globalStorageRoot: string;
+  manifestCliVersion: () => string;
+  triggerCliInstall: () => void;          // Re-runs startServer() — invokes CliInstaller if needed
+  restartServer: () => Promise<void>;
 }
 
 export function registerCommands(context: vscode.ExtensionContext, deps: CommandDeps): void {
@@ -81,7 +85,24 @@ export function registerCommands(context: vscode.ExtensionContext, deps: Command
       vscode.window.showInformationMessage('License deactivated. The seat is free to use elsewhere.');
     }),
 
-    vscode.commands.registerCommand('ctxloom.restartServer', () => deps.logger.info('Restart server requested via command palette.')),
+    vscode.commands.registerCommand('ctxloom.restartServer', () => deps.restartServer()),
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand('ctxloom.installCli', async () => {
+      // Reset the dismiss flag so the user can re-prompt.
+      await vscode.workspace.getConfiguration('ctxloom.cli').update('installPromptDismissed', false, vscode.ConfigurationTarget.Global);
+      deps.triggerCliInstall();
+    }),
+
+    vscode.commands.registerCommand('ctxloom.showCliInstallPath', async () => {
+      const root = deps.globalStorageRoot;
+      const cliVersion = deps.manifestCliVersion();
+      vscode.window.showInformationMessage(
+        `ctxloom CLI install path: ${root}/ctxloom-cli/${cliVersion}/`,
+        'Open',
+      ).then(choice => { if (choice === 'Open') { vscode.env.openExternal(vscode.Uri.file(root)); } });
+    }),
   );
 }
 
