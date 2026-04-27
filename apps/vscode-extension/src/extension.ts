@@ -121,7 +121,7 @@ async function startServer(context: vscode.ExtensionContext): Promise<void> {
   // Windows: polite v1.2-coming fallback
   if (process.platform === 'win32') {
     logger?.info('Windows support coming in v1.2 — extension activated in inert mode');
-    statusBar?.update({ licenseState: { kind: 'NO_LICENSE' as const }, riskScore: null }); // FIXME(v1.1): added in Task 8 — cliInstallState: 'windows-unsupported'
+    statusBar?.update({ licenseState: { kind: 'NO_LICENSE' as const }, riskScore: null, cliInstallState: 'windows-unsupported' });
     return;
   }
 
@@ -142,16 +142,16 @@ async function startServer(context: vscode.ExtensionContext): Promise<void> {
       prompt: makePrompt(context, cliVersion),
       progress: makeProgress(),
     });
-    statusBar?.update({ licenseState: { kind: 'NO_LICENSE' as const }, riskScore: null }); // FIXME(v1.1): added in Task 8 — cliInstallState: 'installing'
+    statusBar?.update({ licenseState: { kind: 'NO_LICENSE' as const }, riskScore: null, cliInstallState: 'installing' });
     let outcome;
     try { outcome = await cliInstaller.ensureInstalled(cliVersion); }
     catch (err) {
       logger?.error(`CLI install failed: ${String(err)}`);
-      statusBar?.update({ licenseState: { kind: 'NO_LICENSE' as const }, riskScore: null }); // FIXME(v1.1): added in Task 8 — cliInstallState: 'failed'
+      statusBar?.update({ licenseState: { kind: 'NO_LICENSE' as const }, riskScore: null, cliInstallState: 'failed' });
       return;
     }
     if (outcome.kind === 'skipped' || outcome.kind === 'dismissed' || outcome.kind === 'exhausted') {
-      statusBar?.update({ licenseState: { kind: 'NO_LICENSE' as const }, riskScore: null }); // FIXME(v1.1): added in Task 8 — cliInstallState: 'setup-needed'
+      statusBar?.update({ licenseState: { kind: 'NO_LICENSE' as const }, riskScore: null, cliInstallState: 'setup-needed' });
       return;
     }
   }
