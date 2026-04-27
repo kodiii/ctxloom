@@ -46,3 +46,32 @@ describe('renderStatusBar', () => {
     expect(r.text).toBe('⚠ 0.10 · ctxloom');
   });
 });
+
+describe('renderStatusBar — CLI install states', () => {
+  it('shows installing state', () => {
+    const r = renderStatusBar({ licenseState: { kind: 'NO_LICENSE' }, riskScore: null, cliInstallState: 'installing' });
+    expect(r.text).toMatch(/installing/i);
+  });
+
+  it('shows setup-needed with click hint', () => {
+    const r = renderStatusBar({ licenseState: { kind: 'NO_LICENSE' }, riskScore: null, cliInstallState: 'setup-needed' });
+    expect(r.text).toMatch(/setup needed/i);
+    expect(r.tooltip).toMatch(/click/i);
+  });
+
+  it('shows failed in error color', () => {
+    const r = renderStatusBar({ licenseState: { kind: 'NO_LICENSE' }, riskScore: null, cliInstallState: 'failed' });
+    expect(r.text).toMatch(/setup failed/i);
+    expect(r.color).toBe('statusBarItem.errorForeground');
+  });
+
+  it('shows windows-unsupported state', () => {
+    const r = renderStatusBar({ licenseState: { kind: 'NO_LICENSE' }, riskScore: null, cliInstallState: 'windows-unsupported' });
+    expect(r.text).toMatch(/windows.*v1\.2/i);
+  });
+
+  it('falls through to the v1 license/risk display when no cliInstallState', () => {
+    const r = renderStatusBar({ licenseState: { kind: 'LICENSED', tier: 'pro', expiresAt: '' }, riskScore: 0.42 });
+    expect(r.text).toBe('⚠ 0.42 · ctxloom');
+  });
+});

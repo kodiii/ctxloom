@@ -1,8 +1,12 @@
 import type { LicenseState } from './LicenseGate.js';
 
+export type CliInstallState = 'installing' | 'setup-needed' | 'failed' | 'windows-unsupported';
+
 export interface StatusBarInputs {
   licenseState: LicenseState;
   riskScore: number | null;
+  /** Optional override that takes priority over license/risk display when set. */
+  cliInstallState?: CliInstallState;
 }
 
 export interface StatusBarOutput {
@@ -14,7 +18,21 @@ export interface StatusBarOutput {
 const SHORT_DAY = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
 export function renderStatusBar(inputs: StatusBarInputs): StatusBarOutput {
-  const { licenseState, riskScore } = inputs;
+  const { licenseState, riskScore, cliInstallState } = inputs;
+
+  if (cliInstallState === 'installing') {
+    return { text: 'ctxloom: installing…', tooltip: 'Downloading ctxloom analyzer.', color: undefined };
+  }
+  if (cliInstallState === 'setup-needed') {
+    return { text: 'ctxloom: setup needed', tooltip: 'Click to install the ctxloom analyzer.', color: 'statusBarItem.warningForeground' };
+  }
+  if (cliInstallState === 'failed') {
+    return { text: 'ctxloom: setup failed — see Output', tooltip: 'CLI install failed. Click to view the Output channel.', color: 'statusBarItem.errorForeground' };
+  }
+  if (cliInstallState === 'windows-unsupported') {
+    return { text: 'ctxloom: Windows support coming in v1.2', tooltip: 'Click to open the tracking issue.', color: 'statusBarItem.warningForeground' };
+  }
+
   const riskPart = riskScore !== null ? `⚠ ${riskScore.toFixed(2)}` : '';
 
   if (licenseState.kind === 'EXPIRED') {
