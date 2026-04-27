@@ -17,7 +17,12 @@ function nullPrompt() {
 }
 
 function nullProgress() {
-  return { withProgress: async <T,>(_title: string, body: (_report: (delta: { increment?: number; message?: string }) => void) => Promise<T>): Promise<T> => body(() => {}) };
+  return {
+    withProgress: async <T,>(_title: string, body: (report: (delta: { increment?: number; message?: string }) => void, signal: AbortSignal) => Promise<T>): Promise<T> => {
+      const aborter = new AbortController();
+      return body(() => {}, aborter.signal);
+    },
+  };
 }
 
 describe('CliInstaller — paths and idempotency', () => {

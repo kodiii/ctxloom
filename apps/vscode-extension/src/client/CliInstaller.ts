@@ -12,7 +12,13 @@ export interface InstallPrompt {
 
 /** Wraps `vscode.window.withProgress` so the installer doesn't depend on `vscode` directly. */
 export interface ProgressReporter {
-  withProgress<T>(title: string, body: (report: (delta: { increment?: number; message?: string }) => void) => Promise<T>): Promise<T>;
+  withProgress<T>(
+    title: string,
+    body: (
+      report: (delta: { increment?: number; message?: string }) => void,
+      signal: AbortSignal,
+    ) => Promise<T>,
+  ): Promise<T>;
 }
 
 export type FetchLike = typeof globalThis.fetch;
@@ -179,9 +185,10 @@ export class CliInstaller {
     if (decision === 'dont-ask-again') return { kind: 'dismissed' };
 
     try {
-      await this.opts.progress.withProgress(`Installing ctxloom analyzer (${version})`, async (report) => {
+      await this.opts.progress.withProgress(`Installing ctxloom analyzer (${version})`, async (report, progressSignal) => {
+        const effectiveSignal = signal ?? progressSignal;
         report({ message: 'Downloading…' });
-        const tarPath = await this.downloadVerified(version, signal);
+        const tarPath = await this.downloadVerified(version, effectiveSignal);
         report({ message: 'Installing…' });
         await this.extractAndCommit(version, tarPath);
       });
