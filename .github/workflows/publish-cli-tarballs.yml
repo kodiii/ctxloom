@@ -2,6 +2,8 @@ name: publish-cli-tarballs
 on:
   push:
     tags: [ 'cli-v*' ]
+permissions:
+  contents: write
 jobs:
   build:
     strategy:
