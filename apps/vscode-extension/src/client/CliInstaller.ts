@@ -32,6 +32,7 @@ export interface CliInstallerOptions {
 export type Platform = 'darwin-arm64' | 'darwin-x64' | 'linux-x64' | 'linux-arm64';
 
 const RELEASE_BASE_URL = 'https://github.com/kodiii/ctxloom/releases/download';
+const MAX_RETRIES_PER_SESSION = 3;
 
 export class CliInstaller {
   constructor(private readonly opts: CliInstallerOptions) {}
@@ -154,4 +155,50 @@ export class CliInstaller {
     }
     this.opts.logger.info(`installed ctxloom-cli ${version}`);
   }
+
+  private failureCount = 0;
+
+  async ensureInstalled(version: string, signal?: AbortSignal): Promise<EnsureResult> {
+    if (this.isInstalled(version)) {
+      return { kind: 'already-installed', binaryPath: this.installedBinaryPath(version) };
+    }
+
+    if (this.opts.prompt.alreadyDismissed()) {
+      return { kind: 'dismissed' };
+    }
+
+    if (this.failureCount >= MAX_RETRIES_PER_SESSION) {
+      return { kind: 'exhausted' };
+    }
+
+    // Always clean up any leftover staging dirs before a fresh attempt.
+    this.cleanupStaging();
+
+    const decision = await this.opts.prompt.confirmInstall(version);
+    if (decision === 'skip') return { kind: 'skipped' };
+    if (decision === 'dont-ask-again') return { kind: 'dismissed' };
+
+    try {
+      await this.opts.progress.withProgress(`Installing ctxloom analyzer (${version})`, async (report) => {
+        report({ message: 'Downloading…' });
+        const tarPath = await this.downloadVerified(version, signal);
+        report({ message: 'Installing…' });
+        await this.extractAndCommit(version, tarPath);
+      });
+      return { kind: 'installed', binaryPath: this.installedBinaryPath(version) };
+    } catch (err) {
+      this.failureCount++;
+      this.opts.logger.error(`ctxloom CLI install failed: ${err instanceof Error ? err.message : String(err)}`);
+      throw err;
+    }
+  }
+
+  resetFailureCount(): void { this.failureCount = 0; }
 }
+
+export type EnsureResult =
+  | { kind: 'already-installed'; binaryPath: string }
+  | { kind: 'installed'; binaryPath: string }
+  | { kind: 'skipped' }
+  | { kind: 'dismissed' }
+  | { kind: 'exhausted' };
