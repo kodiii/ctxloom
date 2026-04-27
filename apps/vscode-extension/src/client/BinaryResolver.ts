@@ -3,22 +3,24 @@ import fs from 'node:fs';
 import os from 'node:os';
 
 export interface ResolveOptions {
-  /** Absolute path to the extension installation root (use `context.extensionPath`). */
-  extensionRoot: string;
-  /** User-configured override path or null. */
+  /** Absolute path to the extension's globalStorageUri (where lazy-installed CLIs live). */
+  globalStorageRoot: string;
+  /** The CLI version pinned in the extension manifest (`ctxloomCliVersion`). */
+  cliVersion: string;
+  /** User-configured override path. Empty string and whitespace are treated as null. */
   override: string | null;
 }
 
 export interface ResolveResult {
-  /** 'bundled' = used the VSIX-shipped CLI; 'override' = used user-configured path. */
-  source: 'bundled' | 'override';
+  /** 'override' = user-configured path; 'globalStorage' = lazy-installed CLI directory. */
+  source: 'override' | 'globalStorage';
   /** Absolute, ~-expanded path to the entry. */
   path: string;
   /** Does the file exist on disk right now? */
   exists: boolean;
 }
 
-const BUNDLED_SUBPATH = path.join('resources', 'ctxloom-cli', 'dist', 'index.js');
+const CLI_SUBPATH = path.join('dist', 'index.js');
 
 function expandHome(p: string): string {
   if (p.startsWith('~/') || p === '~') {
@@ -32,6 +34,6 @@ export function resolveCliPath(opts: ResolveOptions): ResolveResult {
     const expanded = path.resolve(expandHome(opts.override));
     return { source: 'override', path: expanded, exists: fs.existsSync(expanded) };
   }
-  const bundled = path.join(opts.extensionRoot, BUNDLED_SUBPATH);
-  return { source: 'bundled', path: bundled, exists: fs.existsSync(bundled) };
+  const installed = path.join(opts.globalStorageRoot, 'ctxloom-cli', opts.cliVersion, CLI_SUBPATH);
+  return { source: 'globalStorage', path: installed, exists: fs.existsSync(installed) };
 }
