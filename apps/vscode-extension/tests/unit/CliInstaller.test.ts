@@ -230,10 +230,13 @@ describe('CliInstaller — ensureInstalled orchestration', () => {
     const srcDir = fs.mkdtempSync(path.join(os.tmpdir(), 'src-'));
     fs.mkdirSync(path.join(srcDir, 'dist'), { recursive: true });
     fs.writeFileSync(path.join(srcDir, 'dist/index.js'), 'console.log("ok")');
-    const tarPath = path.join(srcDir, 'fixture.tar.gz');
+    // Write tarball OUTSIDE srcDir — Linux tar fails with "file changed as we read it"
+    // when the destination archive lives inside the directory being archived.
+    const tarPath = path.join(os.tmpdir(), `fixture-${path.basename(srcDir)}.tar.gz`);
     packTarball(srcDir, tarPath);
     const bytes = fs.readFileSync(tarPath);
     fs.rmSync(srcDir, { recursive: true });
+    fs.rmSync(tarPath, { force: true });
     const sha256 = crypto.createHash('sha256').update(bytes).digest('hex');
     // makeFakeFetch requires the body as Buffer to survive the string conversion round-trip
     const fetch = makeFakeFetch({
