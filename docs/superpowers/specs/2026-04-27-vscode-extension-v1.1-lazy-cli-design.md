@@ -56,7 +56,7 @@ apps/vscode-extension/
 ### Module boundaries
 
 - **`CliInstaller`** is the only thing that touches network, checksums, tarball extraction, and `globalStorageUri`. Public surface: `ensureInstalled(version: string): Promise<{ path: string }>` + `dispose()`. Idempotent — it does nothing if the right version is already on disk.
-- **`BinaryResolver`** stays a pure-logic resolver. Lookup priority: `override` → `globalStorageRoot/ctxloom-cli/<version>/dist/index.js` (if `INSTALLED_VERSION` matches) → `null`.
+- **`BinaryResolver`** stays a pure-logic resolver — pure path-existence checks only. Lookup priority: `override` → `globalStorageRoot/ctxloom-cli/<version>/dist/index.js` (returns the path with `exists: true|false`) → `null`. It does NOT read `INSTALLED_VERSION`; that's `CliInstaller`'s responsibility, which guarantees the directory only exists if the install committed successfully.
 - **`extension.ts`** activation sequence: license gate → `CliInstaller.ensureInstalled()` (if needed) → `ServerManager.start()`. If install fails or is skipped, providers stay unregistered exactly like v1's "CLI missing" path.
 
 ### Public exports (none)
@@ -223,10 +223,10 @@ export interface ResolveOptions {
   override: string | null;          // unchanged
 }
 
-// Lookup priority:
+// Lookup priority (no version-file read — pure existence check):
 //   1. override (if set, used regardless of existence; user opts out of lazy install)
-//   2. globalStorageRoot/ctxloom-cli/<version>/dist/index.js (if exists AND INSTALLED_VERSION matches)
-//   3. null result → CliInstaller.ensureInstalled() runs
+//   2. globalStorageRoot/ctxloom-cli/<version>/dist/index.js (returned with exists: true|false)
+//   3. CliInstaller.ensureInstalled() runs whenever the path doesn't exist
 ```
 
 The `extensionRoot` field and `BUNDLED_SUBPATH` constant are removed.
@@ -414,6 +414,8 @@ Replaces v1's "real bundled CLI" smoke. New version exercises the actual downloa
 
 A small fixture tarball is published to GitHub Releases tag `cli-v0.0.0-test` and maintained as part of the repo's CI infrastructure.
 
+**Prerequisite for the smoke test:** the `cli-v0.0.0-test` release tag must be created and populated with a tiny fixture tarball before the smoke test can pass. This is a one-time release-engineering setup step, not part of the implementation; it's tracked as a release-prep task that lands ahead of v1.1 publication.
+
 ### Coverage target
 
 ≥85% on `client/`, `license/`, `shared/`, `settings/` (unchanged from v1). The new `CliInstaller.ts` (~200 lines) gets ~10 unit + 5 integration tests, easily clearing 85%.
@@ -429,7 +431,7 @@ A small fixture tarball is published to GitHub Releases tag `cli-v0.0.0-test` an
 - **License storage** at `~/.config/ctxloom/license.json` is shared across CLI/dashboard/extension and is unaffected.
 - **`ctxloom.cliPath` setting** still works — users with a globally-installed `ctxloom-pro` can continue to use it. `BinaryResolver` checks override first.
 - **CI artifacts**: existing `ctxloom-vscode-vsix` artifact uploads in `build-extension.yml` keep working; they're just much smaller.
-- **Existing `cli-v0.0.0-test` release tag** is created as part of v1.1 release prep, not by the implementation itself.
+- **`ctxloom.cliPath` config schema unchanged** — users with override set continue to work identically. New `ctxloom.cli.installPromptDismissed` config key added in v1.1; safe default `false`.
 
 ## Success criteria
 
