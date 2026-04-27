@@ -21,6 +21,7 @@ export interface CommandDeps {
   globalStorageRoot: string;
   manifestCliVersion: () => string;
   triggerCliInstall: () => void;          // Re-runs startServer() — invokes CliInstaller if needed
+  resetCliFailureCount: () => void;
   restartServer: () => Promise<void>;
 }
 
@@ -92,6 +93,7 @@ export function registerCommands(context: vscode.ExtensionContext, deps: Command
     vscode.commands.registerCommand('ctxloom.installCli', async () => {
       // Reset the dismiss flag so the user can re-prompt.
       await vscode.workspace.getConfiguration('ctxloom.cli').update('installPromptDismissed', false, vscode.ConfigurationTarget.Global);
+      deps.resetCliFailureCount();
       deps.triggerCliInstall();
     }),
 

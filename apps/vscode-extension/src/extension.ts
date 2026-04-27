@@ -391,6 +391,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     globalStorageRoot: context.globalStorageUri.fsPath,
     manifestCliVersion,
     triggerCliInstall: () => { void startServer(context); },
+    resetCliFailureCount: () => { cliInstaller?.resetFailureCount(); },
     restartServer: () => restartServer(context),
   });
 
