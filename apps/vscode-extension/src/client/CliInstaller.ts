@@ -88,6 +88,7 @@ export class CliInstaller {
    * lets the install-flow recover from extract failures without re-downloading.
    */
   async downloadVerified(version: string, signal?: AbortSignal): Promise<string> {
+    this.validateVersion(version);
     const { tarUrl, shaUrl, tarballName } = this.buildUrls(version);
 
     // Sidecar first — small, fails fast on 404.
@@ -125,6 +126,7 @@ export class CliInstaller {
    * catch and surface to user).
    */
   async extractAndCommit(version: string, tarPath: string): Promise<void> {
+    this.validateVersion(version);
     const tmp = path.join(this.opts.globalStorageRoot, 'tmp');
     const staging = path.join(tmp, `staging-${version}`);
     fs.rmSync(staging, { recursive: true, force: true });
@@ -162,9 +164,16 @@ export class CliInstaller {
     this.opts.logger.info(`installed ctxloom-cli ${version}`);
   }
 
+  private validateVersion(version: string): void {
+    if (!/^[\w.\-]+$/.test(version)) {
+      throw new Error(`Invalid version string (must be alphanumeric with . _ -): ${version}`);
+    }
+  }
+
   private failureCount = 0;
 
   async ensureInstalled(version: string, signal?: AbortSignal): Promise<EnsureResult> {
+    this.validateVersion(version);
     if (this.isInstalled(version)) {
       return { kind: 'already-installed', binaryPath: this.installedBinaryPath(version) };
     }
