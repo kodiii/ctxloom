@@ -17,6 +17,8 @@ import { CtxloomQuickFixProvider, applyRefactorCommand } from './providers/Quick
 import { registerCommands } from './commands/index.js';
 import { LicenseGate, type LicenseInfo } from './license/LicenseGate.js';
 import { McpBridge } from './providers/McpBridge.js';
+import { CliInstaller, type InstallPrompt, type ProgressReporter } from './client/CliInstaller.js';
+import { resolveCliPath } from './client/BinaryResolver.js';
 
 let panel: SettingsPanel | null = null;
 let logger: Logger | null = null;
@@ -24,6 +26,8 @@ let serverManager: ServerManager | null = null;
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 let tools: Tools | null = null;
 let statusBar: StatusBarHandle | null = null;
+let cliInstaller: CliInstaller | null = null;
+let extensionContext: vscode.ExtensionContext | null = null;
 
 const SETTINGS_KEYS = [
   'cliPath', 'serverArgs', 'debounceMs', 'cacheTtlSeconds',
@@ -54,7 +58,7 @@ async function handleMessage(msg: WebviewToHost, licenseOps?: { startTrial: (ema
   if (msg.kind === 'showOutput') { logger?.show(); return; }
   if (msg.kind === 'restartServer') {
     if (serverManager) { await serverManager.dispose(); serverManager = null; }
-    await startServer();
+    if (extensionContext) { await startServer(extensionContext); }
     return;
   }
   if (msg.kind === 'startTrial' && licenseOps) {
@@ -73,18 +77,96 @@ async function handleMessage(msg: WebviewToHost, licenseOps?: { startTrial: (ema
   }
 }
 
-async function startServer(): Promise<void> {
+function manifestCliVersion(): string {
+  // Read the manifest field at runtime so tests can patch it.
+  const ext = vscode.extensions.getExtension('ctxloom.ctxloom-vscode');
+  const v = (ext?.packageJSON as { ctxloomCliVersion?: string } | undefined)?.ctxloomCliVersion;
+  if (typeof v !== 'string' || v.trim() === '') {
+    throw new Error('Extension manifest is missing ctxloomCliVersion field');
+  }
+  return v;
+}
+
+function makePrompt(context: vscode.ExtensionContext, cliVersion: string): InstallPrompt {
+  return {
+    alreadyDismissed: () => vscode.workspace.getConfiguration('ctxloom.cli').get<boolean>('installPromptDismissed') ?? false,
+    confirmInstall: async () => {
+      const choice = await vscode.window.showInformationMessage(
+        `ctxloom needs to download its analyzer (~150 MB, version ${cliVersion}). Stored at ${context.globalStorageUri.fsPath}.`,
+        { modal: true },
+        'Install',
+        'Skip for now',
+        "Don't ask again",
+      );
+      if (choice === 'Install') return 'install';
+      if (choice === "Don't ask again") {
+        await vscode.workspace.getConfiguration('ctxloom.cli').update('installPromptDismissed', true, vscode.ConfigurationTarget.Global);
+        return 'dont-ask-again';
+      }
+      return 'skip';
+    },
+  };
+}
+
+function makeProgress(): ProgressReporter {
+  return {
+    withProgress: <T,>(title: string, body: (report: (delta: { message?: string }) => void) => Promise<T>): Promise<T> =>
+      vscode.window.withProgress({ location: vscode.ProgressLocation.Notification, title, cancellable: true }, async (progress) => {
+        return body((delta) => progress.report(delta));
+      }) as Promise<T>,
+  };
+}
+
+async function startServer(context: vscode.ExtensionContext): Promise<void> {
+  // Windows: polite v1.2-coming fallback
+  if (process.platform === 'win32') {
+    logger?.info('Windows support coming in v1.2 — extension activated in inert mode');
+    statusBar?.update({ licenseState: { kind: 'NO_LICENSE' as const }, riskScore: null }); // FIXME(v1.1): added in Task 8 — cliInstallState: 'windows-unsupported'
+    return;
+  }
+
   const folder = vscode.workspace.workspaceFolders?.[0];
   if (!folder) { logger?.warn('no workspace folder — server not started'); return; }
+
+  const cliVersion = manifestCliVersion();
   const cfg = vscode.workspace.getConfiguration('ctxloom');
-  // FIXME(v1.1): wired in Task 7 of plan 2026-04-27-vscode-extension-v1.1-lazy-cli.md
-  const resolved = { exists: false, path: '', source: 'override' as const };
-  if (!resolved.exists) { logger?.error(`ctxloom CLI missing at ${resolved.path}`); return; }
+  const override = cfg.get<string | null>('cliPath') ?? null;
+
+  const resolved = resolveCliPath({ globalStorageRoot: context.globalStorageUri.fsPath, cliVersion, override });
+
+  if (!resolved.exists) {
+    cliInstaller ??= new CliInstaller({
+      globalStorageRoot: context.globalStorageUri.fsPath,
+      fetch: globalThis.fetch,
+      logger: logger!,
+      prompt: makePrompt(context, cliVersion),
+      progress: makeProgress(),
+    });
+    statusBar?.update({ licenseState: { kind: 'NO_LICENSE' as const }, riskScore: null }); // FIXME(v1.1): added in Task 8 — cliInstallState: 'installing'
+    let outcome;
+    try { outcome = await cliInstaller.ensureInstalled(cliVersion); }
+    catch (err) {
+      logger?.error(`CLI install failed: ${String(err)}`);
+      statusBar?.update({ licenseState: { kind: 'NO_LICENSE' as const }, riskScore: null }); // FIXME(v1.1): added in Task 8 — cliInstallState: 'failed'
+      return;
+    }
+    if (outcome.kind === 'skipped' || outcome.kind === 'dismissed' || outcome.kind === 'exhausted') {
+      statusBar?.update({ licenseState: { kind: 'NO_LICENSE' as const }, riskScore: null }); // FIXME(v1.1): added in Task 8 — cliInstallState: 'setup-needed'
+      return;
+    }
+  }
+
+  // Re-resolve now that install (if any) committed.
+  const ready = resolveCliPath({ globalStorageRoot: context.globalStorageUri.fsPath, cliVersion, override });
+  if (!ready.exists) {
+    logger?.error(`ctxloom CLI still missing after install at ${ready.path}`);
+    return;
+  }
 
   try {
     const { spawnServer } = await import('@ctxloom/mcp-client');
     serverManager = new ServerManager({
-      spawner: () => spawnServer({ cwd: folder.uri.fsPath, command: resolved.path }) as never,
+      spawner: () => spawnServer({ cwd: folder.uri.fsPath, command: ready.path }) as never,
       logger: { info: m => logger?.info(m), warn: m => logger?.warn(m), error: m => logger?.error(m) },
     });
     await serverManager.start();
@@ -101,6 +183,7 @@ async function startServer(): Promise<void> {
 }
 
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
+  extensionContext = context;
   logger = createOutputLogger();
   context.subscriptions.push({ dispose: () => logger?.dispose() });
 
@@ -174,7 +257,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   context.subscriptions.push(vscode.window.onDidChangeActiveTextEditor(() => { void updateStatusBar(); }));
   context.subscriptions.push(vscode.workspace.onDidSaveTextDocument(d => { if (vscode.window.activeTextEditor?.document === d) void updateStatusBar(); }));
 
-  await startServer();
+  await startServer(context);
   await updateStatusBar();
 
   const hoverCache = new TtlCache<string, { risk: RiskInfo | null; blast: BlastResult }>({
@@ -268,8 +351,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     mcpBridge?.dispose(); mcpBridge = null;
     if (!vscode.workspace.getConfiguration('ctxloom').get<boolean>('features.mcpBridge')) return;
     const folder = vscode.workspace.workspaceFolders?.[0]; if (!folder) return;
-    // FIXME(v1.1): wired in Task 7 of plan 2026-04-27-vscode-extension-v1.1-lazy-cli.md
-    const cliPath = '';
+    const cliVersion = manifestCliVersion();
+    const override = vscode.workspace.getConfiguration('ctxloom').get<string | null>('cliPath') ?? null;
+    const cliPath = resolveCliPath({ globalStorageRoot: context.globalStorageUri.fsPath, cliVersion, override }).path;
     mcpBridge = new McpBridge({ cliPath, cwd: folder.uri.fsPath, logger: logger! });
     mcpBridge.register();
     context.subscriptions.push({ dispose: () => mcpBridge?.dispose() });
