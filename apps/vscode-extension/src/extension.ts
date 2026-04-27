@@ -117,6 +117,13 @@ function makeProgress(): ProgressReporter {
   };
 }
 
+async function restartServer(context: vscode.ExtensionContext): Promise<void> {
+  if (serverManager) { try { await serverManager.dispose(); } catch { /* ignore */ } serverManager = null; }
+  if (cliInstaller) cliInstaller.resetFailureCount();
+  tools = null;
+  await startServer(context);
+}
+
 async function startServer(context: vscode.ExtensionContext): Promise<void> {
   // Windows: polite v1.2-coming fallback
   if (process.platform === 'win32') {
@@ -369,6 +376,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     openSettings: () => panel?.reveal(),
     refreshHealth: () => healthView?.refresh(),
     refreshBlast: () => { if (vscode.window.activeTextEditor) blastView?.refreshFor(vscode.window.activeTextEditor.document.uri); },
+    globalStorageRoot: context.globalStorageUri.fsPath,
+    manifestCliVersion,
+    triggerCliInstall: () => { void startServer(context); },
+    restartServer: () => restartServer(context),
   });
 
   // Auto-open settings on first run with no license
