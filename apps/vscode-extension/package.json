@@ -2,7 +2,8 @@
   "name": "ctxloom-vscode",
   "displayName": "ctxloom — Code Context for Code Review",
   "description": "AST + git + graph context, in your editor. Hover risk, blast radius, dead code, MCP bridge for AI assistants.",
-  "version": "0.1.0",
+  "version": "1.1.0",
+  "ctxloomCliVersion": "1.0.5",
   "private": true,
   "publisher": "ctxloom",
   "engines": {
@@ -75,6 +76,14 @@
       {
         "command": "ctxloom.restartServer",
         "title": "ctxloom: Restart Server"
+      },
+      {
+        "command": "ctxloom.installCli",
+        "title": "ctxloom: Install CLI"
+      },
+      {
+        "command": "ctxloom.showCliInstallPath",
+        "title": "ctxloom: Show CLI Install Path"
       }
     ],
     "viewsContainers": {
@@ -183,6 +192,11 @@
           "type": "boolean",
           "default": false,
           "description": "Send anonymous usage data. Off by default."
+        },
+        "ctxloom.cli.installPromptDismissed": {
+          "type": "boolean",
+          "default": false,
+          "description": "If true, the extension does not show the 'Install ctxloom analyzer' modal on activation. Reset via the Settings panel or the 'ctxloom: Install CLI' command."
         }
       }
     }
