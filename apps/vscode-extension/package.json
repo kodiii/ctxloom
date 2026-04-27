@@ -197,6 +197,11 @@
           "type": "boolean",
           "default": false,
           "description": "If true, the extension does not show the 'Install ctxloom analyzer' modal on activation. Reset via the Settings panel or the 'ctxloom: Install CLI' command."
+        },
+        "ctxloom.cli.testReleaseTag": {
+          "type": "string",
+          "default": "",
+          "description": "Internal test setting. Overrides the CLI download tag for smoke tests; leave empty in normal use."
         }
       }
     }
