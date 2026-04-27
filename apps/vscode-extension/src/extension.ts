@@ -1,5 +1,4 @@
 import * as vscode from 'vscode';
-import { resolveCliPath } from './client/BinaryResolver.js';
 import { ServerManager } from './client/ServerManager.js';
 import { Tools } from './client/tools.js';
 import type { RiskInfo, BlastResult } from './client/tools.js';
@@ -78,10 +77,8 @@ async function startServer(): Promise<void> {
   const folder = vscode.workspace.workspaceFolders?.[0];
   if (!folder) { logger?.warn('no workspace folder — server not started'); return; }
   const cfg = vscode.workspace.getConfiguration('ctxloom');
-  const override = cfg.get<string | null>('cliPath') ?? null;
-  const extensionRoot = vscode.extensions.getExtension('ctxloom.ctxloom-vscode')?.extensionPath
-    ?? vscode.workspace.workspaceFolders?.[0].uri.fsPath ?? '';
-  const resolved = resolveCliPath({ extensionRoot, override });
+  // FIXME(v1.1): wired in Task 7 of plan 2026-04-27-vscode-extension-v1.1-lazy-cli.md
+  const resolved = { exists: false, path: '', source: 'override' as const };
   if (!resolved.exists) { logger?.error(`ctxloom CLI missing at ${resolved.path}`); return; }
 
   try {
@@ -271,7 +268,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     mcpBridge?.dispose(); mcpBridge = null;
     if (!vscode.workspace.getConfiguration('ctxloom').get<boolean>('features.mcpBridge')) return;
     const folder = vscode.workspace.workspaceFolders?.[0]; if (!folder) return;
-    const cliPath = resolveCliPath({ extensionRoot: context.extensionPath, override: vscode.workspace.getConfiguration('ctxloom').get<string | null>('cliPath') ?? null }).path;
+    // FIXME(v1.1): wired in Task 7 of plan 2026-04-27-vscode-extension-v1.1-lazy-cli.md
+    const cliPath = '';
     mcpBridge = new McpBridge({ cliPath, cwd: folder.uri.fsPath, logger: logger! });
     mcpBridge.register();
     context.subscriptions.push({ dispose: () => mcpBridge?.dispose() });
