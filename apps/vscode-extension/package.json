@@ -202,7 +202,7 @@
     }
   },
   "scripts": {
-    "build": "node scripts/prepare-bundle.mjs && tsc --noEmit && node esbuild.config.mjs",
+    "build": "tsc --noEmit && node esbuild.config.mjs",
     "watch": "node esbuild.config.mjs --watch",
     "package": "npm run build && vsce package --no-dependencies",
     "publish": "vsce publish --no-dependencies && ovsx publish",
