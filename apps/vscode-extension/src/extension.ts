@@ -110,10 +110,15 @@ function makePrompt(context: vscode.ExtensionContext, cliVersion: string): Insta
 
 function makeProgress(): ProgressReporter {
   return {
-    withProgress: <T,>(title: string, body: (report: (delta: { message?: string }) => void) => Promise<T>): Promise<T> =>
-      vscode.window.withProgress({ location: vscode.ProgressLocation.Notification, title, cancellable: true }, async (progress) => {
-        return body((delta) => progress.report(delta));
-      }) as Promise<T>,
+    withProgress: <T,>(title: string, body: (report: (delta: { increment?: number; message?: string }) => void, signal: AbortSignal) => Promise<T>): Promise<T> =>
+      vscode.window.withProgress(
+        { location: vscode.ProgressLocation.Notification, title, cancellable: true },
+        async (progress, token) => {
+          const aborter = new AbortController();
+          token.onCancellationRequested(() => aborter.abort());
+          return body((delta) => progress.report(delta), aborter.signal);
+        },
+      ) as Promise<T>,
   };
 }
 
