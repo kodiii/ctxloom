@@ -1,6 +1,7 @@
 import path from 'node:path';
 import fs from 'node:fs';
 import crypto from 'node:crypto';
+import { execSync } from 'node:child_process';
 import type { Logger } from '../shared/logger.js';
 
 /** Asks the user whether to proceed with a download. */
@@ -108,5 +109,49 @@ export class CliInstaller {
     fs.writeFileSync(tarPath, buf);
     this.opts.logger.info(`downloaded + verified ${tarballName} (${buf.length} bytes)`);
     return tarPath;
+  }
+
+  /**
+   * Extract `tarPath` into `${globalStorageRoot}/tmp/staging-${version}/`,
+   * atomic-rename to the final versioned directory, write `INSTALLED_VERSION`,
+   * delete tarball + previous version. Throws on any failure (caller must
+   * catch and surface to user).
+   */
+  async extractAndCommit(version: string, tarPath: string): Promise<void> {
+    const tmp = path.join(this.opts.globalStorageRoot, 'tmp');
+    const staging = path.join(tmp, `staging-${version}`);
+    fs.rmSync(staging, { recursive: true, force: true });
+    fs.mkdirSync(staging, { recursive: true });
+
+    try {
+      execSync(`tar -xzf "${tarPath}" -C "${staging}"`, { stdio: 'pipe' });
+    } catch (err) {
+      fs.rmSync(staging, { recursive: true, force: true });
+      throw new Error(`Extraction failed: ${err instanceof Error ? err.message : String(err)}`);
+    }
+
+    // Read previous version (if any) before the rename.
+    const versionFile = path.join(this.opts.globalStorageRoot, 'INSTALLED_VERSION');
+    let previousVersion: string | null = null;
+    if (fs.existsSync(versionFile)) {
+      previousVersion = fs.readFileSync(versionFile, 'utf-8').trim();
+    }
+
+    const finalDir = path.join(this.opts.globalStorageRoot, 'ctxloom-cli', version);
+    fs.mkdirSync(path.dirname(finalDir), { recursive: true });
+    fs.rmSync(finalDir, { recursive: true, force: true });
+    fs.renameSync(staging, finalDir);
+
+    // Commit: atomic write of INSTALLED_VERSION via tmp + rename.
+    const versionTmp = `${versionFile}.tmp`;
+    fs.writeFileSync(versionTmp, version);
+    fs.renameSync(versionTmp, versionFile);
+
+    // Best-effort cleanup of tarball + previous version directory.
+    fs.rmSync(tarPath, { force: true });
+    if (previousVersion !== null && previousVersion !== version) {
+      fs.rmSync(path.join(this.opts.globalStorageRoot, 'ctxloom-cli', previousVersion), { recursive: true, force: true });
+    }
+    this.opts.logger.info(`installed ctxloom-cli ${version}`);
   }
 }

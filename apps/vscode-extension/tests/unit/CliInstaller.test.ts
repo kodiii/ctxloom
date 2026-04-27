@@ -140,3 +140,75 @@ describe('CliInstaller — download + verify', () => {
     expect(calls).toContain('https://github.com/kodiii/ctxloom/releases/download/cli-v1.0.5/ctxloom-cli-1.0.5-darwin-arm64.tar.gz.sha256');
   });
 });
+
+import { execSync } from 'node:child_process';
+
+function packTarball(srcDir: string, dstTar: string): void {
+  execSync(`tar -czf "${dstTar}" -C "${srcDir}" .`, { stdio: 'pipe' });
+}
+
+describe('CliInstaller — extract + commit', () => {
+  let storage: string;
+  beforeEach(() => { storage = makeStorage(); });
+  afterEach(() => { fs.rmSync(storage, { recursive: true, force: true }); });
+
+  it('extracts tarball, atomic-renames, writes INSTALLED_VERSION', async () => {
+    // Build a real fixture tarball with a `dist/index.js` entry
+    const srcDir = fs.mkdtempSync(path.join(os.tmpdir(), 'src-'));
+    fs.mkdirSync(path.join(srcDir, 'dist'), { recursive: true });
+    fs.writeFileSync(path.join(srcDir, 'dist/index.js'), '#!/usr/bin/env node\nconsole.log("hi")\n');
+    fs.writeFileSync(path.join(srcDir, 'package.json'), JSON.stringify({ name: 'ctxloom-pro', version: '1.0.5' }));
+    const tmp = path.join(storage, 'tmp');
+    fs.mkdirSync(tmp, { recursive: true });
+    const tarPath = path.join(tmp, 'fixture.tar.gz');
+    packTarball(srcDir, tarPath);
+    fs.rmSync(srcDir, { recursive: true });
+
+    const installer = new CliInstaller({ globalStorageRoot: storage, fetch: vi.fn(), logger: quietLogger(), prompt: nullPrompt(), progress: nullProgress() });
+    await installer.extractAndCommit('1.0.5', tarPath);
+
+    expect(fs.existsSync(installer.installedBinaryPath('1.0.5'))).toBe(true);
+    expect(fs.readFileSync(path.join(storage, 'INSTALLED_VERSION'), 'utf-8').trim()).toBe('1.0.5');
+    // Tarball cleaned up
+    expect(fs.existsSync(tarPath)).toBe(false);
+  });
+
+  it('deletes the previous version after a successful install of a newer one', async () => {
+    // Pre-existing 1.0.4 install
+    const oldDir = path.join(storage, 'ctxloom-cli', '1.0.4');
+    fs.mkdirSync(path.join(oldDir, 'dist'), { recursive: true });
+    fs.writeFileSync(path.join(oldDir, 'dist/index.js'), 'old');
+    fs.writeFileSync(path.join(storage, 'INSTALLED_VERSION'), '1.0.4');
+
+    // Build a fixture for 1.0.5
+    const srcDir = fs.mkdtempSync(path.join(os.tmpdir(), 'src-'));
+    fs.mkdirSync(path.join(srcDir, 'dist'), { recursive: true });
+    fs.writeFileSync(path.join(srcDir, 'dist/index.js'), 'new');
+    const tmp = path.join(storage, 'tmp');
+    fs.mkdirSync(tmp, { recursive: true });
+    const tarPath = path.join(tmp, 'fixture.tar.gz');
+    packTarball(srcDir, tarPath);
+    fs.rmSync(srcDir, { recursive: true });
+
+    const installer = new CliInstaller({ globalStorageRoot: storage, fetch: vi.fn(), logger: quietLogger(), prompt: nullPrompt(), progress: nullProgress() });
+    await installer.extractAndCommit('1.0.5', tarPath);
+
+    expect(fs.existsSync(installer.installedBinaryPath('1.0.5'))).toBe(true);
+    expect(fs.existsSync(oldDir)).toBe(false);
+    expect(fs.readFileSync(path.join(storage, 'INSTALLED_VERSION'), 'utf-8').trim()).toBe('1.0.5');
+  });
+
+  it('cleans up staging dir if extraction throws', async () => {
+    const tmp = path.join(storage, 'tmp');
+    fs.mkdirSync(tmp, { recursive: true });
+    const corrupt = path.join(tmp, 'corrupt.tar.gz');
+    fs.writeFileSync(corrupt, 'not a real tarball');
+
+    const installer = new CliInstaller({ globalStorageRoot: storage, fetch: vi.fn(), logger: quietLogger(), prompt: nullPrompt(), progress: nullProgress() });
+    await expect(installer.extractAndCommit('1.0.5', corrupt)).rejects.toThrow();
+
+    // No stale staging dirs left behind
+    const remaining = fs.existsSync(tmp) ? fs.readdirSync(tmp) : [];
+    expect(remaining.filter(f => f.startsWith('staging-'))).toEqual([]);
+  });
+});
