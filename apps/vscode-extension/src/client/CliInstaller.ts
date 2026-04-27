@@ -1,5 +1,6 @@
 import path from 'node:path';
 import fs from 'node:fs';
+import crypto from 'node:crypto';
 import type { Logger } from '../shared/logger.js';
 
 /** Asks the user whether to proceed with a download. */
@@ -51,5 +52,61 @@ export class CliInstaller {
         fs.rmSync(path.join(tmp, entry), { recursive: true, force: true });
       }
     }
+  }
+
+  private resolvePlatform(): Platform {
+    if (this.opts.platform) return this.opts.platform;
+    const p = process.platform;
+    const a = process.arch;
+    if (p === 'darwin' && a === 'arm64') return 'darwin-arm64';
+    if (p === 'darwin' && a === 'x64') return 'darwin-x64';
+    if (p === 'linux' && a === 'x64') return 'linux-x64';
+    if (p === 'linux' && a === 'arm64') return 'linux-arm64';
+    throw new Error(`Unsupported platform: ${p}/${a}`);
+  }
+
+  private buildUrls(version: string): { tarUrl: string; shaUrl: string; tarballName: string } {
+    const platform = this.resolvePlatform();
+    const base = this.opts.releaseBaseUrl ?? RELEASE_BASE_URL;
+    const tarballName = `ctxloom-cli-${version}-${platform}.tar.gz`;
+    const tarUrl = `${base}/cli-v${version}/${tarballName}`;
+    return { tarUrl, shaUrl: `${tarUrl}.sha256`, tarballName };
+  }
+
+  /**
+   * Download the tarball + sidecar, verify SHA-256, return the path to the
+   * downloaded tarball under `${globalStorageRoot}/tmp/`. The caller is
+   * responsible for extraction (`extractAndCommit`) — keeping these split
+   * lets the install-flow recover from extract failures without re-downloading.
+   */
+  async downloadVerified(version: string, signal?: AbortSignal): Promise<string> {
+    const { tarUrl, shaUrl, tarballName } = this.buildUrls(version);
+
+    // Sidecar first — small, fails fast on 404.
+    const shaRes = await this.opts.fetch(shaUrl, { signal });
+    if (shaRes.status === 404) throw new Error(`Tarball not found: 404 at ${shaUrl}`);
+    if (!shaRes.ok) throw new Error(`Sidecar download failed: HTTP ${shaRes.status}`);
+    const shaText = await shaRes.text();
+    const expectedSha = (shaText.split(/\s+/)[0] ?? '').trim();
+    if (!/^[0-9a-f]{64}$/.test(expectedSha)) {
+      throw new Error(`Malformed sha256 sidecar at ${shaUrl}: ${shaText.slice(0, 80)}`);
+    }
+
+    const tarRes = await this.opts.fetch(tarUrl, { signal });
+    if (tarRes.status === 404) throw new Error(`Tarball not found: 404 at ${tarUrl}`);
+    if (!tarRes.ok) throw new Error(`Tarball download failed: HTTP ${tarRes.status}`);
+    const buf = Buffer.from(await tarRes.arrayBuffer());
+
+    const actualSha = crypto.createHash('sha256').update(buf).digest('hex');
+    if (actualSha !== expectedSha) {
+      throw new Error(`Checksum mismatch: expected ${expectedSha.slice(0, 12)}…, got ${actualSha.slice(0, 12)}…`);
+    }
+
+    const tmp = path.join(this.opts.globalStorageRoot, 'tmp');
+    fs.mkdirSync(tmp, { recursive: true });
+    const tarPath = path.join(tmp, tarballName);
+    fs.writeFileSync(tarPath, buf);
+    this.opts.logger.info(`downloaded + verified ${tarballName} (${buf.length} bytes)`);
+    return tarPath;
   }
 }
