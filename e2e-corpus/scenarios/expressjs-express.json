@@ -1,0 +1,44 @@
+{
+  "repo": "expressjs/express",
+  "description": "Canonical Node.js web framework. Tests TS/JS parsing, semantic search, call graph, and file retrieval on a small but real codebase.",
+  "graph": {
+    "minNodes": 200,
+    "minEdges": 200,
+    "maxParseErrors": 5
+  },
+  "queries": [
+    {
+      "tool": "ctx_search",
+      "name": "semantic-search-routing",
+      "args": { "query": "express routing layer matching", "k": 10 },
+      "assert": {
+        "minResults": 3,
+        "anyHitMatches": ["lib/router", "lib/route"]
+      }
+    },
+    {
+      "tool": "ctx_search",
+      "name": "semantic-search-middleware",
+      "args": { "query": "middleware chain next function", "k": 10 },
+      "assert": {
+        "minResults": 3
+      }
+    },
+    {
+      "tool": "ctx_get_definition",
+      "name": "lookup-router-layer",
+      "args": { "symbol": "Layer" },
+      "assert": {
+        "anyHitMatches": ["lib/router/layer.js"]
+      }
+    },
+    {
+      "tool": "ctx_get_file",
+      "name": "fetch-package-json",
+      "args": { "path": "package.json" },
+      "assert": {
+        "contentIncludes": ["\"name\": \"express\""]
+      }
+    }
+  ]
+}

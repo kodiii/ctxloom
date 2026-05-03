@@ -31,7 +31,8 @@
     "test": "vitest run",
     "lint": "tsc --noEmit",
     "postinstall": "node dist/setup/postinstall.js || true",
-    "bench:repos": "tsx benchmarks/benchmark-public-repos.ts"
+    "bench:repos": "tsx benchmarks/benchmark-public-repos.ts",
+    "e2e:corpus": "node e2e-corpus/run.mjs"
   },
   "keywords": [
     "mcp",
