@@ -1,0 +1,48 @@
+{
+  "$schema": "./repos.schema.json",
+  "description": "Curated public-repo corpus for ctxloom realistic-test E2E. Each entry pairs a repo with a frozen commit (deterministic) and a scenario file with canned queries + expected assertions.",
+  "repos": [
+    {
+      "name": "expressjs/express",
+      "url": "https://github.com/expressjs/express.git",
+      "commit": "5.0.1",
+      "lang": "js",
+      "scale": "small",
+      "scenario": "scenarios/expressjs-express.json"
+    },
+    {
+      "name": "pallets/flask",
+      "url": "https://github.com/pallets/flask.git",
+      "commit": "3.1.0",
+      "lang": "py",
+      "scale": "small",
+      "scenario": "scenarios/pallets-flask.json"
+    },
+    {
+      "name": "gin-gonic/gin",
+      "url": "https://github.com/gin-gonic/gin.git",
+      "commit": "v1.10.0",
+      "lang": "go",
+      "scale": "small",
+      "scenario": "scenarios/gin-gonic-gin.json"
+    },
+    {
+      "name": "tokio-rs/axum",
+      "url": "https://github.com/tokio-rs/axum.git",
+      "commit": "axum-v0.7.9",
+      "lang": "rs",
+      "scale": "medium",
+      "scenario": "scenarios/tokio-rs-axum.json"
+    },
+    {
+      "name": "vercel/next.js",
+      "url": "https://github.com/vercel/next.js.git",
+      "commit": "v15.0.3",
+      "lang": "ts",
+      "scale": "large",
+      "scenario": "scenarios/vercel-nextjs.json",
+      "skipOnPlatforms": [],
+      "notes": "Large repo — expect 3-5min index time; CI matrix leg should set timeout-minutes: 20"
+    }
+  ]
+}

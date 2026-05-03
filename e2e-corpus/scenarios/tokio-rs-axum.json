@@ -1,0 +1,42 @@
+{
+  "repo": "tokio-rs/axum",
+  "description": "Async Rust web framework. Tests Rust parser on async-heavy code with deep trait usage.",
+  "graph": {
+    "minNodes": 200,
+    "minEdges": 150,
+    "maxParseErrors": 10
+  },
+  "queries": [
+    {
+      "tool": "ctx_search",
+      "name": "semantic-search-handler",
+      "args": { "query": "handler trait IntoResponse extract", "k": 10 },
+      "assert": {
+        "minResults": 3,
+        "anyHitMatches": ["axum/src/handler", "axum/src/extract", "axum/src/response"]
+      }
+    },
+    {
+      "tool": "ctx_search",
+      "name": "semantic-search-router",
+      "args": { "query": "router route layer middleware", "k": 10 },
+      "assert": { "minResults": 3 }
+    },
+    {
+      "tool": "ctx_get_definition",
+      "name": "lookup-router",
+      "args": { "symbol": "Router" },
+      "assert": {
+        "anyHitMatches": ["axum/src/router"]
+      }
+    },
+    {
+      "tool": "ctx_get_file",
+      "name": "fetch-cargo-toml",
+      "args": { "path": "axum/Cargo.toml" },
+      "assert": {
+        "contentIncludes": ["name = \"axum\""]
+      }
+    }
+  ]
+}
