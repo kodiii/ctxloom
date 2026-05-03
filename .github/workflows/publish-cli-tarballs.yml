@@ -29,6 +29,11 @@ jobs:
 
   release:
     needs: build
+    # Best-effort: publish whatever DID build, even if a platform leg failed
+    # or stalled in queue. Without this, a single missing runner (notably
+    # macos-13 for darwin-x64) blocks the entire release indefinitely.
+    # We still require ≥1 successful build so we never ship an empty release.
+    if: ${{ always() && !cancelled() && contains(needs.build.result, 'success') }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -37,9 +42,25 @@ jobs:
           path: dist-cli
           pattern: cli-*
           merge-multiple: true
-      - run: ls -lh dist-cli/
+      - name: List artifacts
+        run: ls -lh dist-cli/
+      - name: Verify at least one tarball present
+        run: |
+          count=$(ls dist-cli/ctxloom-cli-*.tar.gz 2>/dev/null | wc -l)
+          if [ "$count" -eq 0 ]; then
+            echo "::error::No tarballs to publish — every build leg failed."
+            exit 1
+          fi
+          echo "Publishing $count platform tarball(s)."
+      - name: Note missing platforms
+        run: |
+          for plat in darwin-arm64 darwin-x64 linux-x64 linux-arm64; do
+            if ! ls dist-cli/ctxloom-cli-*-${plat}.tar.gz >/dev/null 2>&1; then
+              echo "::warning::Platform ${plat} missing from this release (build leg failed or stalled)."
+            fi
+          done
       - uses: softprops/action-gh-release@v2
         with:
           files: dist-cli/ctxloom-cli-*.tar.gz*
           tag_name: ${{ github.ref_name }}
-          fail_on_unmatched_files: true
+          fail_on_unmatched_files: false
