@@ -5,3 +5,5 @@ node_modules/
 .vscode-test/
 coverage/
 dist-cli/
+tests/fixtures/fake-cli.tar.gz
+tests/fixtures/fake-cli.tar.gz.sha256
