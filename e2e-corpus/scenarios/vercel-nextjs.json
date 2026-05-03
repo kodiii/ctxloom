@@ -1,0 +1,39 @@
+{
+  "repo": "vercel/next.js",
+  "description": "Large polyglot monorepo (~10K+ files). Tests scale: index time, graph size, query latency on a real production-grade codebase.",
+  "graph": {
+    "minNodes": 5000,
+    "minEdges": 5000,
+    "maxParseErrors": 100
+  },
+  "indexTimeBudgetMs": 600000,
+  "queries": [
+    {
+      "tool": "ctx_search",
+      "name": "semantic-search-app-router",
+      "args": { "query": "app router server components rendering", "k": 10 },
+      "assert": {
+        "minResults": 5,
+        "anyHitMatches": ["packages/next/src/server/app-render", "packages/next/src/server"]
+      }
+    },
+    {
+      "tool": "ctx_search",
+      "name": "semantic-search-image-component",
+      "args": { "query": "Image component optimization srcset loader", "k": 10 },
+      "assert": {
+        "minResults": 5,
+        "anyHitMatches": ["packages/next/src/client/image", "packages/next/src/shared/lib/image"]
+      },
+      "queryLatencyBudgetMs": 5000
+    },
+    {
+      "tool": "ctx_get_file",
+      "name": "fetch-next-package-json",
+      "args": { "path": "packages/next/package.json" },
+      "assert": {
+        "contentIncludes": ["\"name\": \"next\""]
+      }
+    }
+  ]
+}
