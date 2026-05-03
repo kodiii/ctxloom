@@ -63,7 +63,7 @@ All features below are **already inside `ctxloom`** — a license key unlocks th
 
 ## 4. Pricing Tiers
 
-### Pro — $9.90 / month · $99 / year
+### Pro — €9.90 / month · €99 / year
 _1 seat — save 2 months with annual_
 
 - PR bot with risk-scored reviews on every PR
@@ -76,8 +76,8 @@ _1 seat — save 2 months with annual_
 
 ---
 
-### Team — $19.90 / month · $199 / year
-_Up to 3 seats — save 2 months with annual_
+### Team — €29.90 / month · €299 / year
+_Up to 5 seats — save 2 months with annual_
 
 - Everything in Pro
 - Cross-repository analysis
@@ -216,23 +216,23 @@ Companies whose legal team blocks AGPL, or who need to embed the core in a close
 
 | Tier | Monthly | Annual | Our cost | Gross margin |
 |------|---------|--------|----------|-------------|
-| Pro | $9.90/seat | $99/seat | ~$0.30 | ~97% |
-| Team | $19.90/mo | $199/mo | ~$0.30 | ~98% |
-| Enterprise | Custom | Custom | ~$0 | ~100% |
+| Pro | €9.90/seat | €99/seat | ~€0.30 | ~97% |
+| Team | €29.90/mo | €299/mo | ~€0.30 | ~99% |
+| Enterprise | Custom | Custom | ~€0 | ~100% |
 
 ---
 
 ## 10. MRR Model (2% free → paid conversion)
 
-_Assumes 60% buy annual (counted as MRR equivalent), 40% monthly. Team = flat $19.90/mo per account up to 3 seats._
+_Assumes 60% buy annual (counted as MRR equivalent), 40% monthly. Team = flat €29.90/mo per account up to 5 seats._
 
-| Free MAU | Paid Users | Pro (80%) | Team (20%) | Est. MRR | vs. Break-even ($70) |
+| Free MAU | Paid Users | Pro (80%) | Team (20%) | Est. MRR | vs. Break-even (€70) |
 |----------|-----------|-----------|------------|---------|----------------------|
-| 200 | 4 | 3 × $9.90 | 1 × $19.90 | ~$50 | -$20 |
-| 400 | 8 | 6 × $9.90 | 2 × $19.90 | ~$99 | **+$29 ✓** |
-| 1,000 | 20 | 16 × $9.90 | 4 × $19.90 | ~$238 | +$168 |
-| 5,000 | 100 | 80 × $9.90 | 20 × $19.90 | ~$1,190 | +$1,120 |
-| 20,000 | 400 | 320 × $9.90 | 80 × $19.90 | ~$4,752 | +$4,682 |
+| 200 | 4 | 3 × €9.90 | 1 × €29.90 | ~€60 | -€10 |
+| 400 | 8 | 6 × €9.90 | 2 × €29.90 | ~€119 | **+€49 ✓** |
+| 1,000 | 20 | 16 × €9.90 | 4 × €29.90 | ~€278 | +€208 |
+| 5,000 | 100 | 80 × €9.90 | 20 × €29.90 | ~€1,390 | +€1,320 |
+| 20,000 | 400 | 320 × €9.90 | 80 × €29.90 | ~€5,560 | +€5,490 |
 
 > **First milestone: 400 free MAU.** Break-even at ~8 paying users — very achievable.
 
