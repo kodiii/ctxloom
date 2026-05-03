@@ -1,0 +1,42 @@
+{
+  "repo": "pallets/flask",
+  "description": "Canonical Python web framework. Tests Python parser, semantic search, definition lookup.",
+  "graph": {
+    "minNodes": 150,
+    "minEdges": 100,
+    "maxParseErrors": 5
+  },
+  "queries": [
+    {
+      "tool": "ctx_search",
+      "name": "semantic-search-blueprint",
+      "args": { "query": "blueprint route registration url_for", "k": 10 },
+      "assert": {
+        "minResults": 3,
+        "anyHitMatches": ["src/flask/blueprints.py", "src/flask/scaffold.py"]
+      }
+    },
+    {
+      "tool": "ctx_search",
+      "name": "semantic-search-request",
+      "args": { "query": "request context teardown", "k": 10 },
+      "assert": { "minResults": 3 }
+    },
+    {
+      "tool": "ctx_get_definition",
+      "name": "lookup-flask-class",
+      "args": { "symbol": "Flask" },
+      "assert": {
+        "anyHitMatches": ["src/flask/app.py"]
+      }
+    },
+    {
+      "tool": "ctx_get_file",
+      "name": "fetch-pyproject",
+      "args": { "path": "pyproject.toml" },
+      "assert": {
+        "contentIncludes": ["[project]", "name = \"flask\""]
+      }
+    }
+  ]
+}

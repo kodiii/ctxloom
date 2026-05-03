@@ -1,0 +1,42 @@
+{
+  "repo": "gin-gonic/gin",
+  "description": "Canonical Go web framework. Tests Go parser, semantic search, definition lookup.",
+  "graph": {
+    "minNodes": 100,
+    "minEdges": 50,
+    "maxParseErrors": 5
+  },
+  "queries": [
+    {
+      "tool": "ctx_search",
+      "name": "semantic-search-router",
+      "args": { "query": "router group middleware handler", "k": 10 },
+      "assert": {
+        "minResults": 3,
+        "anyHitMatches": ["routergroup.go", "gin.go"]
+      }
+    },
+    {
+      "tool": "ctx_search",
+      "name": "semantic-search-context",
+      "args": { "query": "context bind json request", "k": 10 },
+      "assert": { "minResults": 3 }
+    },
+    {
+      "tool": "ctx_get_definition",
+      "name": "lookup-engine",
+      "args": { "symbol": "Engine" },
+      "assert": {
+        "anyHitMatches": ["gin.go"]
+      }
+    },
+    {
+      "tool": "ctx_get_file",
+      "name": "fetch-go-mod",
+      "args": { "path": "go.mod" },
+      "assert": {
+        "contentIncludes": ["module github.com/gin-gonic/gin"]
+      }
+    }
+  ]
+}
