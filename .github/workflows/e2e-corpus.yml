@@ -1,0 +1,56 @@
+name: e2e-corpus
+# Realistic-test E2E against curated public repos at frozen commits.
+# See e2e-corpus/README.md for the strategy.
+
+on:
+  schedule:
+    # Nightly at 06:00 UTC (~02:00 ET / ~22:00 PT). Avoids the busy CI window.
+    - cron: '0 6 * * *'
+  workflow_dispatch:
+    inputs:
+      repo:
+        description: 'Single repo to run (e.g. expressjs/express). Empty = all.'
+        required: false
+        default: ''
+  pull_request:
+    paths:
+      - 'e2e-corpus/**'
+      - '.github/workflows/e2e-corpus.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  e2e:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { repo: 'expressjs/express', timeout: 10 }
+          - { repo: 'pallets/flask',     timeout: 10 }
+          - { repo: 'gin-gonic/gin',     timeout: 10 }
+          - { repo: 'tokio-rs/axum',     timeout: 15 }
+          - { repo: 'vercel/next.js',    timeout: 25 }
+    runs-on: ubuntu-22.04
+    timeout-minutes: ${{ matrix.timeout }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '20', cache: 'npm' }
+      - run: npm ci
+      - run: npm run build
+      - name: Run corpus E2E
+        env:
+          CTXLOOM_E2E_WORK_DIR: ${{ runner.temp }}/ctxloom-e2e-corpus
+        run: |
+          if [ -n "${{ inputs.repo }}" ] && [ "${{ inputs.repo }}" != "${{ matrix.repo }}" ]; then
+            echo "Skipping ${{ matrix.repo }} (workflow_dispatch filter: ${{ inputs.repo }})"
+            exit 0
+          fi
+          node e2e-corpus/run.mjs --repo='${{ matrix.repo }}' --json | tee report.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: e2e-corpus-${{ matrix.repo == 'expressjs/express' && 'expressjs-express' || matrix.repo == 'pallets/flask' && 'pallets-flask' || matrix.repo == 'gin-gonic/gin' && 'gin-gonic-gin' || matrix.repo == 'tokio-rs/axum' && 'tokio-rs-axum' || 'vercel-nextjs' }}
+          path: report.json
+          if-no-files-found: warn
