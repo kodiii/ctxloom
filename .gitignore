@@ -5,7 +5,16 @@ dist/
 .contextmesh/
 .ctxloom/
 .superpowers/
+.code-review-graph/
 coverage/
+
+# Internal docs (not for public source-available repo)
+docs/superpowers/
+docs/monetization.md
+docs/competitive-analysis.md
+docs/future_features.md
+docs/future_features_vscode.md
+docs/last_added_features.md
 .DS_Store
 *.log
 .env

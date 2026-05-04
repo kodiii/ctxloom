@@ -23,7 +23,7 @@ AST + git + graph context, in your editor. Hover risk, blast radius, dead code, 
 
 Works in VS Code, Cursor, Windsurf, VSCodium, and any other VS Code fork.
 
-**Marketplace publish is deferred to v1.1** to keep v1 ship-fast for the 2–3-week internal/early-access phase post-launch. The bundled CLI (~400 MB — tree-sitter grammars, LanceDB native libs, ML-embedding deps) exceeds the Marketplace's 50 MB VSIX limit; v1.1 will lazy-download these on first activation. See `docs/future_features_vscode.md` for the plan.
+**Marketplace publish is shipped in v1.1** via lazy CLI download — the extension VSIX is small, and the CLI (~400 MB of tree-sitter grammars, LanceDB native libs, and ML-embedding deps) is fetched on first activation rather than bundled in the VSIX.
 
 ## License
 
