@@ -91,6 +91,23 @@ try {
 
 const args = process.argv.slice(2);
 
+// Build-time version constant (inlined by tsup `define` from package.json).
+// Falls back to 'dev' when running unbuilt source via `tsx` (npm run dev).
+declare const __CTXLOOM_VERSION__: string | undefined;
+const ctxloomVersion: string =
+  typeof __CTXLOOM_VERSION__ === 'string' && __CTXLOOM_VERSION__.length > 0
+    ? __CTXLOOM_VERSION__
+    : 'dev';
+
+// `--version` / `-v` must short-circuit BEFORE we touch any module that
+// kicks off the MCP server, file watchers, or indexer — otherwise the
+// process spawns watchers and floods stderr with EMFILE noise before
+// printing the version. Handle it as the very first thing.
+if (args.includes('--version') || args.includes('-v')) {
+  process.stdout.write(`ctxloom ${ctxloomVersion}\n`);
+  process.exit(0);
+}
+
 /**
  * Resolved command: the first positional argument (not a flag).
  * Special-cased: '--help' and '-h' are mapped to '--help' so the switch
@@ -827,6 +844,7 @@ Usage:
   ctxloom rules check --json       Output violations as JSON
   ctxloom rules check --use-snapshot  Fast mode: use existing graph snapshot
   ctxloom rules check --limit=N   Show first N violations (default 50, 0=unlimited)
+  ctxloom --version            Print installed version and exit
   ctxloom --help               Show this help
 
 Flags (for MCP server mode):
