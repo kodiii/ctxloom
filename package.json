@@ -21,11 +21,16 @@
   "files": [
     "dist/**/*",
     "!dist/**/*.map",
+    "apps/dashboard/dist/**/*",
+    "!apps/dashboard/dist/**/*.map",
+    "apps/dashboard/package.json",
     "LICENSE"
   ],
   "scripts": {
-    "build": "tsup",
-    "prepublishOnly": "tsup",
+    "build": "tsup && npm run -w @ctxloom/dashboard build",
+    "build:cli": "tsup",
+    "build:dashboard": "npm run -w @ctxloom/dashboard build",
+    "prepublishOnly": "tsup && npm run -w @ctxloom/dashboard build",
     "start": "node dist/index.js",
     "dev": "tsx src/index.ts",
     "test": "vitest run",
