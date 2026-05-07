@@ -106,41 +106,51 @@ export async function indexDirectory(
 
   const CONCURRENCY = 4;
 
-  // Process files in fixed-size batches for controlled parallelism
-  for (let i = 0; i < files.length; i += CONCURRENCY) {
-    const batch = files.slice(i, i + CONCURRENCY);
+  // Wrap the actual indexing in try/finally so we always release LanceDB
+  // resources before returning — see store.close() for the FD-exhaustion
+  // rationale. Without this, every WASM/ONNX loader called after indexing
+  // (e.g. ASTParser.init() in the dependency-graph phase) can hit ENFILE
+  // when running under macOS's 256-FD default in processes spawned by
+  // Claude / VS Code.
+  try {
+    // Process files in fixed-size batches for controlled parallelism
+    for (let i = 0; i < files.length; i += CONCURRENCY) {
+      const batch = files.slice(i, i + CONCURRENCY);
 
-    const results = await Promise.allSettled(
-      batch.map(async (filePath) => {
-        // H-3: Guard against enormous files before reading into memory
-        const MAX_INDEX_SIZE = 5 * 1024 * 1024; // 5 MB
-        const stat = fs.statSync(filePath);
-        if (stat.size > MAX_INDEX_SIZE) {
-          logger.warn('Skipping oversized file', { file: filePath, size: stat.size });
-          return null;
+      const results = await Promise.allSettled(
+        batch.map(async (filePath) => {
+          // H-3: Guard against enormous files before reading into memory
+          const MAX_INDEX_SIZE = 5 * 1024 * 1024; // 5 MB
+          const stat = fs.statSync(filePath);
+          if (stat.size > MAX_INDEX_SIZE) {
+            logger.warn('Skipping oversized file', { file: filePath, size: stat.size });
+            return null;
+          }
+          const content = fs.readFileSync(filePath, 'utf-8');
+          if (!content.trim()) return null;
+
+          const relPath = path.relative(rootDir, filePath);
+          const embedding = await generateEmbedding(content);
+          await store.upsert(relPath, embedding, content);
+          return relPath;
+        }),
+      );
+
+      for (const result of results) {
+        processed++;
+        if (result.status === 'fulfilled') {
+          if (result.value !== null) {
+            indexed++;
+            onProgress?.(result.value, processed, total);
+          }
+        } else {
+          errors++;
+          logger.error('Failed to index file', { detail: result.reason instanceof Error ? result.reason.message : String(result.reason) });
         }
-        const content = fs.readFileSync(filePath, 'utf-8');
-        if (!content.trim()) return null;
-
-        const relPath = path.relative(rootDir, filePath);
-        const embedding = await generateEmbedding(content);
-        await store.upsert(relPath, embedding, content);
-        return relPath;
-      }),
-    );
-
-    for (const result of results) {
-      processed++;
-      if (result.status === 'fulfilled') {
-        if (result.value !== null) {
-          indexed++;
-          onProgress?.(result.value, processed, total);
-        }
-      } else {
-        errors++;
-        logger.error('Failed to index file', { detail: result.reason instanceof Error ? result.reason.message : String(result.reason) });
       }
     }
+  } finally {
+    await store.close();
   }
 
   return { indexed, errors };
