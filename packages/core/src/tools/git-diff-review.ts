@@ -9,14 +9,19 @@
  * Designed to give an AI reviewer everything it needs in a single call.
  */
 import { z } from 'zod';
-import { exec } from 'node:child_process';
+import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import type { ToolRegistry } from './registry.js';
 import type { ServerContext } from './context.js';
 import { computeBlastRadius } from './blast-radius.js';
 import { logger } from '../utils/logger.js';
 
-const execAsync = promisify(exec);
+// SECURITY: Use execFile (not exec / shell) so user-controlled file paths
+// are passed as argv elements, not interpolated into a shell string. The
+// previous exec(`git diff HEAD~1 -- "${file}"`) was an MCP-AI-controllable
+// shell injection: an adversarial / prompt-injected AI could pass
+// `; rm -rf ~ #` as a `changed_files` element and achieve RCE.
+const execFileAsync = promisify(execFile);
 
 const Schema = z.object({
   changed_files: z.array(z.string()).optional().describe(
@@ -37,8 +42,16 @@ function escapeXML(text: string): string {
 }
 
 async function getFileDiff(projectRoot: string, file: string): Promise<string> {
+  // Defence-in-depth: PathValidator already runs upstream, but reject obvious
+  // path-component shenanigans here too. `--` to git is a sentinel that
+  // ensures the file is treated as a path even if it starts with `-`.
+  if (file.includes('\0') || file.startsWith('-')) return '';
   try {
-    const { stdout } = await execAsync(`git diff HEAD~1 -- "${file}"`, { cwd: projectRoot });
+    const { stdout } = await execFileAsync(
+      'git',
+      ['diff', 'HEAD~1', '--', file],
+      { cwd: projectRoot, maxBuffer: 10 * 1024 * 1024 },
+    );
     return stdout.trim();
   } catch {
     return '';
@@ -85,11 +98,18 @@ export function registerGitDiffReviewTool(registry: ToolRegistry, ctx: ServerCon
     async (args) => {
       const { changed_files, depth, use_git, include_skeletons, max_diff_lines } = Schema.parse(args);
 
-      // Resolve changed files
-      let files = changed_files ?? [];
+      // Resolve changed files. PathValidator filters tool-supplied paths so
+      // they can't escape the project root or contain shell metacharacters
+      // that would survive into downstream string interpolations.
+      const validator = ctx.getPathValidator();
+      let files = (changed_files ?? []).filter(f => validator.isWithinRoot(f));
       if (files.length === 0 && use_git) {
         try {
-          const { stdout } = await execAsync('git diff HEAD~1 --name-only', { cwd: ctx.projectRoot });
+          const { stdout } = await execFileAsync(
+            'git',
+            ['diff', 'HEAD~1', '--name-only'],
+            { cwd: ctx.projectRoot, maxBuffer: 10 * 1024 * 1024 },
+          );
           files = stdout.trim().split('\n').filter(Boolean);
         } catch {
           logger.warn('git diff failed — no changed files detected');
