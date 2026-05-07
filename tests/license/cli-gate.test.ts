@@ -126,8 +126,11 @@ describe('ctxloom status', () => {
     writeLicense(home);
     const { stdout, exitCode } = await run(['status'], { HOME: home });
     expect(exitCode).toBe(0);
-    expect(stdout).toContain('Pro');
-    expect(stdout).toContain('Active');
-    expect(stdout).toContain('Expires:');
+    // Strip ANSI color codes since tests run in a TTY-aware build.
+    // eslint-disable-next-line no-control-regex
+    const plain = stdout.replace(/\x1b\[[0-9;]*m/g, '');
+    expect(plain).toContain('Pro');
+    expect(plain).toContain('Active');
+    expect(plain).toContain('Expires');
   }, 20_000);
 });
