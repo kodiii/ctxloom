@@ -296,7 +296,7 @@ async function runStatus(): Promise<void> {
   const status = license.status.charAt(0).toUpperCase() + license.status.slice(1);
 
   process.stdout.write(
-    `Tier:       ${tier}\nStatus:     ${status}\nEmail:      ${license.email || '(none)'}\nExpires:    ${expiresLabel}\nMachine:    ${os.hostname()} (${os.platform()}-${os.arch()})\nLast check: ${lastCheck}\n`,
+    `Tier:       ${tier}\nStatus:     ${status}\nExpires:    ${expiresLabel}\nMachine:    ${os.hostname()} (${os.platform()}-${os.arch()})\nLast check: ${lastCheck}\n`,
   );
 }
 

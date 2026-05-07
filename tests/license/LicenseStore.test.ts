@@ -12,7 +12,6 @@ const validLicense = {
   key: 'ctxl_pro_abc123',
   tier: 'pro' as const,
   status: 'active' as const,
-  email: 'user@example.com',
   fingerprint: 'sha256:' + 'a'.repeat(64),
   seats: 1,
   issuedAt: '2026-04-20T12:00:00.000Z',

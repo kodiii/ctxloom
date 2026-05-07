@@ -114,7 +114,6 @@ export async function activateLicense(
     key,
     tier: result.tier,
     status: 'active',
-    email: '',
     fingerprint,
     seats: result.seatsTotal,
     issuedAt: new Date().toISOString(),
