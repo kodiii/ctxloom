@@ -1,6 +1,12 @@
 import { defineConfig } from 'tsup';
-import { copyFileSync, mkdirSync, existsSync } from 'fs';
+import { copyFileSync, mkdirSync, existsSync, readFileSync } from 'fs';
 import path from 'node:path';
+
+const pkgVersion = (
+  JSON.parse(readFileSync(path.resolve('package.json'), 'utf8')) as {
+    version: string;
+  }
+).version;
 
 export default defineConfig({
   entry: [
@@ -22,6 +28,7 @@ export default defineConfig({
   define: {
     __TELEMETRY_POSTHOG_KEY__: JSON.stringify(process.env['CTXLOOM_BUILD_POSTHOG_KEY'] ?? ''),
     __TELEMETRY_SENTRY_DSN__: JSON.stringify(process.env['CTXLOOM_BUILD_SENTRY_DSN'] ?? ''),
+    __CTXLOOM_VERSION__: JSON.stringify(pkgVersion),
   },
   async onSuccess() {
     mkdirSync('dist/wasm', { recursive: true });
