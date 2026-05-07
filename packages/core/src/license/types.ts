@@ -7,7 +7,6 @@ export const LicenseFileSchema = z.object({
   key: z.string().min(1),
   tier: z.enum(['pro', 'team', 'enterprise', 'trial']),
   status: z.enum(['active', 'trialing', 'expired']),
-  email: z.string().email(),
   fingerprint: z.string().regex(FINGERPRINT_RE),
   seats: z.number().int().positive(),
   issuedAt: z.string().datetime(),
