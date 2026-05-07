@@ -27,7 +27,6 @@ function writeLicense(home: string, overrides: Record<string, unknown> = {}): vo
     key: 'ctxl_pro_abc123',
     tier: 'pro',
     status: 'active',
-    email: 'user@example.com',
     fingerprint: 'sha256:' + 'a'.repeat(64),
     seats: 1,
     issuedAt: new Date(Date.now() - 30 * 86400000).toISOString(),
@@ -128,6 +127,7 @@ describe('ctxloom status', () => {
     const { stdout, exitCode } = await run(['status'], { HOME: home });
     expect(exitCode).toBe(0);
     expect(stdout).toContain('Pro');
-    expect(stdout).toContain('user@example.com');
+    expect(stdout).toContain('Active');
+    expect(stdout).toContain('Expires:');
   }, 20_000);
 });

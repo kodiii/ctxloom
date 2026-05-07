@@ -19,7 +19,16 @@ export class LicenseStore {
       const raw = readFileSync(this.filePath, 'utf8');
       const parsed = JSON.parse(raw);
       return LicenseFileSchema.parse(parsed);
-    } catch {
+    } catch (err) {
+      // Set CTXLOOM_DEBUG=1 to surface the underlying parse error. Previously
+      // this catch was completely silent, which masked a real schema bug
+      // (empty email failing .email() validation) for every activation.
+      // We still return null on any failure — corrupt files shouldn't crash
+      // the CLI — but at least make the failure visible when debugging.
+      if (process.env['CTXLOOM_DEBUG']) {
+        const detail = err instanceof Error ? err.message : String(err);
+        process.stderr.write(`[ctxloom] LicenseStore.read failed at ${this.filePath}: ${detail}\n`);
+      }
       return null;
     }
   }

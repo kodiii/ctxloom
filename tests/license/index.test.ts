@@ -39,7 +39,6 @@ function makeLicense(overrides: Partial<LicenseFile> = {}): LicenseFile {
     key: 'ctxl_pro_abc123',
     tier: 'pro',
     status: 'active',
-    email: 'user@example.com',
     fingerprint: 'sha256:' + 'a'.repeat(64),
     seats: 1,
     issuedAt: daysAgo(30),
