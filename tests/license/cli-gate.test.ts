@@ -65,11 +65,11 @@ describe('license gate', () => {
     expect(stderr).toContain('ctxloom trial');
   }, 20_000);
 
-  it('exits 0 for gated command when CTXLOOM_LICENSE_BYPASS=1', async () => {
-    const home = tmpHome();
-    const { exitCode } = await run(['repos'], { HOME: home, CTXLOOM_LICENSE_BYPASS: '1' });
-    expect(exitCode).toBe(0);
-  }, 20_000);
+  // CTXLOOM_LICENSE_BYPASS env var was removed in the security backlog
+  // sweep — the team's legitimate "use without paying real seats" path
+  // is now via the internal Polar product (€0, 5 lifetime activations).
+  // Tests below cover the same gate behavior using a real license file
+  // written by writeLicense().
 
   it('exits 0 for gated command with valid cached license', async () => {
     const home = tmpHome();

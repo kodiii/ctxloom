@@ -172,11 +172,19 @@ function buildActivityFromOverlay(store: GitOverlayStore): CandidateActivity[] {
 
 // ─── License gate ────────────────────────────────────────────────────────────
 
-const LICENSE_BYPASS = process.env['CTXLOOM_LICENSE_BYPASS'] === '1';
+// M-1 (audit): the previous CTXLOOM_LICENSE_BYPASS=1 env-var escape
+// hatch was removed. The legitimate use case (Codzign team using the
+// CLI without burning paid seats) is now served by the internal Polar
+// product — a hidden €0 product with 5 lifetime activations. Team
+// members run `ctxloom activate <internal-key>` like any real customer,
+// which goes through the same code path and exercises the actual
+// license flow (good for dogfooding).
+//
+// Tests use either the same internal key or a CTXLOOM_LICENSE_KEY env
+// var that hits the validate endpoint — no source-level bypass.
 const LICENSE_GATE_BYPASS_COMMANDS = new Set(['trial', 'activate', 'deactivate', 'status', '--help']);
 
 async function checkLicense(): Promise<void> {
-  if (LICENSE_BYPASS) return;
   if (command !== undefined && LICENSE_GATE_BYPASS_COMMANDS.has(command)) return;
 
   const ciKey = process.env['CTXLOOM_LICENSE_KEY'];

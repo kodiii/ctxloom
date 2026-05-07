@@ -9,16 +9,32 @@
  */
 import { parentPort, workerData } from 'worker_threads';
 import path from 'node:path';
+import { z } from 'zod';
 import { generateEmbedding } from '../indexer/embedder.js';
 import { VectorStore } from '../db/VectorStore.js';
 
+// M-3 (audit): workerData was previously cast with `as { ... }` — no
+// runtime validation. Worker spawning is internal trusted code today,
+// but a future regression that passes the wrong shape (or untrusted
+// content) would silently corrupt the index instead of failing fast.
+// Zod parse here is the cheapest way to make the contract explicit.
+const WorkerDataSchema = z.object({
+  filePath: z.string().min(1),
+  content: z.string(),
+  root: z.string().min(1),
+  dbPath: z.string().min(1),
+});
+
 async function run(): Promise<void> {
-  const { filePath, content, root, dbPath } = workerData as {
-    filePath: string;
-    content: string;
-    root: string;
-    dbPath: string;
-  };
+  const parsed = WorkerDataSchema.safeParse(workerData);
+  if (!parsed.success) {
+    parentPort?.postMessage({
+      status: 'error',
+      error: `invalid workerData: ${parsed.error.message}`,
+    });
+    return;
+  }
+  const { filePath, content, root, dbPath } = parsed.data;
 
   let store: VectorStore | null = null;
   try {
