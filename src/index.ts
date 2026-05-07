@@ -13,6 +13,15 @@
  *   ctxloom --help       Show help
  */
 
+// ─── Logger mode selection — MUST run before any module that uses logger ────
+// If we have command-line args, we're a human-facing CLI invocation; switch
+// the logger to compact pretty-printed mode so structured JSON noise doesn't
+// leak into ctxloom index / status / setup / etc. The bare `ctxloom` (no
+// args) starts the MCP server, where JSON-to-stderr is the right choice.
+if (process.argv.length > 2 && !process.env['CTXLOOM_LOG_MODE']) {
+  process.env['CTXLOOM_LOG_MODE'] = 'cli';
+}
+
 import { startServer } from './server.js';
 import { runSetupWizard } from './setup/setup-wizard.js';
 import {

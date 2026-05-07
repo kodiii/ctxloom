@@ -40,11 +40,22 @@ export interface ServerOptions {
 const PROJECT_ROOT = (() => {
   if (process.env.CTXLOOM_ROOT) return process.env.CTXLOOM_ROOT;
   const cwd = process.cwd();
-  logger.warn(
-    'CTXLOOM_ROOT not set — defaulting to cwd. ' +
-    'Set CTXLOOM_ROOT in your MCP server config to point at the project you want to index.',
-    { cwd }
-  );
+  // The "Set CTXLOOM_ROOT in your MCP server config" guidance only makes
+  // sense when running as the MCP server. During CLI commands (index,
+  // status, setup, etc.) the warning is misleading noise — the user
+  // explicitly ran the command in the directory they want indexed.
+  //
+  // We detect CLI mode from process.argv (not an env var) because ESM
+  // import hoisting runs this IIFE before the entry point can set any
+  // env var. Bare `ctxloom` (argv.length === 2) is the MCP server.
+  const isCli = process.argv.length > 2;
+  if (!isCli) {
+    logger.warn(
+      'CTXLOOM_ROOT not set — defaulting to cwd. ' +
+      'Set CTXLOOM_ROOT in your MCP server config to point at the project you want to index.',
+      { cwd },
+    );
+  }
   return cwd;
 })();
 const DB_PATH = path.join(PROJECT_ROOT, '.ctxloom', 'vectors.lancedb');
