@@ -6,7 +6,9 @@
   "scripts": {
     "dev:server": "tsx server/index.ts",
     "dev:client": "vite",
-    "build": "tsc -p tsconfig.server.json && vite build",
+    "build:server": "tsup --config tsup.server.config.ts",
+    "build:client": "vite build",
+    "build": "npm run build:server && npm run build:client",
     "test": "vitest run",
     "preview": "vite preview"
   },
