@@ -32,6 +32,13 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
 ---
 
+## [1.0.10] — 2026-05-07
+
+### Fixed
+- **First-run embedder protobuf race** — on a fresh install, `@huggingface/transformers` lazy-downloads the 90 MB ONNX model. onnxruntime occasionally raced the FS-cache flush and threw `"Protobuf parsing failed"`, losing the first 1–2 indexed files even though the file ended up correctly written. `getEmbedder()` now retries up to 3 times with 1s/2s backoff on protobuf-parse errors only (genuine corruption / network errors fail immediately as before). Also adds an in-flight singleton so concurrent first-call requests share one model load instead of racing N parallel downloads. New unit tests in `tests/EmbedderRetry.test.ts`.
+
+---
+
 ## [1.0.9] — 2026-05-07
 
 ### Fixed
