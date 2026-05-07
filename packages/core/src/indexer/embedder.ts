@@ -16,18 +16,65 @@ const MODEL_ID = 'sentence-transformers/all-MiniLM-L6-v2';
 const CHUNK_SIZE = 4096; // characters per chunk
 
 let embedder: FeatureExtractionPipeline | null = null;
+let embedderInitInFlight: Promise<FeatureExtractionPipeline> | null = null;
 
 /**
  * Initialize the embedding pipeline. Called lazily on first use.
+ *
+ * Concurrency: a singleton in-flight promise so concurrent first-call
+ * requests don't kick off N parallel ONNX-model loads, each opening
+ * the same .onnx file (the protobuf-parse-failed race in v1.0.9).
+ *
+ * Retry: on a fresh install, @huggingface/transformers downloads the
+ * 90 MB model file lazily. The OS may not have flushed its page cache
+ * by the time onnxruntime opens the file — protobuf parse hits a
+ * partial header and throws "Protobuf parsing failed". The file ends
+ * up correctly written; a single retry after a short delay catches
+ * the race without papering over genuine corruption.
  */
+async function loadEmbedder(): Promise<FeatureExtractionPipeline> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return (await (pipeline as any)('feature-extraction', MODEL_ID, {
+    dtype: 'fp32',
+  })) as FeatureExtractionPipeline;
+}
+
 async function getEmbedder(): Promise<FeatureExtractionPipeline> {
-  if (!embedder) {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    embedder = (await (pipeline as any)('feature-extraction', MODEL_ID, {
-      dtype: 'fp32',
-    })) as FeatureExtractionPipeline;
+  if (embedder) return embedder;
+  if (embedderInitInFlight) return embedderInitInFlight;
+
+  embedderInitInFlight = (async () => {
+    const MAX_ATTEMPTS = 3;
+    let lastErr: unknown;
+    for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+      try {
+        const pipe = await loadEmbedder();
+        embedder = pipe;
+        return pipe;
+      } catch (err) {
+        lastErr = err;
+        const msg = err instanceof Error ? err.message : String(err);
+        const isProtobufRace = /protobuf parsing failed/i.test(msg);
+        if (!isProtobufRace || attempt === MAX_ATTEMPTS) break;
+        // Exponential backoff: 1s, 2s — gives the OS time to fsync the
+        // freshly-downloaded model bytes before onnxruntime re-opens.
+        const delay = attempt * 1000;
+        logger.warn('Embedding model load failed; retrying after FS settle', {
+          attempt,
+          delayMs: delay,
+        });
+        await new Promise((resolve) => setTimeout(resolve, delay));
+      }
+    }
+    embedderInitInFlight = null;
+    throw lastErr;
+  })();
+
+  try {
+    return await embedderInitInFlight;
+  } finally {
+    if (embedder) embedderInitInFlight = null;
   }
-  return embedder;
 }
 
 /**
