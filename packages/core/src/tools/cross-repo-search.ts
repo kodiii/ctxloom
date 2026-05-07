@@ -171,8 +171,13 @@ export function registerCrossRepoSearchTool(
       const perRepoLimit = Math.max(limit, 5);
       const repoResults = await Promise.all(
         candidates.map(async (repo): Promise<{ repo: RegisteredRepo; results: CrossRepoResult[]; skipped: boolean }> => {
+          // Close after each search — without this, every cross-repo query
+          // leaks FDs proportional to the registered-repo count, eventually
+          // exhausting the per-process FD limit (256 on macOS) when the
+          // MCP server stays alive across many tool calls.
+          let store: VectorStore | null = null;
           try {
-            const store = new VectorStore(repo.dbPath);
+            store = new VectorStore(repo.dbPath);
             await store.init();
             const raw = await store.search(queryEmbedding, perRepoLimit);
             const results: CrossRepoResult[] = raw.map(r => ({
@@ -189,6 +194,8 @@ export function registerCrossRepoSearchTool(
               detail: err instanceof Error ? err.message : String(err),
             });
             return { repo, results: [], skipped: true };
+          } finally {
+            if (store) await store.close();
           }
         }),
       );

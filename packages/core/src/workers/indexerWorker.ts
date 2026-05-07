@@ -20,10 +20,11 @@ async function run(): Promise<void> {
     dbPath: string;
   };
 
+  let store: VectorStore | null = null;
   try {
     const relPath = path.relative(root, filePath);
 
-    const store = new VectorStore(dbPath);
+    store = new VectorStore(dbPath);
     await store.init();
 
     const embedding = await generateEmbedding(content.slice(0, 4096));
@@ -35,6 +36,11 @@ async function run(): Promise<void> {
       status: 'error',
       error: err instanceof Error ? err.message : String(err),
     });
+  } finally {
+    // Close in the worker too — short-lived processes get GC'd eventually,
+    // but explicit close prevents FD pressure when many workers spawn in
+    // quick succession (e.g. file-watcher re-indexing).
+    if (store) await store.close();
   }
 }
 
