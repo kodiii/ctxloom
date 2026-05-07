@@ -32,6 +32,21 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
 ---
 
+## [1.0.8] — 2026-05-07
+
+### Security (full audit)
+- **Shell injection in `ctx_git_diff_review` (P0)** — `exec(\`git diff -- "${file}"\`)` interpolated AI-controlled file paths into a shell string. A prompt-injected MCP client could pass `; rm -rf ~ #` and achieve RCE in the CLI process. Switched to `execFile` with argv (no shell); all `changed_files` now pass through `PathValidator.isWithinRoot()` before reaching git. [#29]
+- **Path traversal + exec RCE in dashboard server** — `apps/dashboard/server/routes/{file,open}.ts` used `startsWith(root)` (prefix-confusion bypassable: `/home/u/foo` ≠ `/home/u/foobar` boundary) plus `exec(\`code ${JSON.stringify(abs)}\`)` which still parses backticks inside double-quoted shell strings. Fixed: explicit `path.sep` boundary check + `execFile('code', [abs])`. [#29]
+- **Hardcoded PostHog key + Sentry DSN** — fallbacks in `packages/core/src/license/telemetry.ts` would have shipped real production credentials when the repo goes public. Replaced with tsup `define` build-time injection from `CTXLOOM_BUILD_POSTHOG_KEY` / `CTXLOOM_BUILD_SENTRY_DSN`. Empty fallback in source = silent local builds. [#29]
+- **Telemetry opt-out** — telemetry was unconditional. Honors `CTXLOOM_NO_TELEMETRY=1` and the standard `DO_NOT_TRACK=1` env vars. [#29]
+- **Dashboard CORS lockdown + `/api/health` info leak** — `cors()` allowed any origin; `/api/health` returned the absolute project path. Pinned to localhost-only; removed root from health response. [#29]
+- **Removed `CTXLOOM_LICENSE_BYPASS=1` env var** — undocumented dev shortcut that fully skipped license validation. The legitimate "Codzign team uses CLI without burning paid seats" use case is now served by the internal Polar product (€0, 5 lifetime activations). Tests updated to use real license fixtures. [#30]
+- **Atomic 0o600 mode on license file** — `LicenseStore.write` previously did `writeFileSync` then `chmodSync` (TOCTOU window where another local user could read the key). Mode is now applied at file creation. [#30]
+- **Validate workerData in indexerWorker** — was an `as` cast with no runtime check. Zod parse on entry. [#30]
+- **Don't log license file path in `CTXLOOM_DEBUG`** — was leaking `/Users/<username>/.ctxloom/...`. [#30]
+
+---
+
 ## [1.0.7] — 2026-05-07
 
 ### Fixed
