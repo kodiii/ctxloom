@@ -29,7 +29,24 @@ export async function startDashboard(options: {
   console.log(`  ${ctx.graph.allFiles().length} files, ${ctx.graph.edgeCount()} edges, git=${ctx.gitEnabled}`);
 
   const app = express();
-  app.use(cors());
+  // SECURITY: bind CORS to this dashboard's own localhost origin only.
+  // The previous `cors()` (no config) allowed any origin, which combined
+  // with /api/open (now hardened) and /api/file would let any random
+  // browser tab read the user's source or open arbitrary editors.
+  // The dashboard SPA is served from the same origin so CORS is largely
+  // belt-and-suspenders; but explicit lockdown beats default-permissive.
+  const allowedOrigins = new Set([
+    `http://localhost:${port}`,
+    `http://127.0.0.1:${port}`,
+  ]);
+  app.use(cors({
+    origin: (origin, cb) => {
+      // Same-origin requests don't carry an Origin header; allow them.
+      if (!origin) return cb(null, true);
+      cb(null, allowedOrigins.has(origin));
+    },
+    credentials: false,
+  }));
   app.use(express.json());
 
   app.use('/api/overview', buildOverviewRouter(ctx));
@@ -43,7 +60,10 @@ export async function startDashboard(options: {
   app.use('/api/tokens', buildTokensRouter(ctx));
   app.use('/api/trends', buildTrendsRouter(ctx));
 
-  app.get('/api/health', (_req, res) => res.json({ ok: true, root, gitEnabled: ctx.gitEnabled }));
+  // SECURITY: do NOT expose the absolute project root in /api/health.
+  // Cross-origin pages on the same host could probe this endpoint to
+  // learn the user's filesystem layout. Keep the response minimal.
+  app.get('/api/health', (_req, res) => res.json({ ok: true, gitEnabled: ctx.gitEnabled }));
 
   app.get('/api/status', (_req, res) => res.json({
     lastIndexed: ctx.lastIndexed.toISOString(),

@@ -11,8 +11,14 @@ export function buildFileRouter(ctx: DashboardContext): Router {
     if (!rel) return res.status(400).json({ error: 'missing path' });
 
     const abs = path.resolve(ctx.root, rel);
-    // security: must stay inside root
-    if (!abs.startsWith(ctx.root)) return res.status(403).json({ error: 'forbidden' });
+    // SECURITY: prefix-confusion guard — `startsWith(ctx.root)` alone is
+    // bypassable when ctx.root is e.g. `/home/user/foo` and the request
+    // resolves to `/home/user/foobar/secret`. Append the path separator
+    // to require an actual subdirectory boundary.
+    const rootBoundary = ctx.root.endsWith(path.sep) ? ctx.root : ctx.root + path.sep;
+    if (abs !== ctx.root && !abs.startsWith(rootBoundary)) {
+      return res.status(403).json({ error: 'forbidden' });
+    }
 
     try {
       const content = await fs.readFile(abs, 'utf-8');
