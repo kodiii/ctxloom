@@ -51,6 +51,31 @@ import * as readline from 'node:readline';
 import os from 'node:os';
 import path from 'node:path';
 
+// ─── File-descriptor headroom ────────────────────────────────────────────────
+// Indexing a 600+ file project simultaneously holds many descriptors open
+// (LanceDB SSTables + tree-sitter WASM grammars + ONNX model files +
+// per-file reads). On macOS, processes spawned by Claude / VS Code inherit
+// a 256-FD soft limit, which is too low. Try to bump the soft limit toward
+// the hard limit if Node exposes the API.
+//
+// process.setrlimit was added in Node 24. Node 20 (current build target)
+// doesn't have it, so this is a no-op there — users still need to set
+// `ulimit -n 4096` manually. The fix-side mitigation (closing the
+// VectorStore between phases) is the durable solution.
+try {
+  const proc = process as NodeJS.Process & {
+    setrlimit?: (resource: 'nofile', limits: { soft: number; hard: number }) => void;
+    getrlimit?: (resource: 'nofile') => { soft: number; hard: number };
+  };
+  if (typeof proc.getrlimit === 'function' && typeof proc.setrlimit === 'function') {
+    const cur = proc.getrlimit('nofile');
+    const target = Math.min(cur.hard, Math.max(cur.soft, 8192));
+    if (target > cur.soft) proc.setrlimit('nofile', { soft: target, hard: cur.hard });
+  }
+} catch {
+  // Best-effort; never block CLI startup on rlimit tuning failures.
+}
+
 // ─── CLI flag parsing ────────────────────────────────────────────────────────
 
 const args = process.argv.slice(2);

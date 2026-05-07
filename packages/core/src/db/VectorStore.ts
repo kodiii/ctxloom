@@ -71,6 +71,35 @@ export class VectorStore {
   }
 
   /**
+   * Release LanceDB resources (file descriptors held by the underlying
+   * connection / table handles). Must be called at the end of long-lived
+   * indexing runs — without this, every SSTable opened during 600+ upserts
+   * stays open until process exit, which can exhaust the per-process FD
+   * limit (256 on macOS by default for processes spawned by Claude /
+   * VS Code) and cause downstream loaders (tree-sitter WASM, ONNX models)
+   * to fail with ENFILE.
+   *
+   * Safe to call multiple times.
+   */
+  async close(): Promise<void> {
+    if (!this.initialized) return;
+    try {
+      // LanceDB Connection has a close() method on newer versions; older
+      // versions need explicit table drop. Try close first, fall back to
+      // detaching references so GC can run.
+      const conn = this.db as Connection & { close?: () => Promise<void> };
+      if (typeof conn.close === 'function') {
+        await conn.close();
+      }
+    } catch {
+      // Best-effort — never throw from close()
+    }
+    this.db = null;
+    this.table = null;
+    this.initialized = false;
+  }
+
+  /**
    * Insert or update a code record.
    */
   async upsert(filePath: string, embedding: number[], content: string): Promise<void> {
