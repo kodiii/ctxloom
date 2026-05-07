@@ -59,7 +59,6 @@
     "java"
   ],
   "license": "SEE LICENSE IN LICENSE",
-
   "repository": {
     "type": "git",
     "url": "https://github.com/kodiii/ctxloom"
@@ -78,6 +77,7 @@
     "graphology": "^0.26.0",
     "graphology-communities-louvain": "^2.0.2",
     "js-yaml": "^4.1.1",
+    "picocolors": "^1.1.1",
     "picomatch": "^4.0.4",
     "simple-git": "^3.36.0",
     "tree-sitter-typescript": "^0.23.2",

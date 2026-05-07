@@ -16,6 +16,17 @@
 import { startServer } from './server.js';
 import { runSetupWizard } from './setup/setup-wizard.js';
 import {
+  success as fmtSuccess,
+  error as fmtError,
+  warn as fmtWarn,
+  pending as fmtPending,
+  header as fmtHeader,
+  kvTable as fmtKvTable,
+  nextStep as fmtNextStep,
+  errorBlock as fmtErrorBlock,
+  style,
+} from './cli/format.js';
+import {
   indexDirectory,
   DependencyGraph,
   ASTParser,
@@ -196,9 +207,11 @@ async function checkLicense(): Promise<void> {
     // BUG-002: Must use stderr — stdout is the MCP JSON-RPC channel when
     // running as an MCP server. Writing plain text to stdout corrupts the
     // protocol and causes "Server disconnected" in the client.
-    process.stderr.write(
-      `\nctxloom requires an active license.\n\n  Start a free 7-day trial:   ctxloom trial\n  Activate a purchased key:   ctxloom activate <KEY>\n  Buy a license:              https://ctxloom.com/pricing\n\n`,
-    );
+    process.stderr.write(fmtErrorBlock('ctxloom requires an active license.', [
+      `${style.bold('ctxloom trial')}            ${style.dim('— start a 7-day free trial')}`,
+      `${style.bold('ctxloom activate <KEY>')}   ${style.dim('— activate a purchased key')}`,
+      `${style.link('https://ctxloom.com/pricing')}  ${style.dim('— buy a license')}`,
+    ]));
     process.exit(2);
   }
 }
@@ -219,81 +232,111 @@ async function promptEmail(): Promise<string> {
 }
 
 async function runTrial(): Promise<void> {
-  process.stdout.write('Start your 7-day free trial — no credit card required.\n');
+  process.stdout.write(fmtHeader('Trial'));
+  process.stdout.write(`  ${style.dim('7-day free trial · no credit card required')}\n\n`);
   const email = await promptEmail();
-  if (!email) { process.stderr.write('[ctxloom] Email is required.\n'); process.exit(1); }
-  process.stdout.write('⏳ Creating trial checkout...\n');
+  if (!email) {
+    process.stderr.write(fmtErrorBlock('Email is required.'));
+    process.exit(1);
+  }
+  process.stdout.write(`  ${fmtPending('Creating checkout…')}\n`);
   try {
     const result = await startTrial(email);
-    process.stdout.write(
-      `✓ Open this link to start your trial:\n  ${result.checkoutUrl}\n\n` +
-      `  Your license key will be emailed to ${email} after checkout.\n` +
-      `  Then run: ctxloom activate <KEY>\n\n`,
-    );
+    process.stdout.write(`  ${fmtSuccess('Checkout ready')}\n\n`);
+    process.stdout.write(`  ${style.dim('Open in your browser:')}\n`);
+    process.stdout.write(`  ${style.link(result.checkoutUrl)}\n\n`);
+    process.stdout.write(`  ${style.dim(`Your license key will arrive at ${email} after checkout.`)}\n`);
+    process.stdout.write(fmtNextStep('Activate on this machine', 'ctxloom activate <KEY>'));
     track('trial_started', os.hostname(), { email });
   } catch (err) {
     if (err instanceof FingerprintAlreadyUsedError) {
-      process.stdout.write(`✗ A trial has already been used on this machine.\n  Purchase a license at https://ctxloom.com/pricing\n`);
+      process.stdout.write(fmtErrorBlock('A trial has already been used on this machine.', [
+        `Purchase a license at ${style.link('https://ctxloom.com/pricing')}`,
+      ]));
       process.exit(1);
     }
     if (err instanceof EmailAlreadyUsedError) {
-      process.stdout.write(`✗ A trial has already been used for this email address.\n  Purchase a license at https://ctxloom.com/pricing\n`);
+      process.stdout.write(fmtErrorBlock('A trial has already been used for this email.', [
+        `Try a different email, or purchase a license at ${style.link('https://ctxloom.com/pricing')}`,
+      ]));
       process.exit(1);
     }
     if (err instanceof TrialUnavailableError) {
-      process.stderr.write(
-        `✗ Trial service is temporarily unavailable.\n\n` +
-        `  You can still activate a purchased key:   ctxloom activate <KEY>\n` +
-        `  Or buy a license now:                     https://ctxloom.com/pricing\n` +
-        `  Status updates:                           https://ctxloom.com/status\n\n`,
-      );
+      process.stderr.write(fmtErrorBlock('Trial service is temporarily unavailable.', [
+        `Activate a purchased key:  ${style.bold('ctxloom activate <KEY>')}`,
+        `Buy a license now:         ${style.link('https://ctxloom.com/pricing')}`,
+        `Status updates:            ${style.link('https://ctxloom.com/status')}`,
+      ]));
       process.exit(1);
     }
-    process.stderr.write(`[ctxloom] Trial request failed: ${err instanceof Error ? err.message : String(err)}\n`);
+    process.stderr.write(fmtErrorBlock('Trial request failed.', [
+      err instanceof Error ? err.message : String(err),
+    ]));
     process.exit(1);
   }
 }
 
 async function runActivate(key: string): Promise<void> {
-  process.stdout.write('⏳ Activating on this machine...\n');
+  process.stdout.write(fmtHeader('Activate'));
+  process.stdout.write(`  ${fmtPending('Activating on this machine…')}\n`);
   try {
     const license = await activateLicense(key);
     const tier = license.tier.charAt(0).toUpperCase() + license.tier.slice(1);
     const expires = license.expiresAt ? new Date(license.expiresAt).toISOString().slice(0, 10) : 'Never';
-    process.stdout.write(`✓ ctxloom ${tier} activated\n  Expires: ${expires}\n`);
+    process.stdout.write(`  ${fmtSuccess(`${style.bold(`ctxloom ${tier}`)} activated`)}\n\n`);
+    process.stdout.write(fmtKvTable([
+      ['Tier', tier],
+      ['Expires', expires],
+      ['Machine', `${os.hostname()} (${os.platform()}-${os.arch()})`],
+    ]));
+    process.stdout.write(fmtNextStep('Configure your AI tools', 'ctxloom setup'));
     track('license_activated', os.hostname(), { tier: license.tier });
   } catch (err) {
     if (err instanceof SeatLimitError) {
-      process.stdout.write(
-        `✗ Seat limit reached.\n  Deactivate another machine: https://ctxloom.com/account/licenses\n  Or upgrade to Team: https://ctxloom.com/pricing\n`,
-      );
+      process.stdout.write(fmtErrorBlock('Seat limit reached.', [
+        `Deactivate another machine: ${style.link('https://ctxloom.com/account/licenses')}`,
+        `Or upgrade to Team:         ${style.link('https://ctxloom.com/pricing')}`,
+      ]));
       process.exit(1);
     }
     if (err instanceof InvalidKeyError) {
-      process.stdout.write(`✗ Invalid license key. Double-check the key from your purchase email.\n`);
+      process.stdout.write(fmtErrorBlock('Invalid license key.', [
+        'Double-check the key from your purchase email.',
+        `Or buy a license at ${style.link('https://ctxloom.com/pricing')}`,
+      ]));
       process.exit(1);
     }
     if (err instanceof NetworkError) {
-      process.stderr.write(`[ctxloom] Activation failed (network error). Please try again.\n`);
+      process.stderr.write(fmtErrorBlock('Activation failed — network error.', [
+        'Check your internet connection and try again.',
+      ]));
       process.exit(1);
     }
-    process.stderr.write(`[ctxloom] Activation failed: ${err instanceof Error ? err.message : String(err)}\n`);
+    process.stderr.write(fmtErrorBlock('Activation failed.', [
+      err instanceof Error ? err.message : String(err),
+    ]));
     process.exit(1);
   }
 }
 
 async function runDeactivate(): Promise<void> {
-  process.stdout.write('⏳ Releasing this seat...\n');
+  process.stdout.write(fmtHeader('Deactivate'));
+  process.stdout.write(`  ${fmtPending('Releasing this seat…')}\n`);
   try {
     await deactivateLicense();
-    process.stdout.write('✓ Deactivated. Run `ctxloom activate <KEY>` on a new machine.\n');
+    process.stdout.write(`  ${fmtSuccess('Deactivated')}\n`);
+    process.stdout.write(fmtNextStep('Activate on another machine', 'ctxloom activate <KEY>'));
     track('license_deactivated', os.hostname());
   } catch (err) {
     if (err instanceof NetworkError) {
-      process.stderr.write('[ctxloom] Deactivation failed (network error). Please try again.\n');
+      process.stderr.write(fmtErrorBlock('Deactivation failed — network error.', [
+        'Check your internet connection and try again.',
+      ]));
       process.exit(1);
     }
-    process.stderr.write(`[ctxloom] Deactivation failed: ${err instanceof Error ? err.message : String(err)}\n`);
+    process.stderr.write(fmtErrorBlock('Deactivation failed.', [
+      err instanceof Error ? err.message : String(err),
+    ]));
     process.exit(1);
   }
 }
@@ -301,16 +344,19 @@ async function runDeactivate(): Promise<void> {
 async function runStatus(): Promise<void> {
   const license = await getLicenseInfo();
   if (!license) {
-    process.stdout.write(
-      `No active license.\n\n  Start a free 7-day trial:   ctxloom trial\n  Activate a purchased key:   ctxloom activate <KEY>\n  Buy a license:              https://ctxloom.com/pricing\n\n`,
-    );
+    process.stdout.write(fmtHeader('License Status'));
+    process.stdout.write(`  ${fmtWarn(style.bold('No active license'))}\n\n`);
+    process.stdout.write(`  ${style.dim('Get started:')}\n`);
+    process.stdout.write(`  ${style.dim('•')} ${style.bold('ctxloom trial')}                    ${style.dim('— start a 7-day free trial')}\n`);
+    process.stdout.write(`  ${style.dim('•')} ${style.bold('ctxloom activate <KEY>')}           ${style.dim('— activate a purchased key')}\n`);
+    process.stdout.write(`  ${style.dim('•')} ${style.link('https://ctxloom.com/pricing')}      ${style.dim('— buy a license')}\n\n`);
     return;
   }
   const expires = license.expiresAt ? new Date(license.expiresAt).toISOString().slice(0, 10) : 'Never';
   const daysLeft = license.expiresAt
     ? Math.ceil((new Date(license.expiresAt).getTime() - Date.now()) / 86400000)
     : null;
-  const expiresLabel = daysLeft !== null ? `${expires} (in ${daysLeft} days)` : expires;
+  const expiresLabel = daysLeft !== null ? `${expires} ${style.dim(`(in ${daysLeft} day${daysLeft === 1 ? '' : 's'})`)}` : expires;
   const lastCheck = license.lastValidatedAt
     ? (() => {
         const h = Math.floor((Date.now() - new Date(license.lastValidatedAt).getTime()) / 3600000);
@@ -318,11 +364,21 @@ async function runStatus(): Promise<void> {
       })()
     : 'never';
   const tier = license.tier.charAt(0).toUpperCase() + license.tier.slice(1);
-  const status = license.status.charAt(0).toUpperCase() + license.status.slice(1);
+  const statusRaw = license.status.charAt(0).toUpperCase() + license.status.slice(1);
+  const statusColored =
+    license.status === 'active' ? style.success(statusRaw)
+      : license.status === 'trialing' ? style.highlight(statusRaw)
+        : style.warn(statusRaw);
 
-  process.stdout.write(
-    `Tier:       ${tier}\nStatus:     ${status}\nExpires:    ${expiresLabel}\nMachine:    ${os.hostname()} (${os.platform()}-${os.arch()})\nLast check: ${lastCheck}\n`,
-  );
+  process.stdout.write(fmtHeader('License Status'));
+  process.stdout.write(fmtKvTable([
+    ['Tier', style.bold(tier)],
+    ['Status', statusColored],
+    ['Expires', expiresLabel],
+    ['Machine', `${os.hostname()} ${style.dim(`(${os.platform()}-${os.arch()})`)}`],
+    ['Last sync', style.dim(lastCheck)],
+  ]));
+  process.stdout.write('\n');
 }
 
 async function main(): Promise<void> {
@@ -352,15 +408,25 @@ async function main(): Promise<void> {
     }
 
     case 'index': {
-      console.log('[ctxloom] Indexing current directory...');
+      process.stdout.write(fmtHeader('Index'));
       const root = process.cwd();
+      process.stdout.write(`  ${style.dim('Root:')} ${root}\n\n`);
+      process.stdout.write(`  ${fmtPending('Indexing files…')}\n`);
+      const indexStart = Date.now();
       const result = await indexDirectory(root, (file, i, total) => {
-        process.stdout.write(`\r[ctxloom] Indexing ${i}/${total}: ${file.slice(0, 60)}`);
+        // \r overwrites in-place; clear-to-EOL keeps prior longer paths from leaking
+        const trimmed = file.length > 60 ? '…' + file.slice(-59) : file;
+        process.stdout.write(`\r  ${style.dim(`[${i}/${total}]`)} ${style.dim(trimmed)}\x1b[K`);
       });
-      console.log(`\n[ctxloom] Done! Indexed ${result.indexed} files, ${result.errors} errors.`);
+      const indexMs = Date.now() - indexStart;
+      // Clear the progress line, then emit summary
+      process.stdout.write('\r\x1b[K');
+      const errLabel = result.errors === 0 ? style.dim('0 errors') : style.warn(`${result.errors} error${result.errors === 1 ? '' : 's'}`);
+      process.stdout.write(`  ${fmtSuccess(`Indexed ${style.bold(String(result.indexed))} files`)} ${style.dim('·')} ${errLabel} ${style.dim(`· ${(indexMs / 1000).toFixed(1)}s`)}\n\n`);
 
       // Build dependency graph
-      console.log('[ctxloom] Building dependency graph...');
+      process.stdout.write(`  ${fmtPending('Building dependency graph…')}\n`);
+      const graphStart = Date.now();
       const parser = new ASTParser();
       await parser.init();
       const graph = new DependencyGraph();
@@ -372,11 +438,13 @@ async function main(): Promise<void> {
           await recordTrendSnapshot({ graph, overlay: trendOverlay, gitEnabled: trendGitEnabled, rootDir: root, source: 'cli' });
         },
       });
-      console.log(`[ctxloom] Graph built with ${graph.edgeCount()} edges.`);
+      const graphMs = Date.now() - graphStart;
+      process.stdout.write(`  ${fmtSuccess(`Graph built with ${style.bold(String(graph.edgeCount()))} edges`)} ${style.dim(`· ${(graphMs / 1000).toFixed(1)}s`)}\n`);
 
       // Mine git history if requested
       if (withGit) {
-        console.log('[ctxloom] Mining git history (this may take a minute)...');
+        process.stdout.write(`  ${fmtPending('Mining git history (may take ~1 min)…')}\n`);
+        const gitStart = Date.now();
         try {
           const overlay = new GitOverlayStore(root, { windowDays: gitWindowDays });
           const loaded = await overlay.loadSnapshot();
@@ -387,11 +455,13 @@ async function main(): Promise<void> {
           }
           await overlay.saveSnapshot();
           const stats = overlay.stats();
-          console.log(`[ctxloom] Git overlay ready — ${stats.commits} commits mined.`);
+          const gitMs = Date.now() - gitStart;
+          process.stdout.write(`  ${fmtSuccess(`Git overlay ready · ${style.bold(String(stats.commits))} commits`)} ${style.dim(`· ${(gitMs / 1000).toFixed(1)}s`)}\n`);
         } catch (err) {
-          console.warn(`[ctxloom] Git overlay failed (skipping): ${String(err)}`);
+          process.stdout.write(`  ${fmtWarn(`Git overlay skipped: ${String(err).slice(0, 80)}`)}\n`);
         }
       }
+      process.stdout.write(fmtNextStep('Configure your AI tools', 'ctxloom setup'));
       break;
     }
 
