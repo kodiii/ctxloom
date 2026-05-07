@@ -32,6 +32,13 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
 ---
 
+## [1.0.9] — 2026-05-07
+
+### Fixed
+- **`npm install -g ctxloom-pro@1.0.8` failed with 404** — `@ctxloom/core` (private workspace package, never published to npm) was listed in `dependencies` so npm tried to resolve it from the registry and failed for every fresh install. Moved to `devDependencies` (it's bundled into dist via tsup `noExternal`, so it doesn't need to be a runtime dep). 1.0.8 is deprecated on the registry.
+
+---
+
 ## [1.0.8] — 2026-05-07
 
 ### Security (full audit)
