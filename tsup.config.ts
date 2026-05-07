@@ -14,6 +14,15 @@ export default defineConfig({
   sourcemap: true,
   clean: true,
   noExternal: ['@ctxloom/core', '@ctxloom/mcp-client'],
+  // SECURITY: telemetry credentials baked in at build time from env vars.
+  // Empty fallback means local source builds are silent. The npm publish
+  // pipeline (or `npm run build` with these env vars set) inlines the
+  // real keys. Source repo never contains live keys.
+  // To set: export CTXLOOM_BUILD_POSTHOG_KEY=phc_... before npm publish.
+  define: {
+    __TELEMETRY_POSTHOG_KEY__: JSON.stringify(process.env['CTXLOOM_BUILD_POSTHOG_KEY'] ?? ''),
+    __TELEMETRY_SENTRY_DSN__: JSON.stringify(process.env['CTXLOOM_BUILD_SENTRY_DSN'] ?? ''),
+  },
   async onSuccess() {
     mkdirSync('dist/wasm', { recursive: true });
 
