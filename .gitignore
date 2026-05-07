@@ -10,8 +10,10 @@ coverage/
 *.log
 .env
 .env.local
-# Compiled TypeScript output in src/ (use dist/ instead)
-src/**/*.js
-src/**/*.js.map
-src/**/*.d.ts
-src/**/*.d.ts.map
+# Compiled TypeScript output anywhere under src/ (use dist/ instead)
+# Covers root, packages/*/src/, apps/*/src/ — anywhere a misconfigured
+# tsc run might emit alongside .ts files.
+**/src/**/*.js
+**/src/**/*.js.map
+**/src/**/*.d.ts
+**/src/**/*.d.ts.map

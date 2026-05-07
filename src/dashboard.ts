@@ -11,7 +11,13 @@ export interface DashboardOptions {
 }
 
 export async function startDashboard(options: DashboardOptions): Promise<void> {
-  const serverPath = path.resolve(__dirname, '../apps/dashboard/server/index.js');
+  // Resolve to the dashboard's COMPILED server entry.
+  // The dashboard package emits to apps/dashboard/dist/server/ via
+  // `tsc -p tsconfig.server.json`. Previously this path was missing the
+  // `/dist/` segment, which crashed on every fresh install with
+  // ERR_MODULE_NOT_FOUND. The package.json `files` whitelist + root
+  // `build` script now ensure the dashboard is built and shipped.
+  const serverPath = path.resolve(__dirname, '../apps/dashboard/dist/server/index.js');
   const mod = await import(serverPath);
   await mod.startDashboard(options);
 }
