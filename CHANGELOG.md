@@ -32,6 +32,17 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
 ---
 
+## [1.0.7] — 2026-05-07
+
+### Fixed
+- **`ctxloom dashboard` crashed on every fresh install (P0)** — `ERR_MODULE_NOT_FOUND` because `src/dashboard.ts` looked for `apps/dashboard/server/index.js` (no `/dist/` segment), and the dashboard's `dist/` files weren't included in the npm tarball anyway. Three compounding bugs fixed: path corrected, `apps/dashboard/dist/**/*` added to the published `files` whitelist, and the dashboard server build switched from `tsc` (which crashed on cross-package imports) to `tsup` with proper externals for native modules and CJS-only deps. [#26]
+- **JSON log lines leaking into styled CLI output** — every `ctxloom status` / `ctxloom index` / `ctxloom dashboard` started with `{"ts":"...","level":"warn","msg":"..."}` noise. Logger now has a CLI mode (auto-detected from `process.argv`) that suppresses info/debug and pretty-prints warn/error as compact colored lines. MCP server mode (bare `ctxloom`) still emits structured JSON to stderr unchanged. The misleading "Set CTXLOOM_ROOT in your MCP server config" warning no longer fires during CLI commands. [#27]
+
+### Other
+- Tightened root `.gitignore` so a misconfigured tsc run anywhere in the workspace can't leak compiled output (`*.js` / `*.d.ts`) into nested `src/` directories and end up committed.
+
+---
+
 ## [1.0.6] — 2026-05-07
 
 ### Fixed
