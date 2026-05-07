@@ -27,13 +27,17 @@
     "LICENSE"
   ],
   "scripts": {
+    "clean:src": "node scripts/clean-stale-src-artifacts.mjs",
+    "prebuild": "npm run clean:src",
     "build": "tsup && npm run -w @ctxloom/dashboard build",
+    "prebuild:cli": "npm run clean:src",
     "build:cli": "tsup",
     "build:dashboard": "npm run -w @ctxloom/dashboard build",
     "prepublishOnly": "tsup && npm run -w @ctxloom/dashboard build && node scripts/publish-smoke-test.mjs",
     "smoke:publish": "node scripts/publish-smoke-test.mjs",
     "start": "node dist/index.js",
     "dev": "tsx src/index.ts",
+    "pretest": "npm run clean:src",
     "test": "vitest run",
     "lint": "tsc --noEmit",
     "postinstall": "node dist/setup/postinstall.js || true",
