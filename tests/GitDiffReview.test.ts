@@ -27,7 +27,17 @@ function makeCtx(graph: DependencyGraph): ServerContext {
       return sk;
     },
     getRuleManager: () => { throw new Error('not needed'); },
-    getPathValidator: () => { throw new Error('not needed'); },
+    // PathValidator is now used by ctx_git_diff_review to filter
+    // tool-supplied changed_files paths (security audit C-1 fix).
+    // Tests use a no-op validator that accepts everything; real
+    // PathValidator behavior is covered by tests/PathValidator.test.ts.
+    getPathValidator: () => ({
+      validate: (p: string) => p,
+      getProjectRoot: () => '/fake',
+      toRelative: (p: string) => p,
+      readFile: () => '',
+      isWithinRoot: () => true,
+    }) as unknown as ReturnType<ServerContext['getPathValidator']>,
     isStoreInitialized: () => false,
     isGraphInitialized: () => true,
     isParserInitialized: () => false,
