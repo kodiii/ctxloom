@@ -1,6 +1,8 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
+import { mkdirSync, writeFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -10,6 +12,36 @@ const repoRoot = path.resolve(__dirname, '..');
 const indexTs = path.join(repoRoot, 'src', 'index.ts');
 const fixturesDir = path.join(repoRoot, 'test', 'fixtures', 'rules');
 
+// CTXLOOM_LICENSE_BYPASS env var was removed (security audit M-1).
+// Write a real license file into a tmp HOME so the gate passes through
+// the normal isActive() fast path, exercising the same code real users hit.
+const tmpHome = path.join(tmpdir(), `ctxloom-rulescli-${process.pid}-${Date.now()}`);
+
+beforeAll(() => {
+  mkdirSync(path.join(tmpHome, '.ctxloom'), { recursive: true });
+  const license = {
+    schemaVersion: 1,
+    key: 'ctxl_pro_test_fixture',
+    tier: 'pro',
+    status: 'active',
+    fingerprint: 'sha256:' + 'a'.repeat(64),
+    seats: 1,
+    issuedAt: new Date(Date.now() - 86_400_000).toISOString(),
+    expiresAt: new Date(Date.now() + 365 * 86_400_000).toISOString(),
+    lastValidatedAt: new Date().toISOString(),
+    licenseId: 'lk_test',
+    instanceId: 'act_test',
+  };
+  writeFileSync(
+    path.join(tmpHome, '.ctxloom', 'license.json'),
+    JSON.stringify(license, null, 2),
+  );
+});
+
+afterAll(() => {
+  rmSync(tmpHome, { recursive: true, force: true });
+});
+
 async function runCheck(
   fixture: string,
   args: string[] = [],
@@ -18,7 +50,10 @@ async function runCheck(
     const result = await execAsync(
       'node',
       ['--import', 'tsx/esm', indexTs, 'rules', 'check', ...args],
-      { cwd: path.join(fixturesDir, fixture), env: { ...process.env, FORCE_COLOR: '0', CTXLOOM_LICENSE_BYPASS: '1' } },
+      {
+        cwd: path.join(fixturesDir, fixture),
+        env: { ...process.env, FORCE_COLOR: '0', HOME: tmpHome },
+      },
     );
     return { stdout: result.stdout, stderr: result.stderr, exitCode: 0 };
   } catch (err: unknown) {
