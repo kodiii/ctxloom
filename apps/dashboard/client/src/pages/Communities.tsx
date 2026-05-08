@@ -23,7 +23,10 @@ export function Communities() {
         </span>
       </div>
 
-      <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
+      {/* `items-start` so an expanded card on the left doesn't push its
+          right-side neighbour to the same height — each card keeps its
+          natural intrinsic size. */}
+      <div className="grid grid-cols-1 gap-3 lg:grid-cols-2 items-start">
         {communities.map(c => (
           <div key={c.id} className="bg-[#1e1d2a] border border-white/10 rounded-xl p-4 transition-colors hover:border-white/20">
             <button
