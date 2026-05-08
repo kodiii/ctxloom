@@ -23,11 +23,12 @@
  * Skipped when SKIP_PUBLISH_SMOKE=1 is set (e.g. CI re-runs after a
  * confirmed-good earlier pack, or local emergency overrides).
  */
-import { execFileSync, execSync, spawnSync } from "node:child_process";
-import { mkdtempSync, rmSync, readFileSync, existsSync, readdirSync } from "node:fs";
+import { execFileSync, execSync, spawn, spawnSync } from "node:child_process";
+import { mkdtempSync, rmSync, readFileSync, existsSync, readdirSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { setTimeout as delay } from "node:timers/promises";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, "..");
@@ -134,6 +135,15 @@ try {
     fail(`dashboard server entry missing from tarball: ${dashEntry}`);
   }
   log("dashboard server entry present");
+
+  // ── 6. Actually boot the dashboard and curl /. The previous existence
+  //      check missed the v1.0.13 path-to-regexp / express-5 wildcard
+  //      crash and the v1.0.10–.12 dist/dist/ ENOENT — both surfaced
+  //      only at runtime. This step exercises the real consumer path:
+  //      tarball install → resolved transitive deps (express 5 via
+  //      @modelcontextprotocol/sdk) → SPA fallback route.
+  await dashboardServesIndex(tmpDir, dashEntry);
+  log("dashboard boots and serves index.html (200 OK)");
 } finally {
   rmSync(tmpDir, { recursive: true, force: true });
   // Always clean up the tarball — it sits at the repo root after npm pack.
@@ -145,3 +155,74 @@ try {
 }
 
 log("✓ publish smoke-test passed");
+
+/**
+ * Boot the dashboard against the freshly installed tarball, hit / and
+ * verify a 200 OK with non-empty HTML. Fails the smoke-test on any
+ * crash (path-to-regexp errors, ENOENT on index.html, port collisions).
+ *
+ * Picks a random high port to avoid clashing with anything the user has
+ * running locally or in CI. Times out at 10s — the dashboard usually
+ * boots in <2s.
+ */
+async function dashboardServesIndex(tmpDirArg, dashEntryArg) {
+  const port = 30000 + Math.floor(Math.random() * 30000);
+  log(`booting dashboard on :${port}…`);
+  // macOS routes /var/folders/... through /private/var/folders/... — argv[1]
+  // and import.meta.url disagree about which one to use, defeating the
+  // server's `process.argv[1] === fileURLToPath(import.meta.url)` guard.
+  // Pass the realpath-resolved path so both sides agree and startDashboard
+  // actually runs.
+  const realDashEntry = realpathSync(dashEntryArg);
+  const realTmpDir = realpathSync(tmpDirArg);
+  const child = spawn("node", [realDashEntry], {
+    cwd: realTmpDir,
+    env: { ...process.env, CTXLOOM_ROOT: realTmpDir, PORT: String(port) },
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+
+  const stderrChunks = [];
+  const stdoutChunks = [];
+  child.stderr.on("data", (c) => stderrChunks.push(c));
+  child.stdout.on("data", (c) => stdoutChunks.push(c));
+  let exited = false;
+  let exitCode = null;
+  child.on("exit", (code) => {
+    exited = true;
+    exitCode = code;
+  });
+
+  // Poll up to 10s for /. Crash-out early if the child died.
+  const deadline = Date.now() + 10_000;
+  let lastErr = "";
+  while (Date.now() < deadline) {
+    if (exited) {
+      child.kill("SIGKILL");
+      fail(
+        `dashboard exited with code ${exitCode} before serving /\nstdout:\n${Buffer.concat(stdoutChunks).toString()}\nstderr:\n${Buffer.concat(stderrChunks).toString()}`,
+      );
+    }
+    try {
+      const res = await fetch(`http://127.0.0.1:${port}/`);
+      const body = await res.text();
+      child.kill("SIGTERM");
+      // Drain any remaining IO so the process actually exits.
+      await delay(100);
+      if (!child.killed) child.kill("SIGKILL");
+      if (res.status !== 200) {
+        fail(`dashboard returned ${res.status} for / (expected 200)\nbody:\n${body.slice(0, 500)}`);
+      }
+      if (!body.includes("<!doctype html") && !body.includes("<!DOCTYPE html")) {
+        fail(`dashboard returned 200 but body wasn't HTML:\n${body.slice(0, 500)}`);
+      }
+      return;
+    } catch (err) {
+      lastErr = err instanceof Error ? err.message : String(err);
+      await delay(250);
+    }
+  }
+  child.kill("SIGKILL");
+  fail(
+    `dashboard did not serve / within 10s (last fetch error: ${lastErr})\nstderr:\n${Buffer.concat(stderrChunks).toString()}`,
+  );
+}
