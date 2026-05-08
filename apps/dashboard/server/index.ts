@@ -116,7 +116,14 @@ export async function startDashboard(options: {
   // and produce dist/dist/dashboard/client (the v1.0.10–1.0.12 ENOENT bug).
   const clientDist = path.join(__dirname, '../dashboard/client');
   app.use(express.static(clientDist));
-  app.get('*', (_req, res) => {
+  // SPA fallback. We declare express as `external` in tsup, so the
+  // version comes from the consumer's resolved tree — currently
+  // express@5.x via @modelcontextprotocol/sdk's transitive dep.
+  // Express 5's path-to-regexp v8 rejects the bare '*' wildcard
+  // ("Missing parameter name at index 1"). A RegExp route matches
+  // identically under both v4 and v5 and avoids the named-splat
+  // syntax (`/{*splat}`) that v4 doesn't understand.
+  app.get(/.*/, (_req, res) => {
     res.sendFile(path.join(clientDist, 'index.html'));
   });
 
