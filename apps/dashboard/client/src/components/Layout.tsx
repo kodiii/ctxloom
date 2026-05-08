@@ -1,4 +1,5 @@
 import { NavLink, Outlet } from 'react-router-dom';
+import { ProjectSwitcher } from './ProjectSwitcher';
 
 const NAV = [
   { to: '/', label: 'Overview', icon: '◈' },
@@ -20,6 +21,9 @@ export function Layout() {
             <span className="text-sm font-semibold"><span className="text-white">ctx</span><span className="text-[#a78bfa]">loom</span></span>
             <span className="ml-1 text-xs text-white/30">dashboard</span>
           </div>
+        </div>
+        <div style={{ borderBottom: '1px solid rgba(255,255,255,0.07)' }}>
+          <ProjectSwitcher />
         </div>
         <nav className="flex-1 py-4 space-y-1 px-2">
           {NAV.map(({ to, label, icon }) => (
