@@ -108,7 +108,13 @@ export async function startDashboard(options: {
     // .ctxloom may not exist yet — watcher skipped
   }
 
-  const clientDist = path.join(__dirname, '../dist/dashboard/client');
+  // Compiled server lives at apps/dashboard/dist/server/index.js, so
+  // __dirname is …/dist/server. Vite outputs the client bundle to
+  // …/dist/dashboard/client (vite root='client', outDir='../dist/dashboard/client').
+  // Resolving from __dirname therefore needs '../dashboard/client', NOT
+  // '../dist/dashboard/client' — the leading dist/ would double the segment
+  // and produce dist/dist/dashboard/client (the v1.0.10–1.0.12 ENOENT bug).
+  const clientDist = path.join(__dirname, '../dashboard/client');
   app.use(express.static(clientDist));
   app.get('*', (_req, res) => {
     res.sendFile(path.join(clientDist, 'index.html'));
