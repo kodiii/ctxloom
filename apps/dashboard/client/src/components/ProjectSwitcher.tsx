@@ -97,18 +97,12 @@ export function ProjectSwitcher() {
     );
   }
 
-  // Single project — no dropdown, just show the name. Avoids a useless
-  // chevron when there's nothing to switch to.
+  // Single project — no dropdown to render, but still give the user
+  // a discoverable hint that they can add more. The chevron+caret UI
+  // would imply something to choose from; we use a static "+" button
+  // that opens an inline help block instead.
   if (projects.length <= 1) {
-    return (
-      <div
-        className="px-3 py-2 text-xs text-white/40 truncate"
-        title={`${active.name}\n${active.root}`}
-      >
-        <span className="text-white/30">project: </span>
-        <span className="text-white/80">{active.name}</span>
-      </div>
-    );
+    return <SoloProjectHint name={active.name} root={active.root} />;
   }
 
   return (
@@ -181,6 +175,66 @@ export function ProjectSwitcher() {
       {error && (
         <div className="px-2.5 py-1 text-[10px] text-red-400/80" role="alert">
           {error}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Shown in place of the dropdown when only one project is known
+ * (no `~/.ctxloom/repos.json` entries yet). Tells the user how to
+ * grow the list — a subtle "+" toggles an inline tip with the
+ * `ctxloom register` command. Closed by default so it doesn't
+ * dominate the sidebar.
+ */
+function SoloProjectHint({ name, root }: { name: string; root: string }) {
+  const [open, setOpen] = useState(false);
+  const cmd = 'ctxloom register';
+  const [copied, setCopied] = useState(false);
+  return (
+    <div className="px-3 py-2">
+      <div className="flex items-center gap-2 text-xs">
+        <span className="text-white/30 shrink-0">◆</span>
+        <span
+          className="text-white/80 truncate flex-1 min-w-0"
+          title={root}
+        >
+          {name}
+        </span>
+        <button
+          type="button"
+          onClick={() => setOpen((o) => !o)}
+          className="shrink-0 text-white/30 hover:text-white/70 transition-colors text-sm w-4 leading-none"
+          aria-label="How to add more projects"
+          title="Add more projects"
+        >
+          {open ? '×' : '+'}
+        </button>
+      </div>
+      {open && (
+        <div className="mt-2 text-[11px] text-white/50 leading-snug">
+          Track multiple projects in one dashboard:
+          <div className="mt-1.5 flex items-stretch gap-1">
+            <code className="flex-1 min-w-0 truncate rounded bg-black/40 px-2 py-1 text-white/80 font-mono text-[10px]">
+              {cmd}
+            </code>
+            <button
+              type="button"
+              onClick={() => {
+                void navigator.clipboard?.writeText(cmd);
+                setCopied(true);
+                setTimeout(() => setCopied(false), 1200);
+              }}
+              className="shrink-0 rounded bg-white/5 px-2 text-[10px] text-white/60 hover:bg-white/10 transition-colors"
+              aria-label="Copy command"
+            >
+              {copied ? '✓' : 'copy'}
+            </button>
+          </div>
+          <div className="mt-1.5 text-white/30">
+            Run inside any repo, then refresh this page.
+          </div>
         </div>
       )}
     </div>

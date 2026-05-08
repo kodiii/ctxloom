@@ -138,7 +138,7 @@ export function Overview() {
         </div>
 
         {tokenState.status === 'success' && (
-          <div className="bg-[#1e1d2a] border border-white/10 rounded-xl p-5 lg:col-span-2">
+          <div className="bg-[#1e1d2a] border border-white/10 rounded-xl p-5">
             <h2 className="text-white/50 text-xs uppercase tracking-wider mb-4">Token consumption</h2>
             <div className="flex flex-col gap-4">
               <div className="flex items-end justify-between">
