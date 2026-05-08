@@ -14,6 +14,7 @@ import { buildFileRouter } from './routes/file.js';
 import { buildOpenRouter } from './routes/open.js';
 import { buildTokensRouter } from './routes/tokens.js';
 import { buildTrendsRouter } from './routes/trends.js';
+import { buildProjectsRouter } from './routes/projects.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -59,6 +60,9 @@ export async function startDashboard(options: {
   app.use('/api/open', buildOpenRouter(ctx));
   app.use('/api/tokens', buildTokensRouter(ctx));
   app.use('/api/trends', buildTrendsRouter(ctx));
+  // /api/projects is wired further down — it needs the watcher
+  // re-attach hook (`attachWatcher`), which is defined later in this
+  // function. We attach the route after the watcher helper exists.
 
   // SECURITY: do NOT expose the absolute project root in /api/health.
   // Cross-origin pages on the same host could probe this endpoint to
@@ -85,28 +89,52 @@ export async function startDashboard(options: {
     }
   });
 
-  // Watch .ctxloom/ for snapshot changes and auto-reload
-  const snapshotDir = path.join(root, '.ctxloom');
+  // Watch .ctxloom/ for snapshot changes and auto-reload. Refactored
+  // into a re-attachable helper so the multi-project switcher can
+  // tear down the old watcher and arm a new one when the active
+  // project changes — without leaking watchers across switches.
   let debounce: ReturnType<typeof setTimeout> | null = null;
-  try {
-    fs.watch(snapshotDir, (_event, filename) => {
-      if (!filename || !filename.includes('snapshot')) return;
-      if (debounce) clearTimeout(debounce);
-      debounce = setTimeout(async () => {
-        if (reloading) return;
-        reloading = true;
-        try {
-          console.log(`[dashboard] ${filename} changed, reloading…`);
-          await reloadContext(ctx);
-          console.log(`[dashboard] auto-reload done — ${ctx.graph.allFiles().length} files`);
-        } finally {
-          reloading = false;
-        }
-      }, 500);
-    });
-  } catch {
-    // .ctxloom may not exist yet — watcher skipped
+  let activeWatcher: fs.FSWatcher | null = null;
+
+  function attachSnapshotWatcher(targetRoot: string): void {
+    if (activeWatcher) {
+      try { activeWatcher.close(); } catch { /* ignore */ }
+      activeWatcher = null;
+    }
+    const snapshotDir = path.join(targetRoot, '.ctxloom');
+    try {
+      activeWatcher = fs.watch(snapshotDir, (_event, filename) => {
+        if (!filename || !filename.includes('snapshot')) return;
+        if (debounce) clearTimeout(debounce);
+        debounce = setTimeout(async () => {
+          if (reloading) return;
+          reloading = true;
+          try {
+            console.log(`[dashboard] ${filename} changed, reloading…`);
+            await reloadContext(ctx);
+            console.log(`[dashboard] auto-reload done — ${ctx.graph.allFiles().length} files`);
+          } finally {
+            reloading = false;
+          }
+        }, 500);
+      });
+    } catch {
+      // .ctxloom may not exist yet — watcher skipped. The user can still
+      // hit /api/refresh to force a reindex.
+    }
   }
+
+  attachSnapshotWatcher(ctx.root);
+
+  app.use('/api/projects', buildProjectsRouter({
+    ctx,
+    defaultRoot: root,
+    onActiveChanged: async (newRoot) => {
+      console.log(`[dashboard] switched active project → ${newRoot}`);
+      console.log(`  ${ctx.graph.allFiles().length} files, ${ctx.graph.edgeCount()} edges, git=${ctx.gitEnabled}`);
+      attachSnapshotWatcher(newRoot);
+    },
+  }));
 
   // Compiled server lives at apps/dashboard/dist/server/index.js, so
   // __dirname is …/dist/server. Vite outputs the client bundle to
