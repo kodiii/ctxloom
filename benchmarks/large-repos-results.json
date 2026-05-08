@@ -1,0 +1,63 @@
+{
+  "runAt": "2026-05-08T21:44:50.943Z",
+  "aggregateReduction": 92,
+  "totalRawTokensApprox": 14053247,
+  "totalSkeletonTokensApprox": 1086900,
+  "results": [
+    {
+      "name": "vercel/next.js",
+      "files": 2742,
+      "totalRawChars": 48779512,
+      "totalSkeletonChars": 2336572,
+      "totalRawTokensApprox": 12194878,
+      "totalSkeletonTokensApprox": 584143,
+      "reductionPct": 95,
+      "failedFiles": 0,
+      "durationMs": 4191
+    },
+    {
+      "name": "nestjs/nest",
+      "files": 1305,
+      "totalRawChars": 1635948,
+      "totalSkeletonChars": 709642,
+      "totalRawTokensApprox": 408987,
+      "totalSkeletonTokensApprox": 177411,
+      "reductionPct": 57,
+      "failedFiles": 0,
+      "durationMs": 548
+    },
+    {
+      "name": "withastro/astro",
+      "files": 875,
+      "totalRawChars": 3219161,
+      "totalSkeletonChars": 763678,
+      "totalRawTokensApprox": 804790,
+      "totalSkeletonTokensApprox": 190920,
+      "reductionPct": 76,
+      "failedFiles": 0,
+      "durationMs": 827
+    },
+    {
+      "name": "honojs/hono",
+      "files": 200,
+      "totalRawChars": 741551,
+      "totalSkeletonChars": 119698,
+      "totalRawTokensApprox": 185388,
+      "totalSkeletonTokensApprox": 29925,
+      "reductionPct": 84,
+      "failedFiles": 0,
+      "durationMs": 280
+    },
+    {
+      "name": "vitejs/vite",
+      "files": 1032,
+      "totalRawChars": 1836817,
+      "totalSkeletonChars": 418002,
+      "totalRawTokensApprox": 459204,
+      "totalSkeletonTokensApprox": 104501,
+      "reductionPct": 77,
+      "failedFiles": 0,
+      "durationMs": 586
+    }
+  ]
+}
