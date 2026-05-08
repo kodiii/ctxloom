@@ -94,6 +94,29 @@ export class ASTParser {
   private kotlinLang: TreeSitter.Language | null = null;
   private swiftLang: TreeSitter.Language | null = null;
   private phpLang: TreeSitter.Language | null = null;
+
+  /**
+   * Per-language parser cache. Each TreeSitter.Parser is a
+   * WASM-allocated object; instantiating one per file (the previous
+   * behaviour) leaked memory faster than V8 could reclaim it — OOM
+   * at ~1100 files even with --max-old-space-size=8192. Reusing one
+   * parser per language for the lifetime of the ASTParser instance
+   * is exactly what the tree-sitter docs recommend.
+   *
+   * Map key is the resolved Language; the same Language object is
+   * cached per-language above (tsLang, pyLang, …) so the WeakMap is
+   * stable across calls.
+   */
+  private parserCache = new WeakMap<TreeSitter.Language, TreeSitter.Parser>();
+
+  private getParser(language: TreeSitter.Language): TreeSitter.Parser {
+    let parser = this.parserCache.get(language);
+    if (parser) return parser;
+    parser = new TreeSitter.Parser();
+    parser.setLanguage(language);
+    this.parserCache.set(language, parser);
+    return parser;
+  }
   private dartLang: TreeSitter.Language | null = null;
   private grammarLoader = new GrammarLoader();
 
@@ -270,14 +293,17 @@ export class ASTParser {
     if (ext === '.dart') return this.parseDart(filePath);
     if (ext === '.vue') return this.parseVue(filePath);
 
-    const parser = new TreeSitter.Parser();
-    parser.setLanguage(this.tsLang);
+    const parser = this.getParser(this.tsLang);
 
     const source = fs.readFileSync(filePath, 'utf-8');
     const tree = parser.parse(source);
     if (!tree) return [];
 
-    return this.extractTSNodes(tree.rootNode, filePath, source.split('\n'));
+    try {
+      return this.extractTSNodes(tree.rootNode, filePath, source.split('\n'));
+    } finally {
+      tree.delete();
+    }
   }
 
   private extractTSNodes(rootNode: TreeSitter.Node, _filePath: string, lines: string[]): ParsedNode[] {
@@ -488,25 +514,31 @@ export class ASTParser {
     if (!match?.[1]?.trim()) return [];
     const scriptContent = match[1];
     if (!this.tsLang) return [];
-    const parser = new TreeSitter.Parser();
-    parser.setLanguage(this.tsLang);
+    const parser = this.getParser(this.tsLang);
     const tree = parser.parse(scriptContent);
     if (!tree) return [];
-    return this.extractTSNodes(tree.rootNode, filePath, scriptContent.split('\n'));
+    try {
+      return this.extractTSNodes(tree.rootNode, filePath, scriptContent.split('\n'));
+    } finally {
+      tree.delete();
+    }
   }
 
   private async parsePython(filePath: string): Promise<ParsedNode[]> {
     if (!this.pyLang) await this.loadPython();
     if (!this.pyLang) return []; // grammar unavailable
 
-    const parser = new TreeSitter.Parser();
-    parser.setLanguage(this.pyLang);
+    const parser = this.getParser(this.pyLang);
 
     const source = fs.readFileSync(filePath, 'utf-8');
     const tree = parser.parse(source);
     if (!tree) return [];
 
-    return this.extractPythonNodes(tree.rootNode, filePath, source);
+    try {
+      return this.extractPythonNodes(tree.rootNode, filePath, source);
+    } finally {
+      tree.delete();
+    }
   }
 
   private async parseNotebook(filePath: string): Promise<ParsedNode[]> {
@@ -516,11 +548,14 @@ export class ASTParser {
       const raw = fs.readFileSync(filePath, 'utf-8');
       const pythonSource = extractNotebookPythonSource(raw);
       if (!pythonSource.trim()) return [];
-      const parser = new TreeSitter.Parser();
-      parser.setLanguage(this.pyLang);
+      const parser = this.getParser(this.pyLang);
       const tree = parser.parse(pythonSource);
       if (!tree) return [];
-      return this.extractPythonNodes(tree.rootNode, filePath, pythonSource);
+      try {
+        return this.extractPythonNodes(tree.rootNode, filePath, pythonSource);
+      } finally {
+        tree.delete();
+      }
     } catch {
       return [];
     }
@@ -614,8 +649,7 @@ export class ASTParser {
     if (!this.goLang) await this.loadGo();
     if (!this.goLang) return [];
 
-    const parser = new TreeSitter.Parser();
-    parser.setLanguage(this.goLang);
+    const parser = this.getParser(this.goLang);
 
     const source = fs.readFileSync(filePath, 'utf-8');
     const tree = parser.parse(source);
@@ -701,16 +735,23 @@ export class ASTParser {
       }
     };
 
-    walk(tree.rootNode);
-    return nodes;
+    try {
+      walk(tree.rootNode);
+      return nodes;
+    } finally {
+      // tree-sitter trees hold WASM-allocated memory that V8's GC
+      // can't reclaim under pressure — explicit dispose prevents the
+      // unbounded heap growth observed when parsing thousands of
+      // files in one process (OOM at ~1100 files even at 8GB heap).
+      tree.delete();
+    }
   }
 
   private async parseRust(filePath: string): Promise<ParsedNode[]> {
     if (!this.rustLang) await this.loadRust();
     if (!this.rustLang) return [];
 
-    const parser = new TreeSitter.Parser();
-    parser.setLanguage(this.rustLang);
+    const parser = this.getParser(this.rustLang);
 
     const source = fs.readFileSync(filePath, 'utf-8');
     const tree = parser.parse(source);
@@ -820,16 +861,23 @@ export class ASTParser {
       }
     };
 
-    walk(tree.rootNode);
-    return nodes;
+    try {
+      walk(tree.rootNode);
+      return nodes;
+    } finally {
+      // tree-sitter trees hold WASM-allocated memory that V8's GC
+      // can't reclaim under pressure — explicit dispose prevents the
+      // unbounded heap growth observed when parsing thousands of
+      // files in one process (OOM at ~1100 files even at 8GB heap).
+      tree.delete();
+    }
   }
 
   private async parseJava(filePath: string): Promise<ParsedNode[]> {
     if (!this.javaLang) await this.loadJava();
     if (!this.javaLang) return [];
 
-    const parser = new TreeSitter.Parser();
-    parser.setLanguage(this.javaLang);
+    const parser = this.getParser(this.javaLang);
 
     const source = fs.readFileSync(filePath, 'utf-8');
     const tree = parser.parse(source);
@@ -937,16 +985,23 @@ export class ASTParser {
       }
     };
 
-    walk(tree.rootNode);
-    return nodes;
+    try {
+      walk(tree.rootNode);
+      return nodes;
+    } finally {
+      // tree-sitter trees hold WASM-allocated memory that V8's GC
+      // can't reclaim under pressure — explicit dispose prevents the
+      // unbounded heap growth observed when parsing thousands of
+      // files in one process (OOM at ~1100 files even at 8GB heap).
+      tree.delete();
+    }
   }
 
   private async parseCSharp(filePath: string): Promise<ParsedNode[]> {
     if (!this.csLang) await this.loadCSharp();
     if (!this.csLang) return [];
 
-    const parser = new TreeSitter.Parser();
-    parser.setLanguage(this.csLang);
+    const parser = this.getParser(this.csLang);
 
     const source = fs.readFileSync(filePath, 'utf-8');
     const tree = parser.parse(source);
@@ -1024,16 +1079,23 @@ export class ASTParser {
       }
     };
 
-    walk(tree.rootNode);
-    return nodes;
+    try {
+      walk(tree.rootNode);
+      return nodes;
+    } finally {
+      // tree-sitter trees hold WASM-allocated memory that V8's GC
+      // can't reclaim under pressure — explicit dispose prevents the
+      // unbounded heap growth observed when parsing thousands of
+      // files in one process (OOM at ~1100 files even at 8GB heap).
+      tree.delete();
+    }
   }
 
   private async parseRuby(filePath: string): Promise<ParsedNode[]> {
     if (!this.rubyLang) await this.loadRuby();
     if (!this.rubyLang) return [];
 
-    const parser = new TreeSitter.Parser();
-    parser.setLanguage(this.rubyLang);
+    const parser = this.getParser(this.rubyLang);
 
     const source = fs.readFileSync(filePath, 'utf-8');
     const tree = parser.parse(source);
@@ -1096,16 +1158,23 @@ export class ASTParser {
       }
     };
 
-    walk(tree.rootNode);
-    return nodes;
+    try {
+      walk(tree.rootNode);
+      return nodes;
+    } finally {
+      // tree-sitter trees hold WASM-allocated memory that V8's GC
+      // can't reclaim under pressure — explicit dispose prevents the
+      // unbounded heap growth observed when parsing thousands of
+      // files in one process (OOM at ~1100 files even at 8GB heap).
+      tree.delete();
+    }
   }
 
   private async parseKotlin(filePath: string): Promise<ParsedNode[]> {
     if (!this.kotlinLang) await this.loadKotlin();
     if (!this.kotlinLang) return [];
 
-    const parser = new TreeSitter.Parser();
-    parser.setLanguage(this.kotlinLang);
+    const parser = this.getParser(this.kotlinLang);
 
     const source = fs.readFileSync(filePath, 'utf-8');
     const tree = parser.parse(source);
@@ -1162,16 +1231,23 @@ export class ASTParser {
       }
     };
 
-    walk(tree.rootNode);
-    return nodes;
+    try {
+      walk(tree.rootNode);
+      return nodes;
+    } finally {
+      // tree-sitter trees hold WASM-allocated memory that V8's GC
+      // can't reclaim under pressure — explicit dispose prevents the
+      // unbounded heap growth observed when parsing thousands of
+      // files in one process (OOM at ~1100 files even at 8GB heap).
+      tree.delete();
+    }
   }
 
   private async parseSwift(filePath: string): Promise<ParsedNode[]> {
     if (!this.swiftLang) await this.loadSwift();
     if (!this.swiftLang) return [];
 
-    const parser = new TreeSitter.Parser();
-    parser.setLanguage(this.swiftLang);
+    const parser = this.getParser(this.swiftLang);
 
     const source = fs.readFileSync(filePath, 'utf-8');
     const tree = parser.parse(source);
@@ -1240,16 +1316,23 @@ export class ASTParser {
       }
     };
 
-    walk(tree.rootNode);
-    return nodes;
+    try {
+      walk(tree.rootNode);
+      return nodes;
+    } finally {
+      // tree-sitter trees hold WASM-allocated memory that V8's GC
+      // can't reclaim under pressure — explicit dispose prevents the
+      // unbounded heap growth observed when parsing thousands of
+      // files in one process (OOM at ~1100 files even at 8GB heap).
+      tree.delete();
+    }
   }
 
   private async parsePhp(filePath: string): Promise<ParsedNode[]> {
     if (!this.phpLang) await this.loadPhp();
     if (!this.phpLang) return [];
 
-    const parser = new TreeSitter.Parser();
-    parser.setLanguage(this.phpLang);
+    const parser = this.getParser(this.phpLang);
 
     const source = fs.readFileSync(filePath, 'utf-8');
     const tree = parser.parse(source);
@@ -1308,16 +1391,23 @@ export class ASTParser {
       }
     };
 
-    walk(tree.rootNode);
-    return nodes;
+    try {
+      walk(tree.rootNode);
+      return nodes;
+    } finally {
+      // tree-sitter trees hold WASM-allocated memory that V8's GC
+      // can't reclaim under pressure — explicit dispose prevents the
+      // unbounded heap growth observed when parsing thousands of
+      // files in one process (OOM at ~1100 files even at 8GB heap).
+      tree.delete();
+    }
   }
 
   private async parseDart(filePath: string): Promise<ParsedNode[]> {
     if (!this.dartLang) await this.loadDart();
     if (!this.dartLang) return [];
 
-    const parser = new TreeSitter.Parser();
-    parser.setLanguage(this.dartLang);
+    const parser = this.getParser(this.dartLang);
 
     const source = fs.readFileSync(filePath, 'utf-8');
     const tree = parser.parse(source);
@@ -1361,8 +1451,16 @@ export class ASTParser {
       }
     };
 
-    walk(tree.rootNode);
-    return nodes;
+    try {
+      walk(tree.rootNode);
+      return nodes;
+    } finally {
+      // tree-sitter trees hold WASM-allocated memory that V8's GC
+      // can't reclaim under pressure — explicit dispose prevents the
+      // unbounded heap growth observed when parsing thousands of
+      // files in one process (OOM at ~1100 files even at 8GB heap).
+      tree.delete();
+    }
   }
 
   /**
@@ -1371,8 +1469,7 @@ export class ASTParser {
   async findCallSites(filePath: string, symbolName: string): Promise<CallSite[]> {
     if (!this.tsLang) throw new Error('ASTParser not initialized. Call init() first.');
 
-    const parser = new TreeSitter.Parser();
-    parser.setLanguage(this.tsLang);
+    const parser = this.getParser(this.tsLang);
 
     const source = fs.readFileSync(filePath, 'utf-8');
     const tree = parser.parse(source);
@@ -1407,8 +1504,12 @@ export class ASTParser {
       }
     };
 
-    walk(tree.rootNode);
-    return results;
+    try {
+      walk(tree.rootNode);
+      return results;
+    } finally {
+      tree.delete();
+    }
   }
 
   /**
@@ -1421,8 +1522,7 @@ export class ASTParser {
   ): Promise<Array<{ callerSymbol: string; calleeSymbol: string; line: number }>> {
     if (!this.tsLang) throw new Error('ASTParser not initialized. Call init() first.');
 
-    const parser = new TreeSitter.Parser();
-    parser.setLanguage(this.tsLang);
+    const parser = this.getParser(this.tsLang);
 
     const source = fs.readFileSync(filePath, 'utf-8');
     const tree = parser.parse(source);
@@ -1472,7 +1572,11 @@ export class ASTParser {
       }
     };
 
-    walk(tree.rootNode, []);
-    return results;
+    try {
+      walk(tree.rootNode, []);
+      return results;
+    } finally {
+      tree.delete();
+    }
   }
 }
