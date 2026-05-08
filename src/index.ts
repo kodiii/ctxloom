@@ -496,12 +496,26 @@ async function main(): Promise<void> {
     }
 
     case 'register': {
-      const repoPath = process.argv[3];
-      if (!repoPath) {
-        console.error('[ctxloom] Usage: ctxloom register <path>');
+      // Default to cwd when no path given — same convention as `git init`,
+      // `npm init`, etc. Previous behavior printed Usage and exited 1,
+      // which silently looked like success and produced an empty registry
+      // (real bug report: users assumed `ctxloom register` registered the
+      // current directory and were surprised the dashboard switcher
+      // stayed empty).
+      const repoPath = process.argv[3] ?? '.';
+      const absPath = path.resolve(repoPath);
+      // Sanity-check: refuse to register a non-existent directory rather
+      // than silently writing a phantom entry.
+      try {
+        const stat = await import('node:fs').then(m => m.statSync(absPath));
+        if (!stat.isDirectory()) {
+          console.error(`[ctxloom] ${absPath} is not a directory`);
+          process.exit(1);
+        }
+      } catch {
+        console.error(`[ctxloom] Path does not exist: ${absPath}`);
         process.exit(1);
       }
-      const absPath = path.resolve(repoPath);
       const dbPath = path.join(absPath, '.ctxloom', 'vectors.lancedb');
       const registryPath = path.join(os.homedir(), '.ctxloom', 'repos.json');
       const reg = new RepoRegistry(registryPath);
@@ -517,7 +531,7 @@ async function main(): Promise<void> {
       const reg = new RepoRegistry(registryPath);
       const repos = reg.list();
       if (repos.length === 0) {
-        console.log('[ctxloom] No repos registered. Run: ctxloom register <path>');
+        console.log('[ctxloom] No repos registered. Run `ctxloom register` from any project directory.');
       } else {
         console.log(`\n[ctxloom] Registered repos (${repos.length}):`);
         for (const r of repos) {
@@ -833,7 +847,7 @@ Usage:
   ctxloom setup                Detect and configure MCP-compatible AI tools
   ctxloom grammars             Show grammar cache status
   ctxloom grammars --download  Pre-download all language grammars
-  ctxloom register <path>      Register a repo for cross-repo search
+  ctxloom register [path]      Register a repo for cross-repo search (defaults to cwd)
   ctxloom repos                List all registered repos
   ctxloom dashboard            Start the web dashboard (port 7842)
   ctxloom dashboard --port=N   Start on custom port
