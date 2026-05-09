@@ -70,19 +70,39 @@ Set `CTXLOOM_LICENSE_KEY` in your CI secrets. The key is validated on every run 
 
 ### Manual MCP Configuration
 
+This is what `ctxloom setup` writes for you. Match it by hand if you prefer:
+
 ```jsonc
-// ~/.claude/claude_desktop_config.json  (or equivalent)
+// Claude Code:    ~/.claude.json
+// Cursor:         ~/.cursor/mcp.json
+// Codex CLI:      ~/.codex/mcp.json
+// Kimi:           ~/.kimi/mcp.json
+// Claude Desktop: ~/Library/Application Support/Claude/claude_desktop_config.json
 {
   "mcpServers": {
     "ctxloom": {
-      "command": "npx",
-      "args": ["-y", "ctxloom"]
+      "command": "ctxloom",
+      "args": []
     }
   }
 }
 ```
 
-> If installed globally: `"command": "ctxloom"` with `"args": []`.
+The MCP server inherits cwd from the host. Claude Code, Cursor, Codex, and Kimi all spawn it with the open project as cwd, so the right project is indexed automatically — no `CTXLOOM_ROOT` needed.
+
+For hosts without a project concept (Claude Desktop, CI), set the root explicitly:
+
+```jsonc
+{
+  "mcpServers": {
+    "ctxloom": {
+      "command": "ctxloom",
+      "args": [],
+      "env": { "CTXLOOM_ROOT": "/path/to/project" }
+    }
+  }
+}
+```
 >
 > Pricing: **Pro** €9.90/mo or €99/yr (1 machine) · **Team** €19.90/mo or €199/yr (3 machines) · [ctxloom.com/pricing](https://ctxloom.com/pricing)
 
@@ -355,7 +375,7 @@ The tool reads `.ctxloom/rules.yml` and the live dependency graph on every call 
 
 ---
 
-## Tools — 32 total
+## Tools — 33 total
 
 ### Search & Context
 
@@ -388,6 +408,7 @@ The tool reads `.ctxloom/rules.yml` and the live dependency graph on every call 
 | `ctx_get_call_graph` | Bidirectional call graph traversal with configurable depth |
 | `ctx_get_definition` | Symbol definition lookup via AST index |
 | `ctx_execution_flow` | DFS call graph traversal from entry point with cycle detection |
+| `ctx_get_affected_flows` | Which flows are affected by changed files? Traces back to root callers, then forward — auto-detects from `git diff HEAD~1` |
 | `ctx_refactor_preview` | Read-only symbol rename diff preview — see every change before applying |
 | `ctx_apply_refactor` | Write symbol renames to disk atomically (supports dry_run) |
 
@@ -487,10 +508,10 @@ ctxloom --help                   Show help
 | Ruby | ✅ Relative paths | ✅ | ✅ |
 | Kotlin | ✅ Package imports | ✅ | ✅ |
 | Swift | ✅ Module imports | ✅ | ✅ |
-| PHP | ✅ PSR-4 + require_once | ✅ | ❌ |
-| Dart | ✅ Relative imports | ✅ | ❌ |
-| Vue SFC | ✅ Script block | ✅ | ❌ |
-| Jupyter Notebook | ✅ Python cell imports | ✅ | ❌ |
+| PHP | ✅ PSR-4 + require_once | ✅ | ✅ |
+| Dart | ✅ Relative imports | ✅ | ✅ |
+| Vue SFC | ✅ Script block | ✅ | ✅ |
+| Jupyter Notebook | ✅ Python cell imports | ✅ | ✅ |
 
 ---
 
@@ -501,7 +522,7 @@ ctxloom --help                   Show help
 │                      MCP Interface                       │
 │                   (Stdio transport)                      │
 ├──────────────────────────────────────────────────────────┤
-│                    32 Tools (ToolRegistry)                │
+│                    33 Tools (ToolRegistry)                │
 │  Search · Graph Intelligence · Navigation · Review       │
 ├──────────────────────────────────────────────────────────┤
 │                    Context Engine                         │
@@ -543,18 +564,18 @@ See [`benchmarks/README.md`](benchmarks/README.md) for methodology and how to re
 
 ## Token reduction benchmarks
 
-Measured on real open-source repos with realistic review scenarios (skeletonization applies to JS/TS files; Python and Rust show graph indexing metrics only):
+Full-source skeletonization on real open-source frameworks — every TS/JS file (skipping tests, `.d.ts`, build output, minified vendor bundles).
 
-| Repository | Language | Files | Raw tokens | Skeleton tokens | Reduction |
-|---|---|---|---|---|---|
-| expressjs/express | JavaScript | 141 | ~4,646 | ~390 | **92%** |
-| sindresorhus/got | TypeScript | 71 | ~10,807 | ~742 | **93%** |
-| pallets/flask | Python | 83 | n/a | n/a | n/a |
-| SergioBenitez/Rocket | Rust | 495 | ~1,281 | ~90 | **93%** |
-| fastify/fastify | JavaScript | 258 | ~2,136 | ~202 | **91%** |
-| **Average (JS/TS/RS)** | | | | | **92%** |
+| Repository | Files | Raw tokens | Skeleton tokens | Reduction |
+|---|---:|---:|---:|---:|
+| vercel/next.js | 2,742 | ~12.2M | ~584k | **95%** |
+| honojs/hono | 200 | ~185k | ~30k | **84%** |
+| vitejs/vite | 1,032 | ~459k | ~105k | **77%** |
+| withastro/astro | 875 | ~805k | ~191k | **76%** |
+| nestjs/nest | 1,305 | ~409k | ~177k | **57%** |
+| **Weighted average · 6,154 files** | | **~14.1M** | **~1.1M** | **92%** |
 
-Token counts use the standard 4 chars/token approximation. Results saved in [`benchmarks/public-repos-results.json`](benchmarks/public-repos-results.json). Run `npm run bench:repos` to reproduce.
+Token counts use the standard 4 chars/token approximation. Per-repo range (57–95%) reflects file-shape sensitivity: codebases with lots of tiny re-export shims compress less than ones with meatier source. Results saved in [`benchmarks/large-repos-results.json`](benchmarks/large-repos-results.json). Run `npm run bench:repos` to reproduce.
 
 ---
 
