@@ -1,4 +1,60 @@
 import { useEffect, useState } from 'react';
+import { PrismLight as SyntaxHighlighter } from 'react-syntax-highlighter';
+import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
+import bash from 'react-syntax-highlighter/dist/esm/languages/prism/bash';
+import css from 'react-syntax-highlighter/dist/esm/languages/prism/css';
+import go from 'react-syntax-highlighter/dist/esm/languages/prism/go';
+import java from 'react-syntax-highlighter/dist/esm/languages/prism/java';
+import json from 'react-syntax-highlighter/dist/esm/languages/prism/json';
+import kotlin from 'react-syntax-highlighter/dist/esm/languages/prism/kotlin';
+import markdown from 'react-syntax-highlighter/dist/esm/languages/prism/markdown';
+import python from 'react-syntax-highlighter/dist/esm/languages/prism/python';
+import ruby from 'react-syntax-highlighter/dist/esm/languages/prism/ruby';
+import rust from 'react-syntax-highlighter/dist/esm/languages/prism/rust';
+import sql from 'react-syntax-highlighter/dist/esm/languages/prism/sql';
+import tsx from 'react-syntax-highlighter/dist/esm/languages/prism/tsx';
+import yaml from 'react-syntax-highlighter/dist/esm/languages/prism/yaml';
+
+// Register the language subset we expect to encounter in indexed
+// repos. PrismLight only loads grammars we explicitly register, which
+// keeps the bundle ~50KB rather than the ~600KB the full Prism build
+// would pull in. Extensions that don't map to a registered grammar
+// fall back to plain text (no syntax highlighting, but the file still
+// renders cleanly).
+SyntaxHighlighter.registerLanguage('bash', bash);
+SyntaxHighlighter.registerLanguage('css', css);
+SyntaxHighlighter.registerLanguage('go', go);
+SyntaxHighlighter.registerLanguage('java', java);
+SyntaxHighlighter.registerLanguage('json', json);
+SyntaxHighlighter.registerLanguage('kotlin', kotlin);
+SyntaxHighlighter.registerLanguage('markdown', markdown);
+SyntaxHighlighter.registerLanguage('python', python);
+SyntaxHighlighter.registerLanguage('ruby', ruby);
+SyntaxHighlighter.registerLanguage('rust', rust);
+SyntaxHighlighter.registerLanguage('sql', sql);
+SyntaxHighlighter.registerLanguage('tsx', tsx);
+SyntaxHighlighter.registerLanguage('yaml', yaml);
+
+const EXT_TO_LANG: Record<string, string> = {
+  ts: 'tsx', tsx: 'tsx', js: 'tsx', jsx: 'tsx', mjs: 'tsx', cjs: 'tsx',
+  py: 'python', pyi: 'python',
+  go: 'go',
+  rs: 'rust',
+  java: 'java',
+  kt: 'kotlin', kts: 'kotlin',
+  rb: 'ruby',
+  sql: 'sql',
+  md: 'markdown', markdown: 'markdown',
+  sh: 'bash', bash: 'bash', zsh: 'bash',
+  yml: 'yaml', yaml: 'yaml',
+  json: 'json',
+  css: 'css',
+};
+
+function languageFor(ext: string | undefined): string {
+  if (!ext) return 'text';
+  return EXT_TO_LANG[ext.toLowerCase()] ?? 'text';
+}
 
 interface FileDrawerProps {
   file: string | null;
@@ -91,9 +147,33 @@ export function FileDrawer({ file, onClose }: FileDrawerProps) {
               >
                 {data.lines} lines &middot; .{data.ext}
               </div>
-              <pre className="p-5 text-xs font-mono text-white/70 leading-relaxed whitespace-pre overflow-x-auto">
+              <SyntaxHighlighter
+                language={languageFor(data.ext)}
+                style={vscDarkPlus}
+                showLineNumbers
+                wrapLongLines={false}
+                customStyle={{
+                  margin: 0,
+                  padding: '20px',
+                  background: 'transparent',
+                  fontSize: '12px',
+                  lineHeight: 1.55,
+                }}
+                lineNumberStyle={{
+                  color: 'rgba(255,255,255,0.20)',
+                  minWidth: '2em',
+                  paddingRight: '1em',
+                  userSelect: 'none',
+                }}
+                codeTagProps={{
+                  style: {
+                    fontFamily:
+                      'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
+                  },
+                }}
+              >
                 {data.content}
-              </pre>
+              </SyntaxHighlighter>
             </>
           )}
           {!loading && !data && (
