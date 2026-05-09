@@ -43,35 +43,57 @@ describe('GET /api/risk', () => {
     expect(res.status).toBe(200);
     expect(res.body.entries).toHaveLength(0);
     expect(res.body.caps).toEqual({ churn: 0, coupling: 0 });
+    expect(res.body.bands).toEqual({
+      criticalCount: 0, highCount: 0, mediumCount: 0, lowCount: 0, totalRanked: 0,
+    });
   });
 
-  it('returns per-file breakdown and repo-wide caps', async () => {
+  it('returns intrinsic-only breakdown (no bus factor in score)', async () => {
     const app = express();
     app.use('/api/risk', buildRiskRouter(mockCtx));
     const res = await request(app).get('/api/risk');
 
-    expect(res.body.caps).toEqual({
-      churn: expect.any(Number),
-      coupling: expect.any(Number),
-    });
     expect(res.body.caps.churn).toBeGreaterThan(0);
 
     for (const entry of res.body.entries) {
       expect(entry.breakdown).toEqual({
         churn: expect.any(Number),
         bugDensity: expect.any(Number),
-        busFactor: expect.any(Number),
         coupling: expect.any(Number),
       });
-      // each component normalized to [0, 1]
+      expect(entry.breakdown).not.toHaveProperty('busFactor');
+
       for (const v of Object.values(entry.breakdown)) {
         expect(v).toBeGreaterThanOrEqual(0);
         expect(v).toBeLessThanOrEqual(1);
       }
-      // weighted sum (0.2/0.2/0.4/0.2) ≈ stored riskScore (within 2-decimal rounding)
+
+      // weighted sum 0.4 churn + 0.3 bugs + 0.3 coupling ≈ stored riskScore
       const b = entry.breakdown as Record<string, number>;
-      const recomputed = b.churn * 0.2 + b.bugDensity * 0.2 + b.busFactor * 0.4 + b.coupling * 0.2;
+      const recomputed = b.churn * 0.4 + b.bugDensity * 0.3 + b.coupling * 0.3;
       expect(Math.abs(recomputed - entry.riskScore)).toBeLessThan(0.011);
+
+      // bus factor surfaced as a separate per-file annotation
+      expect(typeof entry.busFactor).toBe('number');
+      expect(typeof entry.siloed).toBe('boolean');
+      expect(entry.siloed).toBe(entry.busFactor <= 1);
     }
+  });
+
+  it('assigns labels by percentile band, not absolute threshold', async () => {
+    const app = express();
+    app.use('/api/risk', buildRiskRouter(mockCtx));
+    const res = await request(app).get('/api/risk');
+
+    // hot.ts is the higher-scoring of two files, so it should land in
+    // 'critical' (top 5% with min-1 floor for tiny repos). cold.ts has
+    // near-zero metrics — its score is below SCORE_FLOOR, so it should
+    // be 'low' regardless of rank.
+    const hot = res.body.entries.find((e: any) => e.file === 'src/hot.ts');
+    const cold = res.body.entries.find((e: any) => e.file === 'src/cold.ts');
+    expect(hot.riskLabel).toBe('critical');
+    expect(cold.riskLabel).toBe('low');
+    expect(res.body.bands.criticalCount).toBe(1);
+    expect(res.body.bands.lowCount).toBe(1);
   });
 });
