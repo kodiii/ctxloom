@@ -17,7 +17,7 @@ export function RiskTable() {
   if (state.status === 'loading') return <div className="text-white/40 text-sm">Loading...</div>;
   if (state.status === 'error') return <ErrorBanner message={state.message} />;
 
-  const { entries, overallRiskScore } = state.data;
+  const { entries, overallRiskScore, caps } = state.data;
 
   if (entries.length === 0) {
     return (
@@ -46,7 +46,18 @@ export function RiskTable() {
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <h1 className="text-white text-xl font-semibold">Risk</h1>
-        <span className="text-sm text-white/40">avg score: {overallRiskScore}</span>
+        <span
+          className="text-sm text-white/40"
+          title="Churn and coupling are normalized to this repo's 90th-percentile values. A file scoring 1.0 on either is in the top 10% of the codebase by that metric."
+        >
+          avg score: {overallRiskScore}
+          {caps && (
+            <span className="text-white/30">
+              {' · '}churn p90: {caps.churn.toLocaleString()}
+              {' · '}coupling p90: {caps.coupling}
+            </span>
+          )}
+        </span>
       </div>
 
       <input
@@ -85,7 +96,7 @@ export function RiskTable() {
                   {e.file}
                 </td>
                 <td className="px-4 py-3 text-xs text-white/50">{e.topOwner ?? '—'}</td>
-                <td className="px-4 py-3"><RiskBadge level={e.riskLabel} /></td>
+                <td className="px-4 py-3"><RiskBadge level={e.riskLabel} breakdown={e.breakdown} score={e.riskScore} /></td>
                 <td className="px-4 py-3 text-white/70">{e.churnLines.toLocaleString()}</td>
                 <td className="px-4 py-3 text-white/70">{e.busFactor}</td>
                 <td className="px-4 py-3 text-white/70">{e.couplingFanOut}</td>

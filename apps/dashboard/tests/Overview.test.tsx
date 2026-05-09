@@ -16,6 +16,18 @@ vi.mock('../client/src/lib/api.ts', () => ({
       ],
       gitEnabled: true,
     }),
+    status: vi.fn().mockResolvedValue({
+      lastIndexed: new Date().toISOString(),
+      fileCount: 42,
+      gitEnabled: true,
+    }),
+    tokens: vi.fn().mockResolvedValue({
+      fullTokens: 100000,
+      skeletonTokens: 20000,
+      savedTokens: 80000,
+      reductionPercent: 80,
+      fileCount: 42,
+    }),
   },
 }));
 

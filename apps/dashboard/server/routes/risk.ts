@@ -1,20 +1,17 @@
 import { Router } from 'express';
 import type { DashboardContext } from '../loader.js';
 import type { RiskResponse, RiskEntry } from '../types.js';
+import {
+  computeRiskBreakdown,
+  computeRiskCaps,
+  riskLabel,
+  scoreFromBreakdown,
+  type RawRiskMetrics,
+} from '../lib/risk.js';
 
-function computeRiskScore(churnLines: number, bugDensity: number, busFactor: number, couplingFanOut: number): number {
-  const churnPart = Math.min(1, churnLines / 1000);
-  const bugPart = Math.min(1, bugDensity * 2);
-  const busPart = busFactor <= 1 ? 1 : busFactor <= 2 ? 0.5 : 0;
-  const couplingPart = Math.min(1, couplingFanOut / 10);
-  return churnPart * 0.3 + bugPart * 0.3 + busPart * 0.2 + couplingPart * 0.2;
-}
-
-function riskLabel(score: number): 'low' | 'medium' | 'high' | 'critical' {
-  if (score > 0.8) return 'critical';
-  if (score > 0.6) return 'high';
-  if (score > 0.3) return 'medium';
-  return 'low';
+interface RawWithIdentity extends RawRiskMetrics {
+  file: string;
+  topOwner: string | null;
 }
 
 export function buildRiskRouter(ctx: DashboardContext): Router {
@@ -24,33 +21,42 @@ export function buildRiskRouter(ctx: DashboardContext): Router {
     const { graph, overlay, gitEnabled } = ctx;
 
     if (!gitEnabled) {
-      const body: RiskResponse = { entries: [], overallRiskScore: 0 };
+      const body: RiskResponse = { entries: [], overallRiskScore: 0, caps: { churn: 0, coupling: 0 } };
       return res.json(body);
     }
 
     const files = graph.allFiles();
 
-    const entries: RiskEntry[] = files.map(f => {
+    const raw: RawWithIdentity[] = files.map(f => {
       const churn = overlay.churn.statsFor(f);
       const ownership = overlay.ownership.statsFor(f);
       const coupled = overlay.coChange.topFor({ node: f, limit: 100, minConfidence: 0.1 });
 
-      const churnLines = churn?.churnLines ?? 0;
-      const bugDensity = churn?.bugDensity ?? 0;
-      const busFactor = ownership?.busFactor ?? 1;
-      const topOwner = ownership?.owners?.[0]?.author ?? null;
-      const couplingFanOut = coupled.length;
-      const score = computeRiskScore(churnLines, bugDensity, busFactor, couplingFanOut);
-
       return {
         file: f,
+        churnLines: churn?.churnLines ?? 0,
+        bugDensity: churn?.bugDensity ?? 0,
+        busFactor: ownership?.busFactor ?? 1,
+        topOwner: ownership?.owners?.[0]?.author ?? null,
+        couplingFanOut: coupled.length,
+      };
+    });
+
+    const caps = computeRiskCaps(raw);
+
+    const entries: RiskEntry[] = raw.map(m => {
+      const breakdown = computeRiskBreakdown(m, caps);
+      const score = scoreFromBreakdown(breakdown);
+      return {
+        file: m.file,
         riskScore: Math.round(score * 100) / 100,
         riskLabel: riskLabel(score),
-        churnLines,
-        bugDensity,
-        busFactor,
-        topOwner,
-        couplingFanOut,
+        churnLines: m.churnLines,
+        bugDensity: m.bugDensity,
+        busFactor: m.busFactor,
+        topOwner: m.topOwner,
+        couplingFanOut: m.couplingFanOut,
+        breakdown,
       };
     });
 
@@ -60,7 +66,7 @@ export function buildRiskRouter(ctx: DashboardContext): Router {
       ? Math.round((entries.reduce((s, e) => s + e.riskScore, 0) / entries.length) * 100) / 100
       : 0;
 
-    res.json({ entries, overallRiskScore } satisfies RiskResponse);
+    res.json({ entries, overallRiskScore, caps } satisfies RiskResponse);
   });
 
   return router;

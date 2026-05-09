@@ -37,12 +37,16 @@ describe('GET /api/overview', () => {
     expect(Array.isArray(res.body.topHubs)).toBe(true);
   });
 
-  it('returns risk breakdown using churnLines thresholds', async () => {
+  it('returns risk breakdown using unified scoring', async () => {
     const app = express();
     app.use('/api/overview', buildOverviewRouter(mockCtx));
     const res = await request(app).get('/api/overview');
-    // a.ts has churnLines=1200 → critical, b.ts and c.ts null → low
-    expect(res.body.risk.critical).toBe(1);
-    expect(res.body.risk.low).toBe(2);
+    // With unified algo: bus factor 1 contributes 0.4 to every file (no ownership data).
+    // a.ts adds saturated churn (p90=1200) + small bug density → high.
+    // b.ts/c.ts have only the bus contribution → medium.
+    const total = res.body.risk.critical + res.body.risk.high + res.body.risk.medium + res.body.risk.low;
+    expect(total).toBe(3);
+    expect(res.body.risk.high).toBe(1);
+    expect(res.body.risk.medium).toBe(2);
   });
 });
