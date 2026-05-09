@@ -26,6 +26,13 @@ export interface GraphResponse {
   edges: GraphEdge[];
 }
 
+export interface RiskBreakdown {
+  churn: number;
+  bugDensity: number;
+  busFactor: number;
+  coupling: number;
+}
+
 export interface RiskEntry {
   file: string;
   riskScore: number;
@@ -35,11 +42,18 @@ export interface RiskEntry {
   busFactor: number;
   topOwner: string | null;
   couplingFanOut: number;
+  breakdown: RiskBreakdown;
+}
+
+export interface RiskCaps {
+  churn: number;
+  coupling: number;
 }
 
 export interface RiskResponse {
   entries: RiskEntry[];
   overallRiskScore: number;
+  caps: RiskCaps;
 }
 
 export interface Community {
