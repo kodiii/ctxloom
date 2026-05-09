@@ -8,33 +8,35 @@ const COLOURS: Record<string, string> = {
   low: 'bg-green-900/50 text-green-300',
 };
 
-const WEIGHTS = { churn: 0.2, bugDensity: 0.2, busFactor: 0.4, coupling: 0.2 } as const;
+const WEIGHTS = { churn: 0.4, bugDensity: 0.3, coupling: 0.3 } as const;
 
 const LABELS: Record<keyof RiskBreakdown, string> = {
-  busFactor: 'Bus factor',
   churn: 'Churn',
   bugDensity: 'Bug density',
   coupling: 'Coupling',
 };
 
 const EXPLANATIONS: Record<string, string> = {
-  critical: 'Score > 0.80 — top operational risk; prioritise refactor or knowledge-share.',
-  high: 'Score > 0.60 — meaningful risk; review when touching this area.',
-  medium: 'Score > 0.30 — moderate risk; keep an eye on it.',
-  low: 'Score ≤ 0.30 — healthy file.',
+  critical: 'Top 5% by intrinsic risk in this repo. Prioritise refactor or test coverage.',
+  high: 'Next 10% — meaningful intrinsic risk. Review when touching this area.',
+  medium: 'Next 20% — moderate intrinsic risk. Worth keeping an eye on.',
+  low: 'Bottom 65% — healthy file by intrinsic risk metrics.',
 };
 
 interface RiskBadgeProps {
   level: string;
   breakdown?: RiskBreakdown;
   score?: number;
+  busFactor?: number;
+  topOwner?: string | null;
+  siloed?: boolean;
 }
 
-const TOOLTIP_W = 288;
-const TOOLTIP_H_ESTIMATE = 200;
+const TOOLTIP_W = 296;
+const TOOLTIP_H_ESTIMATE = 230;
 const GAP = 8;
 
-export function RiskBadge({ level, breakdown, score }: RiskBadgeProps) {
+export function RiskBadge({ level, breakdown, score, busFactor, topOwner, siloed }: RiskBadgeProps) {
   const colour = COLOURS[level] ?? 'bg-white/10 text-white/50';
 
   if (!breakdown) {
@@ -134,8 +136,9 @@ export function RiskBadge({ level, breakdown, score }: RiskBadgeProps) {
             )}
           </div>
           <div className="text-white/50 mb-2">{EXPLANATIONS[level] ?? ''}</div>
+
           <div className="text-white/40 text-[10px] uppercase tracking-wide mb-1">
-            Contribution to score
+            Intrinsic risk contribution
           </div>
           <div className="space-y-1">
             {contributions.map(c => (
@@ -153,8 +156,27 @@ export function RiskBadge({ level, breakdown, score }: RiskBadgeProps) {
               </div>
             ))}
           </div>
-          <div className="mt-2 text-[10px] text-white/30">
-            Weights: bus 40%, churn 20%, bugs 20%, coupling 20%. Churn & coupling normalized to repo p90.
+
+          {(typeof busFactor === 'number' || topOwner) && (
+            <>
+              <div className="text-white/40 text-[10px] uppercase tracking-wide mt-3 mb-1">
+                Ownership <span className="text-white/30 normal-case">(not in score)</span>
+              </div>
+              <div className="text-white/60 leading-relaxed">
+                {topOwner && <>Owner: <span className="text-white/80">{topOwner}</span><br /></>}
+                {typeof busFactor === 'number' && (
+                  <>
+                    Bus factor: <span className="text-white/80">{busFactor}</span>
+                    {siloed && <span className="text-yellow-300/80"> · knowledge silo</span>}
+                  </>
+                )}
+              </div>
+            </>
+          )}
+
+          <div className="mt-3 text-[10px] text-white/30 leading-relaxed">
+            Score: 40% churn + 30% bugs + 30% coupling, normalized to repo p90.
+            Labels are percentile-banded (top 5% critical, next 10% high, next 20% medium).
           </div>
         </div>
       )}

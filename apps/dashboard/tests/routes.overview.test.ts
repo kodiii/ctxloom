@@ -37,16 +37,17 @@ describe('GET /api/overview', () => {
     expect(Array.isArray(res.body.topHubs)).toBe(true);
   });
 
-  it('returns risk breakdown using unified scoring', async () => {
+  it('classifies files via percentile bands on intrinsic risk only', async () => {
     const app = express();
     app.use('/api/overview', buildOverviewRouter(mockCtx));
     const res = await request(app).get('/api/overview');
-    // With unified algo: bus factor 1 contributes 0.4 to every file (no ownership data).
-    // a.ts adds saturated churn (p90=1200) + small bug density → high.
-    // b.ts/c.ts have only the bus contribution → medium.
+    // Intrinsic-only score: a.ts (churn 1200, p90 1200 → 1.0; bug 0.1 → 0.2; coupling 0)
+    // scores 0.4 + 0.06 + 0 = 0.46. b.ts/c.ts have no metrics → score 0,
+    // below SCORE_FLOOR → 'low'. With percentile bands on n=3, the top
+    // file is critical and the rest are low.
     const total = res.body.risk.critical + res.body.risk.high + res.body.risk.medium + res.body.risk.low;
     expect(total).toBe(3);
-    expect(res.body.risk.high).toBe(1);
-    expect(res.body.risk.medium).toBe(2);
+    expect(res.body.risk.critical).toBe(1);
+    expect(res.body.risk.low).toBe(2);
   });
 });
