@@ -3,9 +3,9 @@ import { CommunityDetector } from '../../../../src/graph/CommunityDetector.js';
 import type { DashboardContext } from '../loader.js';
 import type { OverviewResponse } from '../types.js';
 import {
+  assignLabelsByPercentile,
   computeRiskBreakdown,
   computeRiskCaps,
-  riskLabel,
   scoreFromBreakdown,
   type RawRiskMetrics,
 } from '../lib/risk.js';
@@ -44,10 +44,9 @@ export function buildOverviewRouter(ctx: DashboardContext): Router {
         };
       });
       const caps = computeRiskCaps(raw);
-      for (const m of raw) {
-        const score = scoreFromBreakdown(computeRiskBreakdown(m, caps));
-        risk[riskLabel(score)]++;
-      }
+      const scores = raw.map(m => scoreFromBreakdown(computeRiskBreakdown(m, caps)));
+      const { labels } = assignLabelsByPercentile(scores);
+      for (const label of labels) risk[label]++;
     }
 
     const body: OverviewResponse = {

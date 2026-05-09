@@ -143,27 +143,40 @@ export async function startDashboard(options: {
   // '../dist/dashboard/client' — the leading dist/ would double the segment
   // and produce dist/dist/dashboard/client (the v1.0.10–1.0.12 ENOENT bug).
   const clientDist = path.join(__dirname, '../dashboard/client');
-  // `dotfiles: 'allow'` is REQUIRED. Express's underlying `send` library
-  // walks every segment of the file's absolute path and rejects any
-  // request whose path includes a "dotfile" — a segment starting with
-  // `.` and longer than 1 char (so `..` is skipped but `.nvm`, `.config`,
-  // `.local`, `.pnpm`, `.yarn` etc. all match). Globally-installed
-  // ctxloom commonly lives under one of those (Node Version Manager
-  // installs to `~/.nvm/...`), in which case index.html and every
-  // bundled asset 404 with a confusing `NotFoundError`. Allowing
-  // dotfile paths here is safe: the served root is the bundled client
-  // dist directory, not the user's home dir.
-  app.use(express.static(clientDist, { dotfiles: 'allow' }));
-  // SPA fallback. We declare express as `external` in tsup, so the
-  // version comes from the consumer's resolved tree — currently
-  // express@5.x via @modelcontextprotocol/sdk's transitive dep.
-  // Express 5's path-to-regexp v8 rejects the bare '*' wildcard
-  // ("Missing parameter name at index 1"). A RegExp route matches
-  // identically under both v4 and v5 and avoids the named-splat
-  // syntax (`/{*splat}`) that v4 doesn't understand.
-  app.get(/.*/, (_req, res) => {
-    res.sendFile(path.join(clientDist, 'index.html'), { dotfiles: 'allow' });
-  });
+  const clientDistExists = fs.existsSync(path.join(clientDist, 'index.html'));
+  if (clientDistExists) {
+    // `dotfiles: 'allow'` is REQUIRED. Express's underlying `send` library
+    // walks every segment of the file's absolute path and rejects any
+    // request whose path includes a "dotfile" — a segment starting with
+    // `.` and longer than 1 char (so `..` is skipped but `.nvm`, `.config`,
+    // `.local`, `.pnpm`, `.yarn` etc. all match). Globally-installed
+    // ctxloom commonly lives under one of those (Node Version Manager
+    // installs to `~/.nvm/...`), in which case index.html and every
+    // bundled asset 404 with a confusing `NotFoundError`. Allowing
+    // dotfile paths here is safe: the served root is the bundled client
+    // dist directory, not the user's home dir.
+    app.use(express.static(clientDist, { dotfiles: 'allow' }));
+    // SPA fallback. We declare express as `external` in tsup, so the
+    // version comes from the consumer's resolved tree — currently
+    // express@5.x via @modelcontextprotocol/sdk's transitive dep.
+    // Express 5's path-to-regexp v8 rejects the bare '*' wildcard
+    // ("Missing parameter name at index 1"). A RegExp route matches
+    // identically under both v4 and v5 and avoids the named-splat
+    // syntax (`/{*splat}`) that v4 doesn't understand.
+    app.get(/.*/, (_req, res) => {
+      res.sendFile(path.join(clientDist, 'index.html'), { dotfiles: 'allow' });
+    });
+  } else {
+    // Dev mode (tsx server/index.ts) or missing build: the client bundle
+    // hasn't been produced. The Vite dev server on :5173 serves the UI
+    // and proxies /api here, so this server stays API-only.
+    app.get(/^\/(?!api\/).*/, (_req, res) => {
+      res.status(404).type('text/plain').send(
+        'Dashboard client bundle not found. In dev: open http://localhost:5173. ' +
+        'For a production preview from this port, run `npm run build:client -w @ctxloom/dashboard`.'
+      );
+    });
+  }
 
   app.listen(port, () => {
     const url = `http://localhost:${port}`;

@@ -29,7 +29,6 @@ export interface GraphResponse {
 export interface RiskBreakdown {
   churn: number;
   bugDensity: number;
-  busFactor: number;
   coupling: number;
 }
 
@@ -43,6 +42,7 @@ export interface RiskEntry {
   topOwner: string | null;
   couplingFanOut: number;
   breakdown: RiskBreakdown;
+  siloed: boolean;
 }
 
 export interface RiskCaps {
@@ -50,10 +50,19 @@ export interface RiskCaps {
   coupling: number;
 }
 
+export interface RiskBands {
+  criticalCount: number;
+  highCount: number;
+  mediumCount: number;
+  lowCount: number;
+  totalRanked: number;
+}
+
 export interface RiskResponse {
   entries: RiskEntry[];
   overallRiskScore: number;
   caps: RiskCaps;
+  bands: RiskBands;
 }
 
 export interface Community {

@@ -17,7 +17,7 @@ export function RiskTable() {
   if (state.status === 'loading') return <div className="text-white/40 text-sm">Loading...</div>;
   if (state.status === 'error') return <ErrorBanner message={state.message} />;
 
-  const { entries, overallRiskScore, caps } = state.data;
+  const { entries, overallRiskScore, caps, bands } = state.data;
 
   if (entries.length === 0) {
     return (
@@ -48,13 +48,17 @@ export function RiskTable() {
         <h1 className="text-white text-xl font-semibold">Risk</h1>
         <span
           className="text-sm text-white/40"
-          title="Churn and coupling are normalized to this repo's 90th-percentile values. A file scoring 1.0 on either is in the top 10% of the codebase by that metric."
+          title="Score is intrinsic file risk: 40% churn + 30% bug density + 30% coupling, all normalized to this repo's 90th-percentile values. Labels are percentile-banded — top 5% are critical in this repo, next 10% are high, next 20% are medium. Bus factor is shown in each tooltip but does not contribute to the score."
         >
           avg score: {overallRiskScore}
+          {bands && (
+            <span className="text-white/30">
+              {' · '}{bands.criticalCount} critical · {bands.highCount} high · {bands.mediumCount} medium
+            </span>
+          )}
           {caps && (
             <span className="text-white/30">
-              {' · '}churn p90: {caps.churn.toLocaleString()}
-              {' · '}coupling p90: {caps.coupling}
+              {' · '}churn p90: {caps.churn.toLocaleString()} · coupling p90: {caps.coupling}
             </span>
           )}
         </span>
@@ -96,7 +100,16 @@ export function RiskTable() {
                   {e.file}
                 </td>
                 <td className="px-4 py-3 text-xs text-white/50">{e.topOwner ?? '—'}</td>
-                <td className="px-4 py-3"><RiskBadge level={e.riskLabel} breakdown={e.breakdown} score={e.riskScore} /></td>
+                <td className="px-4 py-3">
+                  <RiskBadge
+                    level={e.riskLabel}
+                    breakdown={e.breakdown}
+                    score={e.riskScore}
+                    busFactor={e.busFactor}
+                    topOwner={e.topOwner}
+                    siloed={e.siloed}
+                  />
+                </td>
                 <td className="px-4 py-3 text-white/70">{e.churnLines.toLocaleString()}</td>
                 <td className="px-4 py-3 text-white/70">{e.busFactor}</td>
                 <td className="px-4 py-3 text-white/70">{e.couplingFanOut}</td>

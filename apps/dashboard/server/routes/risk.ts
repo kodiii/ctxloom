@@ -2,9 +2,10 @@ import { Router } from 'express';
 import type { DashboardContext } from '../loader.js';
 import type { RiskResponse, RiskEntry } from '../types.js';
 import {
+  assignLabelsByPercentile,
   computeRiskBreakdown,
   computeRiskCaps,
-  riskLabel,
+  isSiloed,
   scoreFromBreakdown,
   type RawRiskMetrics,
 } from '../lib/risk.js';
@@ -21,7 +22,12 @@ export function buildRiskRouter(ctx: DashboardContext): Router {
     const { graph, overlay, gitEnabled } = ctx;
 
     if (!gitEnabled) {
-      const body: RiskResponse = { entries: [], overallRiskScore: 0, caps: { churn: 0, coupling: 0 } };
+      const body: RiskResponse = {
+        entries: [],
+        overallRiskScore: 0,
+        caps: { churn: 0, coupling: 0 },
+        bands: { criticalCount: 0, highCount: 0, mediumCount: 0, lowCount: 0, totalRanked: 0 },
+      };
       return res.json(body);
     }
 
@@ -44,21 +50,25 @@ export function buildRiskRouter(ctx: DashboardContext): Router {
 
     const caps = computeRiskCaps(raw);
 
-    const entries: RiskEntry[] = raw.map(m => {
+    const scored = raw.map(m => {
       const breakdown = computeRiskBreakdown(m, caps);
-      const score = scoreFromBreakdown(breakdown);
-      return {
-        file: m.file,
-        riskScore: Math.round(score * 100) / 100,
-        riskLabel: riskLabel(score),
-        churnLines: m.churnLines,
-        bugDensity: m.bugDensity,
-        busFactor: m.busFactor,
-        topOwner: m.topOwner,
-        couplingFanOut: m.couplingFanOut,
-        breakdown,
-      };
+      return { m, breakdown, score: scoreFromBreakdown(breakdown) };
     });
+
+    const { labels, bands } = assignLabelsByPercentile(scored.map(s => s.score));
+
+    const entries: RiskEntry[] = scored.map(({ m, breakdown, score }, idx) => ({
+      file: m.file,
+      riskScore: Math.round(score * 100) / 100,
+      riskLabel: labels[idx],
+      churnLines: m.churnLines,
+      bugDensity: m.bugDensity,
+      busFactor: m.busFactor,
+      topOwner: m.topOwner,
+      couplingFanOut: m.couplingFanOut,
+      breakdown,
+      siloed: isSiloed(m),
+    }));
 
     entries.sort((a, b) => b.riskScore - a.riskScore);
 
@@ -66,7 +76,7 @@ export function buildRiskRouter(ctx: DashboardContext): Router {
       ? Math.round((entries.reduce((s, e) => s + e.riskScore, 0) / entries.length) * 100) / 100
       : 0;
 
-    res.json({ entries, overallRiskScore, caps } satisfies RiskResponse);
+    res.json({ entries, overallRiskScore, caps, bands } satisfies RiskResponse);
   });
 
   return router;
