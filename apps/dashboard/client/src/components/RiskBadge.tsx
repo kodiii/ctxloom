@@ -51,6 +51,21 @@ export function RiskBadge({ level, breakdown, score, busFactor, topOwner, siloed
   const [open, setOpen] = useState(false);
   const [pinned, setPinned] = useState(false);
   const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
+  const [isTouch, setIsTouch] = useState(false);
+
+  // Detect touch-primary devices via the (hover: none) media query — matches
+  // phones/tablets where mouseenter never fires and the only path to the
+  // tooltip is a tap. Used to suppress hover handlers (which double-fire on
+  // iOS Safari's synthetic mouse events) and to swap the close-affordance
+  // hint to something a touch user can act on (Esc doesn't exist).
+  useEffect(() => {
+    if (typeof window === 'undefined' || !window.matchMedia) return;
+    const mq = window.matchMedia('(hover: none)');
+    const update = () => setIsTouch(mq.matches);
+    update();
+    mq.addEventListener?.('change', update);
+    return () => mq.removeEventListener?.('change', update);
+  }, []);
 
   useLayoutEffect(() => {
     if (!open || !triggerRef.current) return;
@@ -103,10 +118,10 @@ export function RiskBadge({ level, breakdown, score, busFactor, topOwner, siloed
         aria-expanded={open}
         aria-describedby={open ? 'risk-badge-tooltip' : undefined}
         className={`inline-block rounded-full px-2.5 py-0.5 text-xs cursor-pointer ${colour}`}
-        onMouseEnter={() => !pinned && setOpen(true)}
-        onMouseLeave={() => !pinned && setOpen(false)}
-        onFocus={() => !pinned && setOpen(true)}
-        onBlur={() => !pinned && setOpen(false)}
+        onMouseEnter={() => !isTouch && !pinned && setOpen(true)}
+        onMouseLeave={() => !isTouch && !pinned && setOpen(false)}
+        onFocus={() => !isTouch && !pinned && setOpen(true)}
+        onBlur={() => !isTouch && !pinned && setOpen(false)}
         onClick={(e) => {
           e.stopPropagation();
           if (pinned) {
@@ -132,7 +147,9 @@ export function RiskBadge({ level, breakdown, score, busFactor, topOwner, siloed
               {level} {typeof score === 'number' && <span className="text-white/40 font-normal">({score.toFixed(2)})</span>}
             </span>
             {pinned && (
-              <span className="text-[10px] text-white/40">click to unpin · esc</span>
+              <span className="text-[10px] text-white/40">
+                {isTouch ? 'tap badge or outside to close' : 'click to unpin · esc'}
+              </span>
             )}
           </div>
           <div className="text-white/50 mb-2">{EXPLANATIONS[level] ?? ''}</div>
