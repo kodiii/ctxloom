@@ -61,3 +61,45 @@ export interface LoadOptions {
   /** Max rows to return (newest N if series is longer). Default: 500. */
   limit?: number;
 }
+
+/**
+ * One observation of a single file's risk score at a point in time.
+ *
+ * Stored sparsely in `.ctxloom/trends/file-risks.jsonl` — one line per
+ * (timestamp, file) pair. The recorder only emits files whose score is
+ * meaningful (>= SCORE_FLOOR) AND whose score has changed materially
+ * since the last recording, to keep the file from growing without
+ * bound on every indexing event.
+ */
+export interface FileRiskPoint {
+  /** Unix seconds — matches the parent TrendSnapshot.unixSeconds. */
+  unixSeconds: number;
+  /** Repo-relative path. */
+  file: string;
+  /** Intrinsic risk score in [0, 1], rounded to 2 decimals. */
+  score: number;
+  /** Percentile-banded label as of this recording. */
+  label: 'low' | 'medium' | 'high' | 'critical';
+}
+
+/**
+ * Time series of risk scores for one specific file.
+ *
+ * Returned by loadFileRiskHistory(). Ascending by timestamp.
+ */
+export interface FileRiskHistory {
+  file: string;
+  points: FileRiskPoint[];
+  /** Total points on disk for this file (may exceed points.length when bounded). */
+  totalCount: number;
+}
+
+export interface FileRiskLoadOptions {
+  rootDir: string;
+  /** Repo-relative file path to load history for. */
+  file: string;
+  /** Only return points with unixSeconds >= this. Default: no filter. */
+  sinceUnixSeconds?: number;
+  /** Max points to return (newest N). Default: 200. */
+  limit?: number;
+}

@@ -195,3 +195,63 @@ describe('recordTrendSnapshot — git-disabled and error paths', () => {
     expect(result).toBeNull();
   });
 });
+
+describe('recordTrendSnapshot — per-file risk sidecar', () => {
+  let rootDir: string;
+  beforeEach(() => { rootDir = makeTmpRoot(); });
+  afterEach(() => { fs.rmSync(rootDir, { recursive: true, force: true }); });
+
+  function readFileRisks(): Array<{ unixSeconds: number; file: string; score: number; label: string }> {
+    const fp = path.join(rootDir, '.ctxloom', 'trends', 'file-risks.jsonl');
+    if (!fs.existsSync(fp)) return [];
+    return fs.readFileSync(fp, 'utf-8').split('\n').filter(l => l.trim()).map(l => JSON.parse(l));
+  }
+
+  it('records per-file scores for files above SCORE_FLOOR', async () => {
+    await recordTrendSnapshot(makeOpts({
+      rootDir,
+      graph: fakeGraph({ files: ['hot.ts', 'cold.ts'], edges: 1 }),
+      overlay: fakeOverlay({
+        ownership: { 'hot.ts': 1, 'cold.ts': 1 },
+        churn: {
+          'hot.ts': { churnLines: 1500, bugDensity: 0.3, lastTouch: 0 },
+          'cold.ts': { churnLines: 5, bugDensity: 0, lastTouch: 0 },
+        },
+      }),
+      gitEnabled: true,
+      now: () => 1_000_000_000_000,
+    }));
+    const points = readFileRisks();
+    // hot.ts is above SCORE_FLOOR → recorded; cold.ts is well below → skipped.
+    expect(points.some(p => p.file === 'hot.ts')).toBe(true);
+    expect(points.some(p => p.file === 'cold.ts')).toBe(false);
+  });
+
+  it('skips a re-record when the file score has not moved meaningfully', async () => {
+    const opts = (now: number) => makeOpts({
+      rootDir,
+      graph: fakeGraph({ files: ['hot.ts'], edges: 1 }),
+      overlay: fakeOverlay({
+        ownership: { 'hot.ts': 1 },
+        churn: { 'hot.ts': { churnLines: 1500, bugDensity: 0.3, lastTouch: 0 } },
+      }),
+      gitEnabled: true,
+      now: () => now,
+    });
+    await recordTrendSnapshot(opts(1_000_000_000_000));
+    expect(readFileRisks()).toHaveLength(1);
+    // Run again far outside the snapshot collapse window with identical inputs:
+    // the per-file path should still skip because the score did not move.
+    await recordTrendSnapshot(opts(1_000_000_999_000));
+    expect(readFileRisks()).toHaveLength(1);
+  });
+
+  it('does not write per-file points when gitEnabled=false', async () => {
+    await recordTrendSnapshot(makeOpts({
+      rootDir,
+      graph: fakeGraph({ files: ['a.ts'] }),
+      gitEnabled: false,
+    }));
+    expect(readFileRisks()).toHaveLength(0);
+  });
+});
