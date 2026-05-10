@@ -21,6 +21,8 @@ import yaml from 'react-syntax-highlighter/dist/esm/languages/prism/yaml';
 // would pull in. Extensions that don't map to a registered grammar
 // fall back to plain text (no syntax highlighting, but the file still
 // renders cleanly).
+import { FileRiskSparkline } from './FileRiskSparkline.js';
+
 SyntaxHighlighter.registerLanguage('bash', bash);
 SyntaxHighlighter.registerLanguage('css', css);
 SyntaxHighlighter.registerLanguage('go', go);
@@ -146,6 +148,12 @@ export function FileDrawer({ file, onClose }: FileDrawerProps) {
                 style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}
               >
                 {data.lines} lines &middot; .{data.ext}
+              </div>
+              <div
+                className="px-5 py-3"
+                style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}
+              >
+                <FileRiskSparkline file={file} />
               </div>
               <SyntaxHighlighter
                 language={languageFor(data.ext)}

@@ -14,6 +14,7 @@ import { buildFileRouter } from './routes/file.js';
 import { buildOpenRouter } from './routes/open.js';
 import { buildTokensRouter } from './routes/tokens.js';
 import { buildTrendsRouter } from './routes/trends.js';
+import { buildFileTrendsRouter } from './routes/file-trends.js';
 import { buildProjectsRouter } from './routes/projects.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -60,6 +61,7 @@ export async function startDashboard(options: {
   app.use('/api/open', buildOpenRouter(ctx));
   app.use('/api/tokens', buildTokensRouter(ctx));
   app.use('/api/trends', buildTrendsRouter(ctx));
+  app.use('/api/trends', buildFileTrendsRouter(ctx));
   // /api/projects is wired further down — it needs the watcher
   // re-attach hook (`attachWatcher`), which is defined later in this
   // function. We attach the route after the watcher helper exists.

@@ -40,9 +40,34 @@ export type {
   TrendSource,
   RecordOptions as TrendRecordOptions,
   LoadOptions as TrendLoadOptions,
+  FileRiskPoint,
+  FileRiskHistory,
 } from './trends/types.js';
 export { recordTrendSnapshot } from './trends/TrendsRecorder.js';
 export { loadTrendSeries } from './trends/TrendsStore.js';
+export { loadFileRiskHistory } from './trends/FileRiskStore.js';
+
+// ─── Risk scoring ────────────────────────────────────────────────────────────
+export type {
+  RiskLabel,
+  RawRiskMetrics,
+  RiskBreakdown,
+  RiskCaps,
+  RiskBands,
+  ScoredFile,
+} from './risk/scoring.js';
+export {
+  RISK_WEIGHTS,
+  BAND_PCT,
+  SCORE_FLOOR,
+  SILO_BUS_FACTOR,
+  computeRiskCaps,
+  computeRiskBreakdown,
+  scoreFromBreakdown,
+  isSiloed,
+  assignLabelsByPercentile,
+  scoreAll,
+} from './risk/scoring.js';
 
 // ─── AST ─────────────────────────────────────────────────────────────────────
 export type { MethodRange, CallSite, ParsedNode } from './ast/ASTParser.js';

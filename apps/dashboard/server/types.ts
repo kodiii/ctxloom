@@ -26,16 +26,22 @@ export interface GraphResponse {
   edges: GraphEdge[];
 }
 
-export interface RiskBreakdown {
-  churn: number;
-  bugDensity: number;
-  coupling: number;
-}
+// Re-export the shared risk types from @ctxloom/core so routes and the
+// client can keep importing from `../types.js` without knowing the lib
+// moved. Source of truth: packages/core/src/risk/scoring.ts.
+export type {
+  RiskBreakdown,
+  RiskCaps,
+  RiskBands,
+  RiskLabel,
+} from '@ctxloom/core';
+
+import type { RiskBands, RiskBreakdown, RiskCaps, RiskLabel } from '@ctxloom/core';
 
 export interface RiskEntry {
   file: string;
   riskScore: number;
-  riskLabel: 'low' | 'medium' | 'high' | 'critical';
+  riskLabel: RiskLabel;
   churnLines: number;
   bugDensity: number;
   busFactor: number;
@@ -45,24 +51,24 @@ export interface RiskEntry {
   siloed: boolean;
 }
 
-export interface RiskCaps {
-  churn: number;
-  coupling: number;
-}
-
-export interface RiskBands {
-  criticalCount: number;
-  highCount: number;
-  mediumCount: number;
-  lowCount: number;
-  totalRanked: number;
-}
-
 export interface RiskResponse {
   entries: RiskEntry[];
   overallRiskScore: number;
   caps: RiskCaps;
   bands: RiskBands;
+}
+
+export interface FileRiskTrendPoint {
+  unixSeconds: number;
+  score: number;
+  label: RiskLabel;
+}
+
+export interface FileRiskTrendsResponse {
+  file: string;
+  points: FileRiskTrendPoint[];
+  totalCount: number;
+  gitEnabled: boolean;
 }
 
 export interface Community {
