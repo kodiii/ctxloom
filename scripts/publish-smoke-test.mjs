@@ -144,6 +144,22 @@ try {
   //      @modelcontextprotocol/sdk) → SPA fallback route.
   await dashboardServesIndex(tmpDir, dashEntry);
   log("dashboard boots and serves index.html (200 OK)");
+
+  // ── 7. Verify telemetry keys are baked into the bundle. We discovered
+  //      after v1.0.23 shipped that 23 consecutive releases had empty
+  //      __TELEMETRY_POSTHOG_KEY__ and __TELEMETRY_SENTRY_DSN__ inlined
+  //      because the env vars weren't set when `npm publish` ran. The
+  //      bundle compiled to:
+  //          POSTHOG_KEY = process.env["POSTHOG_API_KEY"] ?? (true ? "" : "")
+  //      and the early-return guard in telemetry.ts dropped every event.
+  //      Result: PostHog dashboard was blank for the entire launch period.
+  //      This guard scans the installed bundle for the empty-fallback
+  //      pattern and fails publish if telemetry would silently no-op.
+  //
+  //      Escape hatch: CTXLOOM_ALLOW_NO_TELEMETRY=1 for intentional
+  //      no-telemetry builds (forks, sandboxed dev rebuilds).
+  verifyTelemetryBaked(path.join(tmpDir, "node_modules/ctxloom-pro/dist"));
+  log("telemetry keys verified in bundle");
 } finally {
   rmSync(tmpDir, { recursive: true, force: true });
   // Always clean up the tarball — it sits at the repo root after npm pack.
@@ -155,6 +171,77 @@ try {
 }
 
 log("✓ publish smoke-test passed");
+
+/**
+ * Scan the installed bundle for the telemetry-key assignments and fail
+ * if either is the empty-fallback that tsup compiles when the build-time
+ * env vars (CTXLOOM_BUILD_POSTHOG_KEY / CTXLOOM_BUILD_SENTRY_DSN) are
+ * unset.
+ *
+ * tsup's `define` substitutes __TELEMETRY_POSTHOG_KEY__ at build time.
+ * When the env var is set to "phc_real_key", the bundle reads:
+ *     POSTHOG_KEY = process.env["POSTHOG_API_KEY"] ?? "phc_real_key"
+ * When unset, it reads:
+ *     POSTHOG_KEY = process.env["POSTHOG_API_KEY"] ?? (true ? "" : "")
+ * The guard in telemetry.ts (`if (!POSTHOG_KEY) return`) then short-
+ * circuits every event. This check catches the latter shape.
+ */
+function verifyTelemetryBaked(distDir) {
+  if (process.env.CTXLOOM_ALLOW_NO_TELEMETRY === "1") {
+    log("telemetry check skipped (CTXLOOM_ALLOW_NO_TELEMETRY=1)");
+    return;
+  }
+  if (!existsSync(distDir)) {
+    fail(`expected dist dir at ${distDir}`);
+  }
+  const candidates = readdirSync(distDir)
+    .filter((f) => f.endsWith(".js"))
+    .map((f) => path.join(distDir, f));
+
+  let foundPosthog = false;
+  let foundSentry = false;
+  let posthogEmpty = false;
+  let sentryEmpty = false;
+
+  for (const filePath of candidates) {
+    const content = readFileSync(filePath, "utf8");
+    // tsup's `define` substitution preserves the source's typeof guard, so
+    // the compiled shape is one of:
+    //   POSTHOG_KEY = process.env[...] ?? "phc_..."             (minified)
+    //   POSTHOG_KEY = process.env[...] ?? (true ? "phc_..." : "") (default)
+    //   POSTHOG_KEY = process.env[...] ?? (true ? "" : "")       (empty fallback)
+    // The reliable test is whether any `phc_<id>` literal appears in the
+    // expression, not the exact ?? structure.
+    const posthogMatch = content.match(/POSTHOG_KEY\s*=\s*([^;\n]{1,300})/);
+    if (posthogMatch) {
+      foundPosthog = true;
+      const expr = posthogMatch[1];
+      const hasRealKey = /"phc_[a-zA-Z0-9_]{16,}"/.test(expr);
+      if (!hasRealKey) posthogEmpty = true;
+    }
+    const sentryMatch = content.match(/SENTRY_DSN\s*=\s*([^;\n]{1,300})/);
+    if (sentryMatch) {
+      foundSentry = true;
+      const expr = sentryMatch[1];
+      // Sentry DSN format: https://<key>@<host>/<projectId>
+      const hasRealDsn = /"https:\/\/[^"@\s]+@[^"\s]+"/.test(expr);
+      if (!hasRealDsn) sentryEmpty = true;
+    }
+  }
+
+  const issues = [];
+  if (!foundPosthog) issues.push("POSTHOG_KEY assignment not found in bundle (telemetry.ts may have been refactored)");
+  if (posthogEmpty) issues.push("POSTHOG_KEY is the empty fallback — set CTXLOOM_BUILD_POSTHOG_KEY before npm publish");
+  if (!foundSentry) issues.push("SENTRY_DSN assignment not found in bundle");
+  if (sentryEmpty) issues.push("SENTRY_DSN is the empty fallback — set CTXLOOM_BUILD_SENTRY_DSN before npm publish");
+
+  if (issues.length) {
+    fail(
+      `telemetry-keys check failed:\n  ${issues.join("\n  ")}\n\n` +
+        `If this is an intentional no-telemetry build (fork, sandbox), re-run with CTXLOOM_ALLOW_NO_TELEMETRY=1.`,
+    );
+  }
+}
 
 /**
  * Boot the dashboard against the freshly installed tarball, hit / and
