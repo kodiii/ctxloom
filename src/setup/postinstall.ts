@@ -55,6 +55,9 @@ if (unconfigured.length > 0) {
 }
 
 console.log('');
-console.log(`  Quick start: ${C.cyan}ctxloom index${C.reset} ${C.dim}# Index your project${C.reset}`);
-console.log(`  Setup:       ${C.cyan}ctxloom setup${C.reset} ${C.dim}# Configure AI tools${C.reset}`);
+console.log(`  Quick start (run from your project directory):`);
+console.log(`    ${C.cyan}ctxloom init${C.reset}    ${C.dim}# Pin ctxloom to this project${C.reset}`);
+console.log(`    ${C.cyan}ctxloom index${C.reset}   ${C.dim}# Build the dependency graph${C.reset}`);
+console.log('');
+console.log(`  Configure AI tools (one-time, global): ${C.cyan}ctxloom setup${C.reset}`);
 console.log('');
