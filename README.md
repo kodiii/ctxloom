@@ -10,70 +10,70 @@ No cloud indexing. No Python. Everything runs on your machine.
 
 **Prerequisites:** Node.js 20+ and an MCP-compatible AI tool (Claude Code, Cursor, Windsurf, etc.)
 
-### 1 — Install
+The full first-run flow is **one install + one trial + one init per project.** Each step is a single command.
+
+### 1 — Install (once per machine)
 
 ```bash
-# 1. Install globally
 npm install -g ctxloom-pro
-
-# 2. Auto-configure your AI tools (one-time)
-ctxloom setup
-
-# 3. Index your project (once per project)
-cd /path/to/your/project
-ctxloom index
 ```
 
-### 2 — Start your free trial
+### 2 — Start your free trial (once per email)
 
 ```bash
 ctxloom trial
 # Enter your email — a checkout link opens in your browser.
-# No credit card. After checkout, Polar emails you a license key.
+# No credit card required. After checkout, you receive a license key by email.
 ```
 
 Already have a key?
 
 ```bash
-ctxloom activate ctxl_pro_<your-key>
+ctxloom activate <your-key>
 ```
 
-### 3 — Auto-configure your AI tools
+### 3 — Configure your AI tools (once per machine)
 
 ```bash
-ctxloom setup          # detects Claude Code, Cursor, Windsurf, etc.
+ctxloom setup
+# Detects Claude Code, Cursor, Windsurf, Claude Desktop, Codex,
+# Kimi, Continue, Aider, Augment, Kilo, Qwen, JetBrains, VS Code —
+# writes the global MCP entry for each one you have installed.
 ```
 
-### 4 — Index your project
+### 4 — Bootstrap each project (once per project)
 
 ```bash
 cd /path/to/your/project
+ctxloom init           # writes .mcp.json + appends .ctxloom/ to .gitignore
 ctxloom index          # builds vector + graph + git overlay
 ```
 
-Your AI assistant now has full structural context. Ask it anything about the codebase.
+`ctxloom init` is the piece that pins ctxloom to **this** project. Without it, MCP clients (notably Claude Code) launch the global MCP server with cwd inherited from wherever the IDE was first opened — and **do not relaunch on project switch** — so a single Claude Code session ends up serving graph queries from the wrong codebase. The `.mcp.json` produced by `init` carries an explicit `CTXLOOM_ROOT` and short-circuits that ambiguity.
+
+After `init` + `index`, reopen your AI tool in the project directory. Your assistant now has full structural context.
 
 ### License commands
 
 ```bash
-ctxloom status         # show tier, expiry, last validation
+ctxloom status         # tier, expiry, last validation
 ctxloom deactivate     # release this machine's seat (to move to a new machine)
 ```
 
 ### CI / headless environments
 
 ```bash
-CTXLOOM_LICENSE_KEY=ctxl_pro_<key> ctxloom index
+CTXLOOM_LICENSE_KEY=<your-key> ctxloom index
 ```
 
 Set `CTXLOOM_LICENSE_KEY` in your CI secrets. The key is validated on every run — no local state written to the runner.
 
-### Manual MCP Configuration
+### Manual MCP configuration (if you skip `ctxloom setup`)
 
-This is what `ctxloom setup` writes for you. Match it by hand if you prefer:
+Global MCP entry — match this in your client's config file by hand:
 
 ```jsonc
-// Claude Code:    ~/.claude.json
+// Claude Code:    ~/.claude.json or .mcp.json in the project
 // Cursor:         ~/.cursor/mcp.json
 // Codex CLI:      ~/.codex/mcp.json
 // Kimi:           ~/.kimi/mcp.json
@@ -88,9 +88,9 @@ This is what `ctxloom setup` writes for you. Match it by hand if you prefer:
 }
 ```
 
-The MCP server inherits cwd from the host. Claude Code, Cursor, Codex, and Kimi all spawn it with the open project as cwd, so the right project is indexed automatically — no `CTXLOOM_ROOT` needed.
+Then run `ctxloom init` inside each project — it writes a `.mcp.json` in the project root with `env.CTXLOOM_ROOT` set, which overrides the global entry on a per-project basis (Claude Code, Cursor, and the other MCP-aware clients merge per-project config over global automatically).
 
-For hosts without a project concept (Claude Desktop, CI), set the root explicitly:
+If you have a single fixed project (e.g. a CI runner or a Claude Desktop session with no project concept), pin the global entry directly:
 
 ```jsonc
 {
@@ -103,8 +103,8 @@ For hosts without a project concept (Claude Desktop, CI), set the root explicitl
   }
 }
 ```
->
-> Pricing: **Pro** €9.90/mo or €99/yr (1 machine) · **Team** €19.90/mo or €199/yr (3 machines) · [ctxloom.com/pricing](https://ctxloom.com/pricing)
+
+> Pricing: **Pro** €9.90/mo or €99/yr (1 seat) · **Team** €29.90/mo or €299/yr (5 seats) · [ctxloom.com/pricing](https://ctxloom.com/pricing)
 
 ---
 
