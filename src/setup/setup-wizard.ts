@@ -211,11 +211,18 @@ export async function runSetupWizard(options?: { nonInteractive?: boolean }): Pr
 }
 
 function printNextSteps(): void {
+  // Order matters here. `init` must come before `index`: it writes the
+  // per-project .mcp.json that pins CTXLOOM_ROOT to the project root.
+  // Without that, Claude Code (and any other client that launches MCP
+  // servers from a stale cwd) will keep the server pinned to whichever
+  // directory the IDE was first opened from, so `ctxloom index` builds
+  // a graph that the running MCP server can't see.
   console.log(`  ${C.bold}Next steps:${C.reset}`);
   console.log('');
   console.log(`  1. ${C.cyan}cd /path/to/your/project${C.reset}`);
-  console.log(`  2. ${C.cyan}ctxloom index${C.reset}    ${C.dim}# Index your codebase${C.reset}`);
-  console.log(`  3. ${C.dim}Open your AI tool and start coding — ctxloom provides context automatically${C.reset}`);
+  console.log(`  2. ${C.cyan}ctxloom init${C.reset}     ${C.dim}# Pin ctxloom to this project (.mcp.json + .gitignore)${C.reset}`);
+  console.log(`  3. ${C.cyan}ctxloom index${C.reset}    ${C.dim}# Build the dependency graph${C.reset}`);
+  console.log(`  4. ${C.dim}Open your AI tool in this directory — ctxloom provides context automatically${C.reset}`);
   console.log('');
   console.log(`  ${C.dim}Documentation: https://ctxloom.dev/docs${C.reset}`);
   console.log('');

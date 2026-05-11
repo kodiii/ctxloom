@@ -15,6 +15,7 @@
 
 import { startServer } from './server.js';
 import { runSetupWizard } from './setup/setup-wizard.js';
+import { runInit } from './setup/init.js';
 import {
   success as fmtSuccess,
   error as fmtError,
@@ -495,6 +496,46 @@ async function main(): Promise<void> {
       break;
     }
 
+    case 'init': {
+      // Per-project bootstrap: writes .mcp.json with CTXLOOM_ROOT pinned
+      // to cwd + appends .ctxloom/ to .gitignore. See src/setup/init.ts
+      // for the why — short version: without per-project .mcp.json the
+      // MCP server's cwd is inherited from the parent IDE/CLI and stays
+      // pinned to the wrong project when the user switches workspaces.
+      process.stdout.write(fmtHeader('Init'));
+      const initRoot = process.cwd();
+      process.stdout.write(`  ${style.dim('Root:')} ${initRoot}\n\n`);
+      try {
+        const result = runInit(initRoot);
+        const mcpLabel = result.mcpJson.created
+          ? `${style.bold('Created')} ${result.mcpJson.path}`
+          : result.mcpJson.merged
+            ? `${style.bold('Merged ctxloom entry into')} ${result.mcpJson.path}`
+            : `${style.dim('Already up to date:')} ${result.mcpJson.path}`;
+        process.stdout.write(`  ${fmtSuccess(mcpLabel)}\n`);
+
+        const giLabel = result.gitignore.created
+          ? `${style.bold('Created')} ${result.gitignore.path} (added .ctxloom/)`
+          : result.gitignore.appended
+            ? `${style.bold('Appended .ctxloom/ to')} ${result.gitignore.path}`
+            : `${style.dim('.ctxloom/ already in')} ${result.gitignore.path}`;
+        process.stdout.write(`  ${fmtSuccess(giLabel)}\n`);
+
+        for (const w of result.warnings) {
+          process.stdout.write(`  ${fmtWarn(w)}\n`);
+        }
+        process.stdout.write('\n');
+        process.stdout.write(fmtNextStep('Build the index', 'ctxloom index'));
+        process.stdout.write(
+          `  ${style.dim('Then reopen your AI tool in this directory to pick up the new .mcp.json.')}\n\n`,
+        );
+      } catch (err) {
+        process.stdout.write(`\n  ${fmtError(String(err instanceof Error ? err.message : err))}\n\n`);
+        process.exit(1);
+      }
+      break;
+    }
+
     case 'register': {
       // Default to cwd when no path given — same convention as `git init`,
       // `npm init`, etc. Previous behavior printed Usage and exited 1,
@@ -843,8 +884,9 @@ Usage:
   ctxloom activate <KEY>       Activate a purchased license key on this machine
   ctxloom deactivate           Release this machine's license seat
   ctxloom status               Show current license status
+  ctxloom init                 Scaffold .mcp.json + .gitignore for this project
   ctxloom index                Index the current directory and build dependency graph
-  ctxloom setup                Detect and configure MCP-compatible AI tools
+  ctxloom setup                Detect and configure MCP-compatible AI tools (global)
   ctxloom grammars             Show grammar cache status
   ctxloom grammars --download  Pre-download all language grammars
   ctxloom register [path]      Register a repo for cross-repo search (defaults to cwd)
