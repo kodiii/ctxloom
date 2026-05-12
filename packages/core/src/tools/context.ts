@@ -15,7 +15,10 @@ export interface ServerContext {
   getSkeletonizer: () => Promise<Skeletonizer>;
   getRuleManager: () => RuleManager;
   getPathValidator: () => PathValidator;
-  // Diagnostic — returns whether the promise has been started (not whether it resolved)
+  // Diagnostic — returns whether the resource is available.
+  // For the store, "available" means either the in-process singleton is warm
+  // OR the LanceDB table exists on disk from a prior indexing run.
+  // For graph/parser, "available" means the in-process singleton is warm.
   isStoreInitialized: () => boolean;
   isGraphInitialized: () => boolean;
   isParserInitialized: () => boolean;
