@@ -10,6 +10,7 @@ import { z } from 'zod';
 import path from 'node:path';
 import type { ToolRegistry } from './registry.js';
 import type { ServerContext } from './context.js';
+import { ProjectRootField, PROJECT_ROOT_JSON_SCHEMA } from './projectRootParam.js';
 
 const Schema = z.object({
   min_importers: z.number().min(1).max(50).optional().default(3).describe(
@@ -21,6 +22,7 @@ const Schema = z.object({
   detail_level: z.enum(['standard', 'minimal']).default('standard').describe(
     '"standard" (default) returns full per-file listings. "minimal" returns counts only — ~60% fewer tokens.',
   ),
+  project_root: ProjectRootField,
 });
 
 const TEST_PATTERN = /(\.test\.|\.spec\.|\/tests\/|\/test\/|\/spec\/|__tests__)/;
@@ -55,12 +57,13 @@ export function registerKnowledgeGapsTool(registry: ToolRegistry, ctx: ServerCon
             enum: ['standard', 'minimal'],
             description: '"standard" returns full listings. "minimal" returns counts only (saves ~60% tokens).',
           },
+          project_root: PROJECT_ROOT_JSON_SCHEMA,
         },
       },
     },
     async (args) => {
-      const { min_importers, limit, detail_level } = Schema.parse(args);
-      const graph = await ctx.getGraph();
+      const { min_importers, limit, detail_level, project_root } = Schema.parse(args);
+      const graph = await ctx.getGraph(project_root);
       const files = graph.allFiles();
 
       const testFiles = new Set(files.filter(f => TEST_PATTERN.test(f)));
