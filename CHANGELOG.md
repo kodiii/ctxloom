@@ -8,6 +8,16 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 ## [Unreleased]
 
 ### Added
+- **Multi-project support (v1.1.0)** — every tool now accepts an optional `project_root` parameter (alias or absolute path)
+  - `ctxloom register --alias <name> <path>` CLI command to register project aliases
+  - `ProjectStateManager` with LRU eviction (cap 5, override via `CTXLOOM_MAX_PROJECTS`)
+  - Multi-project view in `ctx_status` (active projects, registered projects)
+  - First-touch auto-indexing: graph (sync, Tier 1) + vectors (deferred, Tier 2)
+  - `<ctxloom_indexing>` envelope emitted on first-touch responses
+  - Structured XML error responses for project-resolution failures (`alias_not_found`, `no_default_project`, etc.)
+  - Dashboard `ProjectSwitcher` shows alias as primary label
+  - `RepoRegistry` alias field + `findByAlias()`, `findByPath()` helpers
+  - `CTXLOOM_DISABLE_MULTIPROJECT=1` kill switch for backward compatibility (reverts to v1.0.31 behavior)
 - **`ctx_cross_repo_search`** — federated semantic search across all registered repos via `RepoRegistry` (persists to `~/.ctxloom/repos.json`)
 - **`ctx_execution_flow`** — DFS call graph traversal from any entry point with cycle detection; annotates each step with file path and graph type (call/import)
 - **`ctx_refactor_preview`** — read-only symbol rename diff preview; scans definition files and all importers, returns per-file before/after line diffs
