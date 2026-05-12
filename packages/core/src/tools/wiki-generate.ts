@@ -16,6 +16,7 @@ import fs from 'node:fs';
 import type { ToolRegistry } from './registry.js';
 import type { ServerContext } from './context.js';
 import { WikiGenerator } from '../graph/WikiGenerator.js';
+import { ProjectRootField, PROJECT_ROOT_JSON_SCHEMA } from './projectRootParam.js';
 
 const Schema = z.object({
   force: z.boolean().optional().default(false).describe(
@@ -24,6 +25,7 @@ const Schema = z.object({
   detail_level: z.enum(['standard', 'minimal']).default('standard').describe(
     '"standard" (default) lists each written page with size. "minimal" returns counts only.',
   ),
+  project_root: ProjectRootField,
 });
 
 function escapeXML(text: string): string {
@@ -61,12 +63,13 @@ export function registerWikiGenerateTool(registry: ToolRegistry, ctx: ServerCont
             enum: ['standard', 'minimal'],
             description: '"standard" lists written pages with size. "minimal" returns counts only.',
           },
+          project_root: PROJECT_ROOT_JSON_SCHEMA,
         },
       },
     },
     async (args) => {
-      const { force, detail_level } = Schema.parse(args);
-      const [graph, skeletonizer] = await Promise.all([ctx.getGraph(), ctx.getSkeletonizer()]);
+      const { force, detail_level, project_root } = Schema.parse(args);
+      const [graph, skeletonizer] = await Promise.all([ctx.getGraph(project_root), ctx.getSkeletonizer(project_root)]);
       const generator = new WikiGenerator(graph, ctx.projectRoot, skeletonizer);
       const result = await generator.generate(force);
 
