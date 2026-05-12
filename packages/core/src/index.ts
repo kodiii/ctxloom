@@ -186,3 +186,11 @@ export {
 } from './license/index.js';
 export type { TelemetryEvent } from './license/telemetry.js';
 export { track, captureError } from './license/telemetry.js';
+
+// ─── Multi-project server infrastructure (v1.1) ───────────────────────────
+export type { ProjectState } from './server/ProjectState.js';
+export { createProjectState, disposeProjectState } from './server/ProjectState.js';
+export { ProjectStateManager } from './server/ProjectStateManager.js';
+export type { ProjectStateManagerOptions } from './server/ProjectStateManager.js';
+export type { RegistryView, ResolveInput, ResolveOutcome } from './server/resolveProjectRoot.js';
+export { resolveProjectRoot, validateDefaultRoot } from './server/resolveProjectRoot.js';
