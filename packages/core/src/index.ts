@@ -197,3 +197,10 @@ export { ProjectStateManager } from './server/ProjectStateManager.js';
 export type { ProjectStateManagerOptions } from './server/ProjectStateManager.js';
 export type { RegistryView, ResolveInput, ResolveOutcome } from './server/resolveProjectRoot.js';
 export { resolveProjectRoot, validateDefaultRoot } from './server/resolveProjectRoot.js';
+export {
+  noDefaultProjectError,
+  projectRootNotFoundError,
+  projectRootUnreadableError,
+  aliasNotFoundError,
+  noParseableSourcesWarning,
+} from './server/structuredErrors.js';
