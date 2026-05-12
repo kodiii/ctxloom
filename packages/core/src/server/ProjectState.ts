@@ -61,6 +61,33 @@ export function createProjectState(projectRoot: string, opts: { pinned?: boolean
 }
 
 /**
+ * Ensure Tier-2 (vector) initialization has run for this project state.
+ *
+ * Idempotent and concurrency-safe: the flag check and the single
+ * `storePromise` assignment in initStore() together guarantee that at most
+ * one embedding pipeline runs per project root, no matter how many calls
+ * arrive simultaneously.
+ *
+ * What "initializing vectors" means for this store: LanceDB opens (or
+ * creates) the `code_embeddings` table inside VectorStore.init(). Embeddings
+ * are then inserted incrementally via upsert() as files are indexed —
+ * there is no separate bulk-index step. Awaiting storePromise is therefore
+ * sufficient to confirm the store is ready to accept searches.
+ *
+ * If storePromise is null the store was never started (e.g. the tool call
+ * went directly to getGraph without touching vectors). In that case we leave
+ * vectorsInitialized false and return without touching anything — the caller
+ * (getStore getter) will have already kicked off the promise before calling
+ * this helper.
+ */
+export async function ensureVectorsInitialized(state: ProjectState): Promise<void> {
+  if (state.vectorsInitialized) return;
+  if (!state.storePromise) return;
+  await state.storePromise;
+  state.vectorsInitialized = true;
+}
+
+/**
  * Release OS-level resources held by a project state. Always best-effort;
  * never throws. Idempotent — safe to call on a fresh state.
  */

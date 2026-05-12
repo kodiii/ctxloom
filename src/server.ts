@@ -30,9 +30,15 @@ import type { ServerContext } from '@ctxloom/core';
 import {
   ProjectStateManager,
   ProjectState,
+  ensureVectorsInitialized,
   resolveProjectRoot as resolveRoot,
   validateDefaultRoot,
   RepoRegistry,
+  noDefaultProjectError,
+  projectRootNotFoundError,
+  aliasNotFoundError,
+  FirstTouchTracker,
+  wrapWithIndexingEnvelope,
 } from '@ctxloom/core';
 
 // ─── Server startup options ──────────────────────────────────────────────────
@@ -83,6 +89,8 @@ const stateManager = new ProjectStateManager({
   maxProjects: DISABLE_MULTIPROJECT ? 1 : MAX_PROJECTS,
 });
 
+const firstTouchTracker = new FirstTouchTracker();
+
 // Lazy helpers — each one inits the corresponding field on the project state.
 async function initStore(state: ProjectState): Promise<VectorStore> {
   if (!state.storePromise) {
@@ -131,7 +139,10 @@ async function initSkeletonizer(state: ProjectState): Promise<Skeletonizer> {
   return state.skeletonizerPromise;
 }
 
-function buildContext(defaultRoot: string | null, noDefaultMode: boolean): ServerContext {
+function buildContext(
+  defaultRoot: string | null,
+  noDefaultMode: boolean,
+): { ctx: ServerContext; resolveOrDefault: (arg: string | undefined) => ProjectState } {
   const repoRegistry = new RepoRegistry(repoRegistryPath);
 
   function resolveOrDefault(arg: string | undefined): ProjectState {
@@ -165,7 +176,12 @@ function buildContext(defaultRoot: string | null, noDefaultMode: boolean): Serve
     noDefaultMode,
     registry: repoRegistry,
     stateManager,
-    getStore: (root) => initStore(resolveOrDefault(root)),
+    getStore: async (root) => {
+      const state = resolveOrDefault(root);
+      const store = await initStore(state);
+      await ensureVectorsInitialized(state);
+      return store;
+    },
     getGraph: (root) => initGraph(resolveOrDefault(root)),
     getParser: (root) => initParser(resolveOrDefault(root)),
     getSkeletonizer: (root) => initSkeletonizer(resolveOrDefault(root)),
@@ -200,7 +216,7 @@ function buildContext(defaultRoot: string | null, noDefaultMode: boolean): Serve
       return !!state?.parserPromise;
     },
   };
-  return ctx;
+  return { ctx, resolveOrDefault };
 }
 
 // ─── Server factory ─────────────────────────────────────────────────────────
@@ -220,15 +236,85 @@ export function createServer(): { server: Server; ctx: ServerContext } {
   }
   const defaultRoot = isValidDefault ? candidateDefault : null;
   if (defaultRoot) stateManager.pin(defaultRoot);
-  const ctx = buildContext(defaultRoot, !isValidDefault);
+  const { ctx, resolveOrDefault } = buildContext(defaultRoot, !isValidDefault);
   const registry = createToolRegistry(ctx);
 
   server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools: registry.list() }));
   server.setRequestHandler(CallToolRequestSchema, async ({ params: { name, arguments: args } }) => {
     try {
+      const started = Date.now();
       const text = await registry.dispatch(name, args);
+      const durationMs = Date.now() - started;
+
+      // First-touch envelope: prepend <ctxloom_indexing /> on the first call
+      // for a given (project_root, tier) pair so the caller knows indexing was
+      // triggered. Graph tier takes priority; vectors tier fires on the first
+      // call that touched getStore() for this root. Skip if noDefaultMode and
+      // no project_root given.
+      const projectRootArg = (args as Record<string, unknown> | undefined)?.project_root as string | undefined;
+      if (!ctx.noDefaultMode || projectRootArg !== undefined) {
+        try {
+          const state = resolveOrDefault(projectRootArg);
+          const root = state.projectRoot;
+          const graphFirstTouch = firstTouchTracker.markAndCheck(root, 'graph');
+          if (graphFirstTouch) {
+            const wrapped = wrapWithIndexingEnvelope(
+              { firstTouch: true, projectRoot: root, tier: 'graph', durationMs },
+              text,
+            );
+            return { content: [{ type: 'text' as const, text: wrapped }] };
+          }
+          // Check vectors tier: only fires if getStore() was called during this
+          // dispatch (vectorsInitialized flipped to true) and this is the first
+          // such call for the root.
+          if (state.vectorsInitialized) {
+            const vectorsFirstTouch = firstTouchTracker.markAndCheck(root, 'vectors');
+            if (vectorsFirstTouch) {
+              const wrapped = wrapWithIndexingEnvelope(
+                { firstTouch: true, projectRoot: root, tier: 'vectors', durationMs },
+                text,
+              );
+              return { content: [{ type: 'text' as const, text: wrapped }] };
+            }
+          }
+        } catch {
+          // resolveOrDefault threw (e.g. alias not found) — error path below
+          // handles structured errors; fall through to normal response here
+          // since dispatch already succeeded.
+        }
+      }
+
       return { content: [{ type: 'text' as const, text }] };
     } catch (err) {
+      if (err instanceof Error && err.message === 'no_default_project') {
+        const xml = noDefaultProjectError({
+          attemptedRoot: PROJECT_ROOT,
+          resolutionChain: 'CTXLOOM_ROOT env var→unset, fallback_cwd→' + PROJECT_ROOT,
+          registeredAliases: ctx.registry.list().map((r) => r.alias ?? r.name),
+        });
+        return { content: [{ type: 'text' as const, text: xml }], isError: true };
+      }
+      if (err instanceof Error && err.message.startsWith('{')) {
+        try {
+          const parsed = JSON.parse(err.message) as Record<string, unknown>;
+          if (parsed.kind === 'alias_not_found') {
+            const xml = aliasNotFoundError({
+              alias: String(parsed.alias ?? ''),
+              didYouMean: Array.isArray(parsed.didYouMean) ? (parsed.didYouMean as string[]) : [],
+            });
+            return { content: [{ type: 'text' as const, text: xml }], isError: true };
+          }
+          if (parsed.kind === 'project_root_not_found') {
+            const xml = projectRootNotFoundError({
+              path: String(parsed.attemptedPath ?? ''),
+              resolutionChain: String(parsed.resolutionChain ?? ''),
+            });
+            return { content: [{ type: 'text' as const, text: xml }], isError: true };
+          }
+        } catch {
+          // JSON.parse failed — fall through to generic error
+        }
+      }
       return {
         content: [{ type: 'text' as const, text: `Error: ${err instanceof Error ? err.message : String(err)}` }],
         isError: true,
@@ -250,6 +336,14 @@ export async function startServer(opts: ServerOptions = {}): Promise<void> {
 
   logger.info('MCP Server started on Stdio transport');
   logger.info('Project root', { root: PROJECT_ROOT });
+
+  if (DISABLE_MULTIPROJECT) {
+    logger.warn(
+      '[DEPRECATED] CTXLOOM_DISABLE_MULTIPROJECT=1 is set — multi-project support is disabled. ' +
+      'maxProjects is capped at 1 and project_root arguments are ignored. ' +
+      'This kill switch will be removed in a future release.',
+    );
+  }
 
   // Report the effective FD soft limit so users can correlate EMFILE
   // errors with their environment. Node lacks getrlimit, so we shell out
