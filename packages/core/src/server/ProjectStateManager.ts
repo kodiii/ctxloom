@@ -42,6 +42,11 @@ export class ProjectStateManager {
     return this.map.size;
   }
 
+  /** The configured maximum number of active project states. */
+  get max(): number {
+    return this.maxProjects;
+  }
+
   has(root: string): boolean {
     return this.map.has(root);
   }

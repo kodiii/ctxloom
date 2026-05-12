@@ -1,12 +1,11 @@
 /**
- * Tests for ctx_status — specifically the disk-aware vector-store check.
+ * Tests for ctx_status — multi-project view and schema.
  *
- * Regression for: issue #55. Before the fix, `isStoreInitialized()` was
- * `_storePromise !== null` (process-local lazy state), so a fresh MCP server
- * boot always reported `<vector_store status="not_initialized" />` even when
- * `ctxloom index` had previously populated the LanceDB table on disk. The
- * status tool now treats a present `code_embeddings.lance` directory as
- * "initialized" regardless of whether the lazy singleton is warm.
+ * Historical note: Issue #55 tested disk-aware vector-store reporting via
+ * isStoreInitialized(). The #70 refactor replaced the per-resource status
+ * fields with the multi-project <active_projects> block backed by
+ * ProjectStateManager. Vector store state is now visible as vectors="cold" |
+ * "building" | "ready" on each <project> entry.
  */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import fs from 'node:fs';
@@ -15,6 +14,7 @@ import os from 'node:os';
 import { ToolRegistry } from '../src/tools/registry.js';
 import { registerStatusTool } from '../src/tools/status.js';
 import { VectorStore } from '../src/db/VectorStore.js';
+import { ProjectStateManager } from '../src/server/ProjectStateManager.js';
 import type { ServerContext } from '../src/tools/context.js';
 import type { RepoRegistry } from '../src/tools/cross-repo-search.js';
 
@@ -26,6 +26,7 @@ function makeCtx(overrides: Partial<ServerContext>): ServerContext {
     dbPath: '/fake/.ctxloom/vectors.lancedb',
     noDefaultMode: false,
     registry: mockRegistry,
+    stateManager: new ProjectStateManager({ maxProjects: 5 }),
     getStore: () => Promise.reject(new Error('not used')),
     getGraph: () => Promise.reject(new Error('not used')),
     getParser: () => Promise.reject(new Error('not used')),
@@ -39,7 +40,7 @@ function makeCtx(overrides: Partial<ServerContext>): ServerContext {
   };
 }
 
-describe('ctx_status — vector store reporting', () => {
+describe('ctx_status — multi-project output', () => {
   let tempDir: string;
   let dbPath: string;
 
@@ -52,50 +53,24 @@ describe('ctx_status — vector store reporting', () => {
     fs.rmSync(tempDir, { recursive: true, force: true });
   });
 
-  it('reports not_initialized when no store exists in process or on disk', async () => {
+  it('shows vectors="cold" when no project state has been touched', async () => {
+    const mgr = new ProjectStateManager({ maxProjects: 5 });
+    mgr.pin('/fake');
     const registry = new ToolRegistry();
-    registerStatusTool(registry, makeCtx({ dbPath }));
+    registerStatusTool(registry, makeCtx({ stateManager: mgr, dbPath }));
     const result = await registry.dispatch('ctx_status', {});
-    expect(result).toContain('<vector_store status="not_initialized" />');
+    expect(result).toMatch(/vectors="cold"/);
+    expect(result).toMatch(/<active_projects count="1" max="5">/);
   });
 
-  it('reports ready with record count after a fresh indexing run, with no warm singleton', async () => {
-    // Populate the store on disk, then close it — simulating a completed
-    // `ctxloom index` run from a separate process.
-    const writer = new VectorStore(dbPath);
-    await writer.init();
-    const embedding = new Array(384).fill(0).map(() => Math.random());
-    await writer.upsert('src/a.ts', embedding, 'file a');
-    await writer.upsert('src/b.ts', embedding, 'file b');
-    await writer.close();
-
-    // Now build a context with a cold singleton (no prior getStore() call)
-    // but mark store as initialized because the directory exists on disk.
-    // The simulated `isStoreInitialized` returns true when the table dir
-    // is present — mirroring the disk check added in src/server.ts.
-    let storeSingleton: VectorStore | null = null;
-    const ctx = makeCtx({
-      dbPath,
-      getStore: async () => {
-        if (!storeSingleton) {
-          storeSingleton = new VectorStore(dbPath);
-          await storeSingleton.init();
-        }
-        return storeSingleton;
-      },
-      isStoreInitialized: () =>
-        storeSingleton !== null || fs.existsSync(path.join(dbPath, 'code_embeddings.lance')),
-    });
-
+  it('shows vectors="ready" when vectorsInitialized is set on the state', async () => {
+    const mgr = new ProjectStateManager({ maxProjects: 5 });
+    const state = mgr.pin('/fake');
+    state.vectorsInitialized = true;
     const registry = new ToolRegistry();
-    registerStatusTool(registry, ctx);
+    registerStatusTool(registry, makeCtx({ stateManager: mgr, dbPath }));
     const result = await registry.dispatch('ctx_status', {});
-
-    expect(result).toContain('<vector_store status="ready"');
-    expect(result).toMatch(/records="2"/);
-
-    // Cleanup the in-test singleton if it was opened by status.
-    if (storeSingleton) await (storeSingleton as VectorStore).close();
+    expect(result).toMatch(/vectors="ready"/);
   });
 });
 

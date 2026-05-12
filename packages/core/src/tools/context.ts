@@ -6,6 +6,7 @@ import type { Skeletonizer } from '../ast/Skeletonizer.js';
 import type { RuleManager } from './ruleManager.js';
 import type { GitOverlayStore } from '../git/GitOverlayStore.js';
 import type { RepoRegistry } from './cross-repo-search.js';
+import type { ProjectStateManager } from '../server/ProjectStateManager.js';
 
 /**
  * ServerContext — handed to every tool's registration callback.
@@ -46,4 +47,7 @@ export interface ServerContext {
 
   /** Registry surface for resolveProjectRoot. Stable across requests. */
   registry: RepoRegistry;
+
+  /** Live multi-project state map. Used by ctx_status and observability tooling. */
+  stateManager: ProjectStateManager;
 }

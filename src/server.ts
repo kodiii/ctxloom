@@ -164,6 +164,7 @@ function buildContext(defaultRoot: string | null, noDefaultMode: boolean): Serve
     dbPath: defaultRoot ? path.join(defaultRoot, '.ctxloom', 'vectors.lancedb') : '',
     noDefaultMode,
     registry: repoRegistry,
+    stateManager,
     getStore: (root) => initStore(resolveOrDefault(root)),
     getGraph: (root) => initGraph(resolveOrDefault(root)),
     getParser: (root) => initParser(resolveOrDefault(root)),

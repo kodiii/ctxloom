@@ -89,6 +89,8 @@ export { GrammarLoader } from './grammars/GrammarLoader.js';
 
 // ─── Tools ───────────────────────────────────────────────────────────────────
 export type { ServerContext } from './tools/context.js';
+export type { RenderStatusInput } from './tools/status.js';
+export { renderStatusXml } from './tools/status.js';
 export type { ToolHandler, ToolDefinition } from './tools/registry.js';
 export { ToolRegistry } from './tools/registry.js';
 export { createToolRegistry } from './tools/index.js';
