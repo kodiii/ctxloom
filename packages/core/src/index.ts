@@ -204,3 +204,5 @@ export {
   aliasNotFoundError,
   noParseableSourcesWarning,
 } from './server/structuredErrors.js';
+export type { IndexingTier, EnvelopeInput } from './server/indexingEnvelope.js';
+export { wrapWithIndexingEnvelope, FirstTouchTracker } from './server/indexingEnvelope.js';
