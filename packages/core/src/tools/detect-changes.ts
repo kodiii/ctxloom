@@ -21,6 +21,7 @@ import type { ToolRegistry } from './registry.js';
 import type { ServerContext } from './context.js';
 import { detectChanges } from '../lib/analysis.js';
 import { logger } from '../utils/logger.js';
+import { ProjectRootField, PROJECT_ROOT_JSON_SCHEMA } from './projectRootParam.js';
 
 const execAsync = promisify(exec);
 
@@ -31,6 +32,7 @@ const Schema = z.object({
   detail_level: z.enum(['standard', 'minimal']).default('standard').describe(
     '"standard" (default) returns full per-file risk details. "minimal" returns counts only — ~60% fewer tokens.',
   ),
+  project_root: ProjectRootField,
 });
 
 function escapeXML(text: string): string {
@@ -80,11 +82,12 @@ export function registerDetectChangesTool(registry: ToolRegistry, ctx: ServerCon
             enum: ['standard', 'minimal'],
             description: '"standard" returns full risk details. "minimal" returns counts only (saves ~60% tokens).',
           },
+          project_root: PROJECT_ROOT_JSON_SCHEMA,
         },
       },
     },
     async (args) => {
-      const { changed_files, use_git, detail_level } = Schema.parse(args);
+      const { changed_files, use_git, detail_level, project_root } = Schema.parse(args);
 
       let files = changed_files ?? [];
       if (files.length === 0 && use_git) {
@@ -95,7 +98,7 @@ export function registerDetectChangesTool(registry: ToolRegistry, ctx: ServerCon
         return '<detect_changes count="0">\n  <!-- No changed files detected -->\n</detect_changes>';
       }
 
-      const graph = await ctx.getGraph();
+      const graph = await ctx.getGraph(project_root);
       const { changedFiles: scored, summary } = detectChanges({
         graph,
         overlay: ctx.overlay,

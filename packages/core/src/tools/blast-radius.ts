@@ -22,6 +22,7 @@ import type { ServerContext } from './context.js';
 import { getImpactRadius } from '../lib/analysis.js';
 import type { HistoricalCouplingEntry } from '../lib/analysis.js';
 import { logger } from '../utils/logger.js';
+import { ProjectRootField, PROJECT_ROOT_JSON_SCHEMA } from './projectRootParam.js';
 
 export type { HistoricalCouplingEntry };
 
@@ -34,6 +35,7 @@ const Schema = z.object({
   detail_level: z.enum(['standard', 'minimal']).default('standard').describe(
     '"standard" (default) returns full per-file listings. "minimal" returns counts only — ~60% fewer tokens.',
   ),
+  project_root: ProjectRootField,
 });
 
 export interface BlastRadiusOptions {
@@ -161,11 +163,12 @@ export function registerBlastRadiusTool(registry: ToolRegistry, ctx: ServerConte
             enum: ['standard', 'minimal'],
             description: '"standard" returns full listings. "minimal" returns counts only (saves ~60% tokens).',
           },
+          project_root: PROJECT_ROOT_JSON_SCHEMA,
         },
       },
     },
     async (args) => {
-      const { changed_files, depth, use_git, detail_level } = Schema.parse(args);
+      const { changed_files, depth, use_git, detail_level, project_root } = Schema.parse(args);
 
       let files = changed_files ?? [];
       if (files.length === 0 && use_git) {
@@ -176,7 +179,7 @@ export function registerBlastRadiusTool(registry: ToolRegistry, ctx: ServerConte
         return '<blast_radius changed_files="0">\n  <!-- No changed files detected -->\n</blast_radius>';
       }
 
-      const graph = await ctx.getGraph();
+      const graph = await ctx.getGraph(project_root);
       const result = await computeBlastRadius({ changedFiles: files, depth, projectRoot: ctx.projectRoot, graph });
 
       // Derive historical coupling via the lib layer (overlay-aware)
