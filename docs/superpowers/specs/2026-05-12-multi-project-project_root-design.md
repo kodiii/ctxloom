@@ -52,7 +52,9 @@ project_root: {
 
 **Resolution order, applied per tool call:**
 
-1. Explicit `project_root` arg. If it matches a registered alias, expand to the alias's absolute path. Otherwise treat as a literal path and resolve to absolute (handles `~`, relative paths, etc.).
+1. Explicit `project_root` arg.
+   - **If the value contains no path separator** (no `/`, no leading `~`, no drive letter like `C:`), treat it strictly as an alias lookup. If `findByAlias` misses, return `<error code="alias_not_found" alias="..." did_you_mean="[...]" />` — do not silently fall through to relative-path resolution. Rationale: `project_root="my-api"` is ambiguous (alias? folder named `my-api` under cwd?); making aliases require the no-separator shape eliminates the ambiguity and makes alias misses loud instead of silently routing to a different folder.
+   - **If the value contains a path separator**, skip alias lookup and resolve as a path (handles `~`, relative, absolute). The resolved absolute path is then optionally enriched with alias metadata via `findByPath` for logging/status, but resolution always wins.
 2. `CTXLOOM_ROOT` env var (same as today).
 3. Server's `process.cwd()` (same fallback as today).
 
@@ -149,11 +151,11 @@ For Tier 2 the envelope reports `tier="vectors"` and `records="N"` instead of `f
 
 For Phase 1 the indexing is synchronous; the calling tool waits. MCP's `progressToken` streaming is deferred — it would require propagating the token through every tool's dispatch path, a separate refactor.
 
-**Failure shapes:**
+**Failure shapes** (note: ctxloom tools today emit errors as plain text via the MCP server's `CallToolRequest` handler. The structured `<error>` and `<warning>` elements below are a **new convention introduced by Phase 1**, scoped to project-resolution and indexing failures. Existing tool error paths are unchanged):
 
 - Path doesn't exist → `<error code="project_root_not_found" path="..." resolution_chain="alias:foo→null, env:CTXLOOM_ROOT→/set, fallback_cwd→/" />`
 - Path exists but unreadable → `<error code="project_root_unreadable" path="..." detail="EACCES" />`
-- Path exists but no source files → build empty graph, return tool result with `<warning code="empty_project" />`
+- Path exists but no parseable source files → build empty graph, return tool result with `<warning code="no_parseable_sources" reason="directory has 0 files matching supported language extensions" />`
 - Alias not found → `<error code="alias_not_found" alias="foo" did_you_mean="['fooproject', 'foobar']" />` with Levenshtein-fuzzy suggestions over registry aliases.
 
 ### 4. Registry + alias UX
@@ -255,6 +257,24 @@ LRU events log at info:
 
 The existing FD-soft-limit log added in v1.0.31 stays put — independent feature.
 
+### 7. Kill switch — `CTXLOOM_DISABLE_MULTIPROJECT=1`
+
+A safety net for users who hit a Phase 1 regression and need to fall back to v1.0.31's exact behavior without waiting for a patch release.
+
+When set to `1`:
+
+- `project_root` parameter is ignored by every tool (treated as if omitted). The server logs `[warn] multiproject.disabled tool=… ignored_project_root=…` so the agent can detect the mismatch.
+- `ctxloom register --alias` still writes the alias to disk (so it survives the disable), but `findByAlias` returns `null` to MCP-side resolvers.
+- LRU cap is forced to 1; the singleton-style boot from v1.0.31 is restored.
+- `ctx_status` emits only the legacy top-level fields. The new `<active_projects>` and `<registered_projects>` blocks are omitted.
+- Dashboard is unaffected (the dashboard is a separate process with its own state machine).
+
+Documented in the troubleshooting section of the README and surfaced in the boot-time log when set:
+
+```
+[warn] multiproject disabled via CTXLOOM_DISABLE_MULTIPROJECT=1 — falling back to v1.0.31 single-project behavior
+```
+
 ## Back-compat matrix
 
 | Surface | v1.0.31 behavior | After Phase 1 | Breaking? |
@@ -268,6 +288,8 @@ The existing FD-soft-limit log added in v1.0.31 stays put — independent featur
 | `bin/ctxloom.cjs` FD bump | bumps before loading entry | unchanged | No |
 | `ServerContext.projectRoot` field | string, frozen at boot | string, still the default/pinned project | No — most internal callers can stay on `ctx.projectRoot` |
 | `ServerContext.getStore/getGraph/...` | `() => Promise<…>` | `(root?: string) => Promise<…>` | **Internally signature-extended** but optional arg, callers passing nothing keep working |
+| `CTXLOOM_DISABLE_MULTIPROJECT` env | not recognized | kill switch — forces v1.0.31 behavior | No — net-new env var, default unset behaves as Phase 1 |
+| New env: `CTXLOOM_MAX_PROJECTS` | not recognized | overrides LRU cap of 5 | No — net-new env var |
 
 ## Acceptance criteria
 
@@ -282,7 +304,18 @@ The existing FD-soft-limit log added in v1.0.31 stays put — independent featur
 - [ ] `ctxloom repos` prints aliases when present
 - [ ] `ctx_status` reports the resolved default project, all active projects with state, and the full registry with aliases
 - [ ] Dashboard `ProjectSwitcher` displays alias when present
-- [ ] Tests cover: (a) parameter wins over env, (b) env wins over cwd, (c) two consecutive calls to different roots both succeed and don't cross-contaminate, (d) the same root reuses cached state, (e) LRU evicts the right entry, (f) eviction does not affect the pinned default, (g) cold root with no `.ctxloom/` auto-builds the graph, (h) vector-tool first-call against a cold root triggers Tier 2 indexing
+- [ ] `CTXLOOM_DISABLE_MULTIPROJECT=1` falls back to v1.0.31 single-project behavior; `project_root` parameter is ignored with a clear warning log
+- [ ] Tests cover:
+  - (a) parameter wins over env, (b) env wins over cwd
+  - (c) two consecutive calls to different roots both succeed and don't cross-contaminate (verifies `buildFromDirectory` is safe to call multiple times in one process)
+  - (d) the same root reuses cached state (no re-parse, no re-snapshot-load)
+  - (e) LRU evicts the right entry, (f) eviction does not affect the pinned default
+  - (g) cold root with no `.ctxloom/` auto-builds the graph and emits `<ctxloom_indexing tier="graph" first_touch="true">`
+  - (h) vector-tool first-call against a cold root triggers Tier 2 indexing and emits `<ctxloom_indexing tier="vectors" first_touch="true">`
+  - (i) two parallel calls to the same cold root only trigger ONE warmup (singleton-promise concurrency dedup)
+  - (j) `ctxloom register --alias` rejects invalid aliases (`^[a-z0-9-]{1,40}$`), collisions with existing aliases, and shadowing of CLI subcommand names
+  - (k) Server boot with `cwd=/` and no `CTXLOOM_ROOT` enters no-default mode and emits the documented `no_default_project` error on tool calls without `project_root`
+  - (l) `CTXLOOM_DISABLE_MULTIPROJECT=1` produces identical behavior to v1.0.31 for an existing single-project user
 - [ ] `bin/ctxloom.cjs`, `ctxloom setup`, `ctxloom init`, and the publish smoke test all continue to pass without modification
 
 ## Out of scope (deferred to later phases or separate issues)
