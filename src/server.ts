@@ -110,7 +110,15 @@ function buildContext(): ServerContext {
       if (!_ruleManager) _ruleManager = new RuleManager(PROJECT_ROOT, ctx.getPathValidator());
       return _ruleManager;
     },
-    isStoreInitialized: () => _storePromise !== null,
+    isStoreInitialized: () => {
+      // Process-local lazy state OR durable on-disk state. Before this check
+      // included the disk leg, a fresh MCP server boot always reported
+      // <vector_store status="not_initialized" /> even after `ctxloom index`
+      // had populated the store, because `_storePromise` is only set after
+      // the first `getStore()` call in this process.
+      if (_storePromise !== null) return true;
+      return fs.existsSync(path.join(DB_PATH, 'code_embeddings.lance'));
+    },
     isGraphInitialized: () => _graphPromise !== null,
     isParserInitialized: () => _parserPromise !== null,
   };
