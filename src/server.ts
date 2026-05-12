@@ -159,6 +159,36 @@ export async function startServer(opts: ServerOptions = {}): Promise<void> {
   logger.info('MCP Server started on Stdio transport');
   logger.info('Project root', { root: PROJECT_ROOT });
 
+  // Report the effective FD soft limit so users can correlate EMFILE
+  // errors with their environment. Node lacks getrlimit, so we shell out
+  // once to `ulimit -n`. Best-effort — never throws.
+  //
+  // The bin/ctxloom.cjs wrapper bumps the soft limit to 65536 before
+  // Node starts (macOS launchctl default is 256, which exhausts within
+  // ~20 MCP tool calls). Seeing `nofileSoft < 4096` here means either
+  // the wrapper was bypassed (CTXLOOM_SKIP_FD_BUMP=1, direct `node
+  // dist/index.js`, or a shell that ignored the ulimit) — emit a clear
+  // warning instead of letting the user discover it via EMFILE later.
+  try {
+    const { execSync } = await import('node:child_process');
+    const nofileSoft = Number(execSync('ulimit -n', { shell: '/bin/sh' }).toString().trim());
+    if (Number.isFinite(nofileSoft)) {
+      const FD_WARN_THRESHOLD = 4096;
+      if (nofileSoft < FD_WARN_THRESHOLD) {
+        logger.warn(
+          'Low file-descriptor soft limit — EMFILE likely after ~20 tool calls. ' +
+            'Run via `bin/ctxloom.cjs` (default bin) which bumps to 65536, ' +
+            'or set `ulimit -n 65536` in your shell before launching.',
+          { nofileSoft, threshold: FD_WARN_THRESHOLD },
+        );
+      } else {
+        logger.info('FD soft limit', { nofileSoft });
+      }
+    }
+  } catch {
+    /* best-effort; ulimit not available on this platform */
+  }
+
   Promise.all([ctx.getGraph(), generateEmbedding('warmup')]).then(async ([graph]) => {
     logger.info('Ready', { edges: graph.edgeCount() });
 

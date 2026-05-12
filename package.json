@@ -16,9 +16,10 @@
     "access": "public"
   },
   "bin": {
-    "ctxloom": "dist/index.js"
+    "ctxloom": "bin/ctxloom.cjs"
   },
   "files": [
+    "bin/ctxloom.cjs",
     "dist/**/*",
     "!dist/**/*.map",
     "apps/dashboard/dist/**/*",
