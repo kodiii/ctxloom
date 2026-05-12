@@ -15,6 +15,14 @@ const EMBEDDING_DIMENSION = 384;
 const MODEL_ID = 'sentence-transformers/all-MiniLM-L6-v2';
 const CHUNK_SIZE = 4096; // characters per chunk
 
+// Minimum plausible size for the all-MiniLM-L6-v2 fp32 ONNX model.
+// The real artifact is ~90 MB; anything smaller is a truncated download.
+// Used to distinguish "freshly-downloaded, not yet flushed" (file may be
+// any size during the brief window before fsync) from "permanently
+// truncated" (file is on disk but partial — e.g. download was killed
+// mid-stream by an FD-leak cascade in a prior process).
+const MIN_MODEL_BYTES = 80 * 1024 * 1024;
+
 let embedder: FeatureExtractionPipeline | null = null;
 let embedderInitInFlight: Promise<FeatureExtractionPipeline> | null = null;
 
@@ -39,6 +47,48 @@ async function loadEmbedder(): Promise<FeatureExtractionPipeline> {
   })) as FeatureExtractionPipeline;
 }
 
+/**
+ * Parse the model file path out of an onnxruntime protobuf-parse error.
+ *
+ * Stable message shape (onnxruntime 1.x):
+ *   `Load model from <path> failed:Protobuf parsing failed.`
+ *
+ * Returns null if the message doesn't match — callers must treat the
+ * absence of a path as "can't safely recover, fall through to backoff".
+ */
+function extractModelPathFromProtobufError(message: string): string | null {
+  const match = /Load model from (.+) failed:Protobuf parsing failed/i.exec(message);
+  return match ? match[1] : null;
+}
+
+/**
+ * Delete a partially-downloaded model file so the next pipeline() call
+ * triggers a fresh re-download. Best-effort — never throws; if the file
+ * is gone (or was never there) the next attempt re-downloads anyway.
+ *
+ * Returns true if the file was actually truncated and removed, false if
+ * either the file looks fine or we couldn't read/remove it.
+ */
+function tryRemoveTruncatedModel(modelPath: string): boolean {
+  try {
+    const stat = fs.statSync(modelPath);
+    if (stat.size >= MIN_MODEL_BYTES) return false;
+    fs.unlinkSync(modelPath);
+    logger.warn('Removed truncated embedding model; next attempt will re-download', {
+      path: modelPath,
+      sizeBytes: stat.size,
+      minBytes: MIN_MODEL_BYTES,
+    });
+    return true;
+  } catch (err) {
+    logger.warn('Could not inspect/remove suspected truncated model', {
+      path: modelPath,
+      detail: err instanceof Error ? err.message : String(err),
+    });
+    return false;
+  }
+}
+
 async function getEmbedder(): Promise<FeatureExtractionPipeline> {
   if (embedder) return embedder;
   if (embedderInitInFlight) return embedderInitInFlight;
@@ -56,6 +106,24 @@ async function getEmbedder(): Promise<FeatureExtractionPipeline> {
         const msg = err instanceof Error ? err.message : String(err);
         const isProtobufRace = /protobuf parsing failed/i.test(msg);
         if (!isProtobufRace || attempt === MAX_ATTEMPTS) break;
+
+        // Distinguish "freshly-downloaded, not yet flushed" (transient FS
+        // race — wait and retry against the same bytes) from "permanently
+        // truncated" (download was killed mid-stream; bytes will NEVER
+        // parse no matter how long we wait — we have to remove the file
+        // so @huggingface/transformers re-fetches it). The size check is
+        // the only signal we have without re-implementing the hub's
+        // download flow.
+        const modelPath = extractModelPathFromProtobufError(msg);
+        if (modelPath && tryRemoveTruncatedModel(modelPath)) {
+          // Skip the backoff sleep — file is gone, next attempt will go
+          // straight to re-download.
+          logger.warn('Retrying embedding model load after truncated-cache removal', {
+            attempt,
+          });
+          continue;
+        }
+
         // Exponential backoff: 1s, 2s — gives the OS time to fsync the
         // freshly-downloaded model bytes before onnxruntime re-opens.
         const delay = attempt * 1000;
