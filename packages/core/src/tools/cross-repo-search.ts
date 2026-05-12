@@ -26,10 +26,39 @@ import { logger } from '../utils/logger.js';
 // ─── RepoRegistry ─────────────────────────────────────────────────────────
 
 export interface RegisteredRepo {
-  root: string;      // absolute path to repo root
-  dbPath: string;    // absolute path to the LanceDB store
-  name: string;      // display name (basename of root)
-  registeredAt: string; // ISO date string
+  root: string;            // absolute path to repo root
+  dbPath: string;          // absolute path to the LanceDB store
+  name: string;            // display name (basename of root)
+  alias?: string;          // optional short name for `project_root` lookups
+  registeredAt: string;    // ISO date string
+}
+
+const ALIAS_REGEX = /^[a-z0-9-]{1,40}$/;
+
+const RESERVED_ALIASES = new Set([
+  'register', 'repos', 'setup', 'index', 'init', 'dashboard', 'status',
+  'trial', 'activate', 'deactivate', 'grammars', 'help', 'review-suggest',
+]);
+
+export interface AliasValidation {
+  ok: boolean;
+  reason?: string;
+}
+
+export function validateAlias(alias: string): AliasValidation {
+  if (!ALIAS_REGEX.test(alias)) {
+    return {
+      ok: false,
+      reason: `alias must match ${ALIAS_REGEX.source} (lowercase, alphanumeric+hyphen, 1-40 chars)`,
+    };
+  }
+  if (RESERVED_ALIASES.has(alias)) {
+    return {
+      ok: false,
+      reason: `alias '${alias}' shadows a ctxloom subcommand`,
+    };
+  }
+  return { ok: true };
 }
 
 export class RepoRegistry {
@@ -60,16 +89,40 @@ export class RepoRegistry {
     return [...this.repos];
   }
 
-  register(root: string, dbPath: string): void {
-    const existing = this.repos.findIndex(r => r.root === root);
+  findByAlias(alias: string): RegisteredRepo | null {
+    return this.repos.find((r) => r.alias === alias) ?? null;
+  }
+
+  findByPath(absPath: string): RegisteredRepo | null {
+    const canonical = path.resolve(absPath);
+    return this.repos.find((r) => path.resolve(r.root) === canonical) ?? null;
+  }
+
+  register(root: string, dbPath: string, opts: { alias?: string } = {}): void {
+    if (opts.alias !== undefined) {
+      const v = validateAlias(opts.alias);
+      if (!v.ok) throw new Error(`Invalid alias: ${v.reason}`);
+      // Reject collision unless the colliding entry has the same root
+      const colliding = this.repos.find(
+        (r) => r.alias === opts.alias && path.resolve(r.root) !== path.resolve(root),
+      );
+      if (colliding) {
+        throw new Error(
+          `Alias '${opts.alias}' is already registered to ${colliding.root}. ` +
+          `Pick a different alias or unregister the existing entry first.`,
+        );
+      }
+    }
+    const existingIdx = this.repos.findIndex((r) => path.resolve(r.root) === path.resolve(root));
     const entry: RegisteredRepo = {
       root,
       dbPath,
       name: path.basename(root),
+      alias: opts.alias,
       registeredAt: new Date().toISOString(),
     };
-    if (existing >= 0) {
-      this.repos = this.repos.map((r, i) => i === existing ? entry : r);
+    if (existingIdx >= 0) {
+      this.repos = this.repos.map((r, i) => (i === existingIdx ? entry : r));
     } else {
       this.repos = [...this.repos, entry];
     }
@@ -77,7 +130,7 @@ export class RepoRegistry {
   }
 
   unregister(root: string): void {
-    this.repos = this.repos.filter(r => r.root !== root);
+    this.repos = this.repos.filter((r) => path.resolve(r.root) !== path.resolve(root));
     this.save();
   }
 }
