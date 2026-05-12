@@ -24,6 +24,7 @@ import type { ServerContext } from './context.js';
 import type { DependencyGraph } from '../graph/DependencyGraph.js';
 import type { CallGraphIndex } from '../graph/CallGraphIndex.js';
 import { logger } from '../utils/logger.js';
+import { ProjectRootField, PROJECT_ROOT_JSON_SCHEMA } from './projectRootParam.js';
 
 const execAsync = promisify(exec);
 
@@ -43,6 +44,7 @@ const Schema = z.object({
   max_steps_per_flow: z.number().min(1).max(100).optional().default(30).describe(
     'Max call chain steps per flow (default: 30)',
   ),
+  project_root: ProjectRootField,
 });
 
 function escapeXML(text: string): string {
@@ -147,11 +149,12 @@ export function registerGetAffectedFlowsTool(registry: ToolRegistry, ctx: Server
             type: 'number',
             description: 'Max steps per call chain (default: 30, max: 100)',
           },
+          project_root: PROJECT_ROOT_JSON_SCHEMA,
         },
       },
     },
     async (args) => {
-      const { changed_files, use_git, depth, max_flows, max_steps_per_flow } = Schema.parse(args);
+      const { changed_files, use_git, depth, max_flows, max_steps_per_flow, project_root } = Schema.parse(args);
 
       let files = changed_files ?? [];
       if (files.length === 0 && use_git) {
@@ -162,7 +165,7 @@ export function registerGetAffectedFlowsTool(registry: ToolRegistry, ctx: Server
         return '<affected_flows changed_files="0" total_flows="0">\n  <!-- No changed files detected -->\n</affected_flows>';
       }
 
-      const graph = await ctx.getGraph();
+      const graph = await ctx.getGraph(project_root);
       const callIdx = graph.getCallGraphIndex();
 
       // Collect all symbols defined in the changed files
