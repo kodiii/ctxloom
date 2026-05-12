@@ -73,6 +73,73 @@ describe('ctx_community_list', () => {
     const result = await registry.dispatch('ctx_community_list', {});
     expect(result).toContain('total="0"');
   });
+
+  // ─── Paging (issue #56) ──────────────────────────────────────────────────
+
+  function makeLargeGraph(communityCount: number): DependencyGraph {
+    // Build N disjoint two-file communities so Louvain detects them as
+    // separate clusters.
+    const g = new DependencyGraph();
+    for (let i = 0; i < communityCount; i++) {
+      g.addEdge(`src/mod${i}/a.ts`, `src/mod${i}/b.ts`);
+    }
+    return g;
+  }
+
+  it('respects the default limit of 50', async () => {
+    const registry = new ToolRegistry();
+    registerCommunityListTool(registry, makeCtx(makeLargeGraph(120)));
+    const result = await registry.dispatch('ctx_community_list', {});
+    expect(result).toMatch(/showing="50"/);
+    expect(result).toMatch(/has_more="true"/);
+    const communityCount = (result.match(/<community /g) ?? []).length;
+    expect(communityCount).toBe(50);
+  });
+
+  it('honours offset for paging through results', async () => {
+    const ctx = makeCtx(makeLargeGraph(120));
+    const r1 = new ToolRegistry();
+    registerCommunityListTool(r1, ctx);
+    const r2 = new ToolRegistry();
+    registerCommunityListTool(r2, ctx);
+
+    const page1 = await r1.dispatch('ctx_community_list', { limit: 20, offset: 0 });
+    const page2 = await r2.dispatch('ctx_community_list', { limit: 20, offset: 20 });
+    expect(page1).toMatch(/offset="0"/);
+    expect(page2).toMatch(/offset="20"/);
+    // The two pages must not overlap on community ids.
+    const ids1 = [...page1.matchAll(/id="(\d+)"/g)].map((m) => m[1]);
+    const ids2 = [...page2.matchAll(/id="(\d+)"/g)].map((m) => m[1]);
+    expect(ids1.some((id) => ids2.includes(id))).toBe(false);
+  });
+
+  it('filters communities below min_size', async () => {
+    // Two-file communities are the only kind in makeLargeGraph; min_size=3
+    // should produce an empty filtered set.
+    const registry = new ToolRegistry();
+    registerCommunityListTool(registry, makeCtx(makeLargeGraph(10)));
+    const result = await registry.dispatch('ctx_community_list', { min_size: 3 });
+    expect(result).toMatch(/filtered_total="0"/);
+    expect(result).toMatch(/showing="0"/);
+  });
+
+  it('detail_level=minimal returns counts only and no community elements', async () => {
+    const registry = new ToolRegistry();
+    registerCommunityListTool(registry, makeCtx(makeLargeGraph(20)));
+    const result = await registry.dispatch('ctx_community_list', { detail_level: 'minimal' });
+    expect(result).toContain('detail_level="minimal"');
+    expect(result).not.toContain('<community ');
+    expect(result).toMatch(/total="\d+"/);
+    expect(result).toMatch(/filtered_total="\d+"/);
+  });
+
+  it('rejects limit above the documented maximum', async () => {
+    const registry = new ToolRegistry();
+    registerCommunityListTool(registry, makeCtx(makeLargeGraph(5)));
+    await expect(
+      registry.dispatch('ctx_community_list', { limit: 999 }),
+    ).rejects.toThrow();
+  });
 });
 
 // ─── ctx_architecture_overview ─────────────────────────────────────────────
@@ -274,6 +341,42 @@ describe('ctx_wiki_generate', () => {
     registerWikiGenerateTool(registry, makeCtx(new DependencyGraph(), tmpDir));
     const result = await registry.dispatch('ctx_wiki_generate', {});
     expect(result).toContain('written="0"');
+  });
+
+  // ─── Token-budget regression (issue #56) ─────────────────────────────────
+
+  it('does not emit per-skipped <page> entries (issue #56)', async () => {
+    const ctx = makeCtx(makeGraph(), tmpDir);
+    // First run writes pages.
+    const r1 = new ToolRegistry();
+    registerWikiGenerateTool(r1, ctx);
+    await r1.dispatch('ctx_wiki_generate', {});
+
+    // Second run skips everything via the hash cache. The response must
+    // not list any per-page entries for skipped pages — that's the
+    // O(communities × page-line) blowup the issue is about.
+    const r2 = new ToolRegistry();
+    registerWikiGenerateTool(r2, ctx);
+    const second = await r2.dispatch('ctx_wiki_generate', {});
+    expect(second).toContain('skipped="');
+    expect(second).not.toMatch(/status="skipped"/);
+  });
+
+  it('written pages include size attribute', async () => {
+    const registry = new ToolRegistry();
+    registerWikiGenerateTool(registry, makeCtx(makeGraph(), tmpDir));
+    const result = await registry.dispatch('ctx_wiki_generate', {});
+    expect(result).toMatch(/size="\d+"/);
+  });
+
+  it('detail_level=minimal returns counts only and no page elements', async () => {
+    const registry = new ToolRegistry();
+    registerWikiGenerateTool(registry, makeCtx(makeGraph(), tmpDir));
+    const result = await registry.dispatch('ctx_wiki_generate', { detail_level: 'minimal' });
+    expect(result).toContain('detail_level="minimal"');
+    expect(result).not.toContain('<page ');
+    expect(result).toMatch(/written="\d+"/);
+    expect(result).toMatch(/skipped="\d+"/);
   });
 });
 
