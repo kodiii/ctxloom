@@ -102,7 +102,7 @@ export function ProjectSwitcher() {
   // would imply something to choose from; we use a static "+" button
   // that opens an inline help block instead.
   if (projects.length <= 1) {
-    return <SoloProjectHint name={active.name} root={active.root} />;
+    return <SoloProjectHint name={active.name} alias={active.alias} root={active.root} />;
   }
 
   return (
@@ -116,7 +116,14 @@ export function ProjectSwitcher() {
       >
         <span className="flex items-center gap-2 min-w-0">
           <span className="text-white/40 shrink-0">◆</span>
-          <span className="truncate">{active.name}</span>
+          {active.alias ? (
+            <span className="truncate flex flex-col leading-none gap-0.5">
+              <span className="font-semibold">{active.alias}</span>
+              <span className="text-[10px] text-white/40">{active.name}</span>
+            </span>
+          ) : (
+            <span className="truncate">{active.name}</span>
+          )}
         </span>
         <span className="text-white/30 text-[10px] shrink-0">
           {open ? '▴' : '▾'}
@@ -146,7 +153,14 @@ export function ProjectSwitcher() {
               <span className="shrink-0 w-3 text-center">
                 {p.slug === active.slug ? '●' : ' '}
               </span>
-              <span className="truncate flex-1">{p.name}</span>
+              {p.alias ? (
+                <span className="truncate flex-1 flex flex-col leading-none gap-0.5">
+                  <span className="font-semibold">{p.alias}</span>
+                  <span className="text-[10px] text-white/40">{p.name}</span>
+                </span>
+              ) : (
+                <span className="truncate flex-1">{p.name}</span>
+              )}
               {!p.hasSnapshot && (
                 <span
                   className="text-[10px] text-white/30 shrink-0"
@@ -188,7 +202,7 @@ export function ProjectSwitcher() {
  * `ctxloom register` command. Closed by default so it doesn't
  * dominate the sidebar.
  */
-function SoloProjectHint({ name, root }: { name: string; root: string }) {
+function SoloProjectHint({ name, alias, root }: { name: string; alias?: string; root: string }) {
   const [open, setOpen] = useState(false);
   const cmd = 'ctxloom register';
   const [copied, setCopied] = useState(false);
@@ -196,12 +210,19 @@ function SoloProjectHint({ name, root }: { name: string; root: string }) {
     <div className="px-3 py-2">
       <div className="flex items-center gap-2 text-xs">
         <span className="text-white/30 shrink-0">◆</span>
-        <span
-          className="text-white/80 truncate flex-1 min-w-0"
-          title={root}
-        >
-          {name}
-        </span>
+        {alias ? (
+          <span className="truncate flex-1 min-w-0 flex flex-col leading-none gap-0.5" title={root}>
+            <span className="text-white/80 font-semibold">{alias}</span>
+            <span className="text-[10px] text-white/40">{name}</span>
+          </span>
+        ) : (
+          <span
+            className="text-white/80 truncate flex-1 min-w-0"
+            title={root}
+          >
+            {name}
+          </span>
+        )}
         <button
           type="button"
           onClick={() => setOpen((o) => !o)}
