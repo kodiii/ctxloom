@@ -22,6 +22,7 @@ import type { ServerContext } from './context.js';
 import { generateEmbedding } from '../indexer/embedder.js';
 import { VectorStore } from '../db/VectorStore.js';
 import { logger } from '../utils/logger.js';
+import { ProjectRootField, PROJECT_ROOT_JSON_SCHEMA } from './projectRootParam.js';
 
 // ─── RepoRegistry ─────────────────────────────────────────────────────────
 
@@ -145,6 +146,7 @@ const Schema = z.object({
   repos: z.array(z.string()).optional().describe(
     'Specific repo root paths to search. Omit to search all registered repos.',
   ),
+  project_root: ProjectRootField,
 });
 
 function escapeXML(text: string): string {
@@ -188,6 +190,7 @@ export function registerCrossRepoSearchTool(
             items: { type: 'string' },
             description: 'Specific repo root paths to search. Omit to search all registered repos.',
           },
+          project_root: PROJECT_ROOT_JSON_SCHEMA,
         },
         required: ['query'],
       },

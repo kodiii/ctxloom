@@ -7,12 +7,14 @@
 import { z } from 'zod';
 import type { ToolRegistry } from './registry.js';
 import type { ServerContext } from './context.js';
+import { ProjectRootField, PROJECT_ROOT_JSON_SCHEMA } from './projectRootParam.js';
 
 const Schema = z.object({
   file: z.string().describe('File path to look up co-changed siblings for'),
   limit: z.number().int().min(1).max(50).default(10),
   min_confidence: z.number().min(0).max(1).default(0.05),
   half_life_days: z.number().int().min(1).max(3650).default(90),
+  project_root: ProjectRootField,
 });
 
 interface CoupledFileEntry {
@@ -57,6 +59,7 @@ export function registerGitCouplingTool(registry: ToolRegistry, ctx: ServerConte
           limit: { type: 'number', description: 'Max results to return (default: 10, max: 50)' },
           min_confidence: { type: 'number', description: 'Minimum confidence threshold (default: 0.05)' },
           half_life_days: { type: 'number', description: 'Recency decay half-life in days (default: 90)' },
+          project_root: PROJECT_ROOT_JSON_SCHEMA,
         },
         required: ['file'],
       },

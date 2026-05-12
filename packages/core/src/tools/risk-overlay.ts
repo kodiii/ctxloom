@@ -7,9 +7,11 @@
 import { z } from 'zod';
 import type { ToolRegistry } from './registry.js';
 import type { ServerContext } from './context.js';
+import { ProjectRootField, PROJECT_ROOT_JSON_SCHEMA } from './projectRootParam.js';
 
 const Schema = z.object({
   nodes: z.array(z.string()).min(1).max(200).describe('File paths to score'),
+  project_root: ProjectRootField,
 });
 
 interface NodeRiskEntry {
@@ -66,6 +68,7 @@ export function registerRiskOverlayTool(registry: ToolRegistry, ctx: ServerConte
             items: { type: 'string' },
             description: 'File paths to score (1–200)',
           },
+          project_root: PROJECT_ROOT_JSON_SCHEMA,
         },
         required: ['nodes'],
       },
