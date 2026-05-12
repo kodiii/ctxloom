@@ -16,11 +16,16 @@ import { ToolRegistry } from '../src/tools/registry.js';
 import { registerStatusTool } from '../src/tools/status.js';
 import { VectorStore } from '../src/db/VectorStore.js';
 import type { ServerContext } from '../src/tools/context.js';
+import type { RepoRegistry } from '../src/tools/cross-repo-search.js';
+
+const mockRegistry = { list: () => [], findByAlias: () => null, findByPath: () => null } as unknown as RepoRegistry;
 
 function makeCtx(overrides: Partial<ServerContext>): ServerContext {
   return {
     projectRoot: '/fake',
     dbPath: '/fake/.ctxloom/vectors.lancedb',
+    noDefaultMode: false,
+    registry: mockRegistry,
     getStore: () => Promise.reject(new Error('not used')),
     getGraph: () => Promise.reject(new Error('not used')),
     getParser: () => Promise.reject(new Error('not used')),
@@ -91,6 +96,15 @@ describe('ctx_status — vector store reporting', () => {
 
     // Cleanup the in-test singleton if it was opened by status.
     if (storeSingleton) await (storeSingleton as VectorStore).close();
+  });
+});
+
+describe('ctx_status — input schema', () => {
+  it('ctx_status schema accepts project_root', () => {
+    const registry = new ToolRegistry();
+    registerStatusTool(registry, makeCtx({}));
+    const status = registry.list().find((t) => t.name === 'ctx_status');
+    expect(status?.inputSchema.properties).toHaveProperty('project_root');
   });
 });
 
