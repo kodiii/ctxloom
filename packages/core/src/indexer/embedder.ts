@@ -100,9 +100,32 @@ export async function generateEmbedding(text: string): Promise<number[]> {
  * Respects common ignore patterns.
  */
 export function collectFiles(dir: string, results: string[] = []): string[] {
+  // Default ignore list. Anything in here is skipped at any depth in the
+  // tree. Three buckets of stuff we never want to embed:
+  //
+  //   - Build artifacts and caches that explode the index without adding
+  //     signal (node_modules, dist, build, coverage, .next, .nuxt, out,
+  //     .cache, .turbo, target — the last is Rust).
+  //   - State directories owned by other tools that frequently contain
+  //     duplicated copies of the user's source (.claude with its
+  //     worktrees/, .code-review-graph with its own snapshots) or
+  //     thousands of unrelated installer files (.vscode-test bundles the
+  //     full VS Code distribution under apps/vscode-extension/).
+  //     Discovered against ctxloom's own repo: a single
+  //     `apps/vscode-extension/.vscode-test/Visual Studio Code.app/...`
+  //     tree polluted execution-flow output with calls into
+  //     ms-vscode.js-debug, and `.claude/worktrees/*` produced five
+  //     identical copies of every large function in find-large-functions.
+  //   - The ctxloom-owned `.ctxloom` directory itself — we never embed
+  //     our own snapshots back into the index.
   const IGNORED_DIRS = new Set([
-    'node_modules', '.git', 'dist', 'build', '.ctxloom',
-    'coverage', '.next', '.nuxt', 'out', '.cache', '.turbo',
+    // Build artifacts + dependency caches
+    'node_modules', 'dist', 'build', 'out', 'target',
+    'coverage', '.cache', '.turbo', '.next', '.nuxt',
+    // Version control + ctxloom state
+    '.git', '.ctxloom',
+    // Other tools' working state (often contains duplicated source)
+    '.claude', '.code-review-graph', '.vscode-test',
   ]);
 
   const SUPPORTED_EXTENSIONS = new Set([

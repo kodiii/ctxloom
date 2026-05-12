@@ -147,6 +147,57 @@ describe('Embedder', () => {
       expect(files.length).toBe(0);
     });
 
+    // Regression: agent-worktree directories under .claude/worktrees/
+    // contain entire duplicated copies of the user's source tree. If we
+    // walk them, every analysis tool (find_large_functions, hub_nodes,
+    // execution_flow) returns 4-5 copies of every result. Discovered
+    // running ctxloom against its own repo on 2026-05-12.
+    it('should ignore .claude/worktrees (and the rest of .claude)', () => {
+      fs.mkdirSync(path.join(tempDir, '.claude', 'worktrees', 'wt-1', 'src'), { recursive: true });
+      fs.writeFileSync(path.join(tempDir, '.claude', 'worktrees', 'wt-1', 'src', 'dup.ts'), '');
+      fs.mkdirSync(path.join(tempDir, '.claude', 'agents'), { recursive: true });
+      fs.writeFileSync(path.join(tempDir, '.claude', 'agents', 'foo.md'), '');
+      fs.writeFileSync(path.join(tempDir, 'real.ts'), '');
+      const files = collectFiles(tempDir);
+      expect(files.length).toBe(1);
+      expect(files[0]).toContain('real.ts');
+    });
+
+    // .vscode-test ships an entire VS Code distribution including
+    // hundreds of bundled extensions (ms-vscode.js-debug, mermaid, etc.)
+    // — none of which is the user's code.
+    it('should ignore .vscode-test directory', () => {
+      fs.mkdirSync(path.join(tempDir, '.vscode-test', 'vscode-darwin-arm64', 'extensions'), { recursive: true });
+      fs.writeFileSync(path.join(tempDir, '.vscode-test', 'vscode-darwin-arm64', 'extensions', 'noise.js'), '');
+      fs.writeFileSync(path.join(tempDir, 'app.ts'), '');
+      const files = collectFiles(tempDir);
+      expect(files.length).toBe(1);
+      expect(files[0]).toContain('app.ts');
+    });
+
+    // Other code-graph tools' state — usually a sibling LanceDB + snapshot files
+    it('should ignore .code-review-graph directory', () => {
+      fs.mkdirSync(path.join(tempDir, '.code-review-graph'), { recursive: true });
+      fs.writeFileSync(path.join(tempDir, '.code-review-graph', 'graph.json'), '');
+      const files = collectFiles(tempDir);
+      expect(files.length).toBe(0);
+    });
+
+    // Build outputs we previously didn't ignore: 'out' (Next.js static
+    // export), 'target' (Rust), and the cache/turbo dirs are all
+    // covered in IGNORED_DIRS — keep one smoke test so the list
+    // doesn't silently shrink in future edits.
+    it('should ignore target (Rust), out, .turbo, and .cache', () => {
+      for (const dir of ['target', 'out', '.turbo', '.cache']) {
+        fs.mkdirSync(path.join(tempDir, dir), { recursive: true });
+        fs.writeFileSync(path.join(tempDir, dir, 'noise.ts'), '');
+      }
+      fs.writeFileSync(path.join(tempDir, 'app.ts'), '');
+      const files = collectFiles(tempDir);
+      expect(files.length).toBe(1);
+      expect(files[0]).toContain('app.ts');
+    });
+
     it('should find files in nested directories', () => {
       fs.mkdirSync(path.join(tempDir, 'src', 'components'), { recursive: true });
       fs.writeFileSync(path.join(tempDir, 'src', 'app.ts'), '');
