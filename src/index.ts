@@ -26,6 +26,7 @@ import {
   nextStep as fmtNextStep,
   errorBlock as fmtErrorBlock,
   style,
+  isTTY,
 } from './cli/format.js';
 import {
   indexDirectory,
@@ -440,13 +441,18 @@ async function main(): Promise<void> {
       process.stdout.write(`  ${fmtPending('Indexing files…')}\n`);
       const indexStart = Date.now();
       const result = await indexDirectory(root, (file, i, total) => {
+        // In-place progress is TTY-only — see isTTY's comment in format.ts.
+        // Off-TTY (CI logs, piped output, captured stdout) we silently skip
+        // these writes; the final summary line below stands on its own.
+        if (!isTTY) return;
         // \r overwrites in-place; clear-to-EOL keeps prior longer paths from leaking
         const trimmed = file.length > 60 ? '…' + file.slice(-59) : file;
         process.stdout.write(`\r  ${style.dim(`[${i}/${total}]`)} ${style.dim(trimmed)}\x1b[K`);
       });
       const indexMs = Date.now() - indexStart;
-      // Clear the progress line, then emit summary
-      process.stdout.write('\r\x1b[K');
+      // Clear the progress line on TTY. Off-TTY there's nothing to clear
+      // — emitting \r\x1b[K would just leak garbage into the log file.
+      if (isTTY) process.stdout.write('\r\x1b[K');
       const errLabel = result.errors === 0 ? style.dim('0 errors') : style.warn(`${result.errors} error${result.errors === 1 ? '' : 's'}`);
       process.stdout.write(`  ${fmtSuccess(`Indexed ${style.bold(String(result.indexed))} files`)} ${style.dim('·')} ${errLabel} ${style.dim(`· ${(indexMs / 1000).toFixed(1)}s`)}\n\n`);
 

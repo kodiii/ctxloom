@@ -17,7 +17,14 @@
  */
 import pc from 'picocolors';
 
-const isTTY = (process.stdout as { isTTY?: boolean }).isTTY === true;
+/**
+ * True when stdout is a real terminal (interactive shell). Callers that
+ * emit in-place progress (\r, \x1b[K) MUST gate those writes on this —
+ * otherwise CI / piped output ends up with literal `[K` characters
+ * leaking into log files. (We can't rely on `\x1b` being rendered as
+ * invisible by every log viewer; many strip the ESC and leave `[K`.)
+ */
+export const isTTY = (process.stdout as { isTTY?: boolean }).isTTY === true;
 
 /** Icons — Unicode in a TTY, ASCII fallback otherwise. */
 export const icons = {
