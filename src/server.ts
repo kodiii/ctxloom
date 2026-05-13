@@ -327,11 +327,15 @@ export function createServer(): { server: Server; ctx: ServerContext } {
           if (state.vectorsInitialized) {
             const vectorsFirstTouch = firstTouchTracker.markAndCheck(root, 'vectors');
             if (vectorsFirstTouch) {
-              track('project_first_touch', os.hostname(), {
-                project_id: hashProjectRoot(root),
-                tier: 'vectors',
-                duration_ms: durationMs,
-              });
+              try {
+                track('project_first_touch', os.hostname(), {
+                  project_id: hashProjectRoot(root),
+                  tier: 'vectors',
+                  duration_ms: durationMs,
+                });
+              } catch {
+                // Telemetry must never break the response.
+              }
               const wrapped = wrapWithIndexingEnvelope(
                 { firstTouch: true, projectRoot: root, tier: 'vectors', durationMs },
                 text,
@@ -366,10 +370,12 @@ export function createServer(): { server: Server; ctx: ServerContext } {
     } catch (err) {
       if (err instanceof Error && err.message === 'no_default_project') {
         const hadArg10 = (args as Record<string, unknown> | undefined)?.project_root !== undefined;
-        track('project_resolution_failed', os.hostname(), {
-          error_code: 'no_default_project',
-          had_arg: hadArg10,
-        });
+        try {
+          track('project_resolution_failed', os.hostname(), {
+            error_code: 'no_default_project',
+            had_arg: hadArg10,
+          });
+        } catch { /* telemetry must never block error responses */ }
         const xml = noDefaultProjectError({
           attemptedRoot: PROJECT_ROOT,
           resolutionChain: 'CTXLOOM_ROOT env var→unset, fallback_cwd→' + PROJECT_ROOT,
@@ -381,10 +387,12 @@ export function createServer(): { server: Server; ctx: ServerContext } {
         try {
           const parsed = JSON.parse(err.message) as Record<string, unknown>;
           if (parsed.kind === 'alias_not_found') {
-            track('project_resolution_failed', os.hostname(), {
-              error_code: 'alias_not_found',
-              had_arg: true,
-            });
+            try {
+              track('project_resolution_failed', os.hostname(), {
+                error_code: 'alias_not_found',
+                had_arg: true,
+              });
+            } catch { /* telemetry must never block error responses */ }
             const xml = aliasNotFoundError({
               alias: String(parsed.alias ?? ''),
               didYouMean: Array.isArray(parsed.didYouMean) ? (parsed.didYouMean as string[]) : [],
@@ -392,10 +400,12 @@ export function createServer(): { server: Server; ctx: ServerContext } {
             return { content: [{ type: 'text' as const, text: xml }], isError: true };
           }
           if (parsed.kind === 'project_root_not_found') {
-            track('project_resolution_failed', os.hostname(), {
-              error_code: 'project_root_not_found',
-              had_arg: true,
-            });
+            try {
+              track('project_resolution_failed', os.hostname(), {
+                error_code: 'project_root_not_found',
+                had_arg: true,
+              });
+            } catch { /* telemetry must never block error responses */ }
             const xml = projectRootNotFoundError({
               path: String(parsed.attemptedPath ?? ''),
               resolutionChain: String(parsed.resolutionChain ?? ''),
