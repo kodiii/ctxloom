@@ -9,21 +9,24 @@
 
 Turn the lights on for the multi-project `project_root` flow shipped in v1.1.0. Today the only Sentry capture site is `main().catch()` and the only PostHog events are six license-funnel events. The entire MCP server runtime, including the new resolver / state manager / first-touch indexing paths, is silent. v1.1.1 adds:
 
-- **PostHog:** state-transition events for project resolution, first-touch indexing, eviction, alias registration, kill switch, plus 10% sampled `tool_dispatched` events.
-- **Sentry:** capture every non-structured error thrown during MCP tool dispatch, plus indexing failures and dispose-path failures. Sentry release tagging + sourcemap upload so stack traces resolve to TypeScript source.
+- **PostHog:** state-transition events for project resolution, first-touch indexing, eviction, alias registration, kill switch, structured resolver failures, plus 25% sampled `tool_dispatched` events.
+- **Sentry:** capture every non-structured error thrown during MCP tool dispatch, plus indexing failures and dispose-path failures. Embed `release` tag in each captured event so the Sentry UI groups by version. Client-side scrub `/Users/<name>/` and `/home/<name>/` from stack frames before transmission.
 
 ## Non-goals (deferred to follow-up PRs — see end of doc)
 
-- Distinct-id schema migration (still `os.hostname()` for v1.1.1 to preserve existing license funnels)
-- Dashboard-side telemetry (browser SDK in `apps/dashboard/`)
+- Distinct-id schema migration (still `os.hostname()` for v1.1.1 to preserve existing license funnels) — **PR-A**
+- Dashboard-side telemetry (browser SDK in `apps/dashboard/`) — **PR-B**
+- Sentry CLI sourcemap upload (gives source-resolved stack traces in the Sentry UI) — **PR-C**
 
 ## Decisions locked in
 
 | Decision | Choice |
 |---|---|
 | Project-path PII | SHA-256 the canonical absolute path, send first 16 hex chars as `project_id` |
-| Event volume | State transitions only, plus 10% sampled tool dispatch |
+| Event volume | State transitions + structured resolver failures + 25% sampled tool dispatch |
 | Sentry scope | All non-structured errors thrown during tool dispatch, plus indexing/dispose failures |
+| Sentry stack-frame scrubbing | Client-side replace `/Users/<seg>/` and `/home/<seg>/` with `/Users/~/` and `/home/~/` before send |
+| Sentry release correlation | Embed `release` (semver from `package.json`) as a tag on every captured event |
 | Opt-out | Existing `CTXLOOM_NO_TELEMETRY=1` / `DO_NOT_TRACK=1` (no new env vars) |
 | Distinct ID | `os.hostname()` — unchanged from v1.1.0 |
 
@@ -53,11 +56,12 @@ All events carry `distinct_id = os.hostname()` and `properties.$lib = 'ctxloom-c
 | `alias_registered` | `case 'register':` succeeds with `--alias` in the CLI | `alias_length`, `was_collision` (always `false` when this fires) |
 | `multi_project_active` | `manager.list().length` transitions from 1 → ≥2 (fires once per session) | `active_count`, `cap` |
 | `kill_switch_active` | `startServer()` boot when `CTXLOOM_DISABLE_MULTIPROJECT=1` | `cap` (always `1`) |
-| `tool_dispatched` | 10% sampled, after successful tool dispatch | `project_id`, `tool` (the tool name), `duration_ms` |
+| `project_resolution_failed` | Fired from the `CallToolRequest` handler catch when a structured resolver error is returned (NOT sent to Sentry — these are user mistakes, not bugs) | `error_code` (`'alias_not_found'`/`'no_default_project'`/`'project_root_not_found'`/`'project_root_unreadable'`), `had_arg` (bool) |
+| `tool_dispatched` | 25% sampled, after successful tool dispatch | `project_id`, `tool` (the tool name), `duration_ms` |
 
 ### Sampling
 
-`tool_dispatched` uses `Math.random() < 0.1`. No per-tool deduplication, no per-session bias — straight uniform sampling. Acceptable for "which tools are popular" coarse-grained analytics; not suitable for precise per-call counting.
+`tool_dispatched` uses `Math.random() < 0.25`. No per-tool deduplication, no per-session bias — straight uniform sampling. 25% (rather than 10%) keeps rare-tool visibility realistic: a tool called ~5 times across the install base in a month gives ~1.25 expected events, vs. 0.5 at 10%. Acceptable for "which tools are popular" coarse-grained analytics; not suitable for precise per-call counting.
 
 ## Error capture sites
 
@@ -71,17 +75,33 @@ Five Sentry capture sites are added or extended:
 | `evictLRU()` dispose path | `packages/core/src/server/ProjectStateManager.ts` | Wrap the fire-and-forget `Promise.resolve(this.onDispose(state)).catch(...)` with a Sentry catch: `captureError(err, { project_id, phase: 'dispose' })`. |
 | `main().catch()` | `src/index.ts` | Existing — unchanged. |
 
-## Sentry release tagging + sourcemap upload
+## Sentry release tagging + stack-frame scrubbing
 
-The bundle currently ships as a single minified file. Sentry shows `/dist/index.cjs:42:1337` for every frame — barely useful. v1.1.1 adds:
+Two pieces ship in v1.1.1; sourcemap upload is deferred to PR-C so v1.1.1 is not blocked on the `SENTRY_AUTH_TOKEN` GitHub Actions secret.
 
-1. `tsup.config.ts` — enable `sourcemap: true` for production builds.
-2. `prepublishOnly` script chain gains a step: `sentry-cli releases new $VERSION && sentry-cli releases files $VERSION upload-sourcemaps ./dist --url-prefix '~/dist'`.
-3. Telemetry payload at error time — embed `release: $VERSION` from `package.json` as a Sentry tag so traces map to the right release.
-4. New GitHub Actions secret: `SENTRY_AUTH_TOKEN`. `SENTRY_ORG` and `SENTRY_PROJECT` go in `package.json` as constants since they're not secret.
-5. The Sentry CLI install is gated on the secret being present — local `npm publish` without `SENTRY_AUTH_TOKEN` logs a warning and continues, so contributor publishes don't break.
+### `release` tag (v1.1.1, in this spec)
 
-The `release` tag on the captured error becomes the primary correlation key between PostHog (which sees `properties.release`) and Sentry (which sees `tags.release`).
+Embed `release: <semver from package.json>` as a Sentry tag on every captured event. Implementation:
+
+1. `tsup.config.ts` — add `__RELEASE__` to the `define` substitution, sourced from `process.env.npm_package_version` at build time.
+2. `telemetry.ts` — read `__RELEASE__` and inject as `tags.release` in the Sentry payload, alongside the existing `runtime: 'node'` and `component` tags.
+3. Same `release` value goes into PostHog event `properties.release` so the two backends correlate.
+
+This gives the Sentry UI "errors by release" grouping immediately, with no infrastructure dependencies. Stack traces still point at `/dist/index.cjs:42:1337` (no sourcemaps), but you can at least filter by version.
+
+### Stack-frame scrubbing (v1.1.1, in this spec)
+
+`parseStack()` already extracts `{ filename, lineno, function }` from `Error.stack`. Pre-transmission, replace:
+
+- `/Users/<segment>/` → `/Users/~/`
+- `/home/<segment>/` → `/home/~/`
+- `C:\\Users\\<segment>\\` → `C:\\Users\\~\\` (Windows safety)
+
+`<segment>` is the first path component after the prefix (the username). The rest of the path is preserved. ~5 LoC. Acts as a defense-in-depth layer alongside any Sentry-side scrubbing the project may already have.
+
+### Sourcemap upload (DEFERRED to PR-C)
+
+See "Follow-up PRs" at the end of this doc. Once sourcemaps are uploaded, stack traces show original TS file + line, which makes the captured errors dramatically more useful to debug. Decoupled from v1.1.1 so we ship without waiting on the auth-token setup.
 
 ## PII discipline
 
@@ -102,17 +122,15 @@ Sentry stack frames will contain file paths from the user's local checkout. This
 |---|---|
 | `packages/core/src/server/projectId.ts` | New: `hashProjectRoot()` |
 | `packages/core/src/server/EmittedOnceTracker.ts` | New: small Set-based per-session emission guard |
-| `packages/core/src/license/telemetry.ts` | Expand `TelemetryEvent` union; add `release` to all event payloads; add `release` Sentry tag |
+| `packages/core/src/license/telemetry.ts` | Expand `TelemetryEvent` union; add `release` to all event payloads and Sentry tags; add client-side stack-frame scrubbing in `parseStack()` |
 | `packages/core/src/server/ProjectState.ts` | Sentry capture in `ensureVectorsInitialized()` reject path |
 | `packages/core/src/server/ProjectStateManager.ts` | Fire `project_evicted`; wrap dispose with Sentry catch |
-| `src/server.ts` | Fire `project_resolved`, `multi_project_active`, `project_first_touch`, `tool_dispatched`, `kill_switch_active`; Sentry capture in handler catch for non-structured errors and `initGraph` failures |
+| `src/server.ts` | Fire `project_resolved`, `multi_project_active`, `project_first_touch`, `tool_dispatched`, `kill_switch_active`, `project_resolution_failed`; Sentry capture in handler catch for non-structured errors and `initGraph` failures |
 | `src/index.ts` | Fire `alias_registered` after successful registration |
 | `packages/core/src/index.ts` | Export `hashProjectRoot`, `EmittedOnceTracker` |
-| `tsup.config.ts` | Enable `sourcemap: true`; add `define` for `__RELEASE__` from package.json |
-| `package.json` | Add `prepublishOnly` step for sourcemap upload; add `sentry-cli` to devDependencies; add `sentryOrg` / `sentryProject` constants |
-| `.github/workflows/*.yml` (if present) | Pass `SENTRY_AUTH_TOKEN` through to publish step |
+| `tsup.config.ts` | Add `define` for `__RELEASE__` from `npm_package_version` |
 
-Approximate footprint: ~200 LoC source, ~100 LoC tests, ~30 LoC build config, 1 new GitHub Actions secret.
+Approximate footprint: ~210 LoC source, ~110 LoC tests, ~10 LoC build config. No new GitHub Actions secret in v1.1.1.
 
 ## Testing
 
@@ -121,7 +139,9 @@ Approximate footprint: ~200 LoC source, ~100 LoC tests, ~30 LoC build config, 1 
 | `tests/HashProjectRoot.test.ts` | Same path → same hash; different paths → different hashes; 16 hex chars; trailing-slash normalization |
 | `tests/EmittedOnceTracker.test.ts` | First call returns `true`, subsequent calls return `false`; per-key isolation; `reset()` clears |
 | `tests/TelemetryOptOut.test.ts` | `CTXLOOM_NO_TELEMETRY=1` short-circuits both `track` and `captureError` (verify or extend) |
-| `tests/MultiProjectTelemetry.test.ts` | Mock `track`/`captureError`; drive `ProjectStateManager` + `resolveOrDefault` through real flows; assert event names and property shape; no real network |
+| `tests/TelemetryStackScrubbing.test.ts` | `parseStack()` redacts `/Users/<name>/` and `/home/<name>/` and `C:\\Users\\<name>\\`; preserves the rest of the path |
+| `tests/TelemetryRelease.test.ts` | Captured event includes `tags.release = <package.json version>` |
+| `tests/MultiProjectTelemetry.test.ts` | Mock `track`/`captureError`; drive `ProjectStateManager` + `resolveOrDefault` through real flows; assert event names and property shape including `project_resolution_failed`; no real network |
 | Existing 715 tests | Must stay green |
 
 Mocking strategy: use Vitest's `vi.mock('@ctxloom/core', ...)` to replace `track` and `captureError` with spies. No network in tests.
@@ -132,7 +152,8 @@ The instrumentation itself must never break the CLI:
 
 - `track()` / `captureError()` are already fire-and-forget — they catch all internals.
 - `hashProjectRoot()` is pure CPU and synchronous — cannot throw under normal use, but the call sites still wrap in `try`/`catch` and fall back to `'unknown'` if it somehow does.
-- Sentry CLI failure during `prepublishOnly` is non-fatal — the publish proceeds without sourcemaps and logs a warning.
+- Stack-frame scrubbing in `parseStack()` operates on already-parsed frame strings; if the regex doesn't match (Windows, custom path) the frame passes through unscrubbed rather than throwing.
+- The `__RELEASE__` build-time constant falls back to the literal string `'unknown'` if `npm_package_version` is missing during build, so a contributor doing a non-npm-script build still produces a working bundle.
 
 ## Release plan
 
@@ -175,12 +196,28 @@ These are intentionally deferred from v1.1.1. Each is its own focused PR.
 
 **Trigger:** File after PR-A merges, or after the next dashboard feature work — whichever comes first.
 
+### PR-C: Sentry CLI sourcemap upload
+
+**Why deferred from v1.1.1:** Requires a `SENTRY_AUTH_TOKEN` GitHub Actions secret and `sentry-cli` in the publish pipeline. v1.1.1 ships without it so the release isn't blocked on auth-token setup — the `release` tag (already in v1.1.1) gives "errors by version" grouping; sourcemaps just make individual stack frames readable as TS source instead of `/dist/index.cjs:42:1337`.
+
+**Scope:**
+- `tsup.config.ts` — enable `sourcemap: true` for production builds.
+- `package.json` — add `sentry-cli` to devDependencies; add `prepublishOnly` step: `sentry-cli releases new $npm_package_version && sentry-cli releases files $npm_package_version upload-sourcemaps ./dist --url-prefix '~/dist'`.
+- Hard-code `SENTRY_ORG` and `SENTRY_PROJECT` in `package.json` (not secret).
+- New GitHub Actions secret `SENTRY_AUTH_TOKEN` exported into the publish job.
+- Gate the upload step on `SENTRY_AUTH_TOKEN` being present so local `npm publish` without it logs a warning and continues — contributor publishes don't break.
+- Verify with a test publish: the resulting Sentry event for any captured error should show original `.ts` filenames and line numbers.
+
+**Estimated footprint:** ~30 LoC build config, 1 new devDependency, 1 new GitHub Actions secret.
+
+**Trigger:** File immediately after v1.1.1 ships and you've set the `SENTRY_AUTH_TOKEN` secret on the repo (`gh secret set SENTRY_AUTH_TOKEN`). Small patch release (v1.1.2 or v1.1.3 depending on PR-A ordering).
+
 ---
 
 ## Open assumptions
 
 These are assumptions I'm making without verifying. Flag if any are wrong:
 
-1. **The PostHog free tier covers expected v1.1.1 volume.** Estimate: 5–20 state events/session + ~10 sampled tool_dispatched/session, across an estimated install base. Free tier is 1M events/month — should be comfortable.
-2. **Sentry release tagging works with tsup-bundled CommonJS output.** Sentry CLI supports both ESM and CJS sourcemaps; the bundle is currently CJS per `tsup.config.ts`. Will verify during implementation; if not, fall back to manual sourcemap upload.
-3. **`SENTRY_AUTH_TOKEN` can be added to the repo's GitHub Actions secrets.** Requires the user to run `gh secret set SENTRY_AUTH_TOKEN` once.
+1. **The PostHog free tier covers expected v1.1.1 volume.** Estimate: 5–20 state events/session + ~25 sampled `tool_dispatched`/session + occasional `project_resolution_failed`, across an estimated install base. Free tier is 1M events/month — should be comfortable.
+2. **`npm_package_version` is set during `npm publish` builds.** npm sets this env var when running scripts; tsup's `define` substitution should pick it up at build time. If not, fall back to importing `package.json` directly into `tsup.config.ts` and reading `.version`.
+3. **The existing telemetry transport handles the volume.** Both `track()` and `captureError()` use `fetch()` with a 4-second timeout per call, fire-and-forget. Adding ~30 events per session multiplies the call count but each one is independent; should be fine. If we see issues we batch later.
