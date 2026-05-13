@@ -596,6 +596,12 @@ async function main(): Promise<void> {
         console.error(`[ctxloom] ${err instanceof Error ? err.message : String(err)}`);
         process.exit(1);
       }
+      if (alias !== undefined) {
+        track('alias_registered', os.hostname(), {
+          alias_length: alias.length,
+          was_collision: false,
+        });
+      }
       console.log(`[ctxloom] Registered repo: ${absPath}${alias ? ` (alias: ${alias})` : ''}`);
       console.log(`[ctxloom] LanceDB path: ${dbPath}`);
       console.log(`[ctxloom] Registry: ${registryPath}`);
