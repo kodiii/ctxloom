@@ -16,6 +16,7 @@ import type { ToolRegistry } from './registry.js';
 import type { ServerContext } from './context.js';
 import type { DependencyGraph } from '../graph/DependencyGraph.js';
 import type { CallGraphIndex } from '../graph/CallGraphIndex.js';
+import { ProjectRootField, PROJECT_ROOT_JSON_SCHEMA } from './projectRootParam.js';
 
 const Schema = z.object({
   entry_point: z.string().min(1).describe('Symbol name to start the execution flow from'),
@@ -27,6 +28,7 @@ const Schema = z.object({
   max_nodes: z.number().min(1).max(200).optional().default(50).describe(
     'Max total steps to include in output (default: 50)',
   ),
+  project_root: ProjectRootField,
 });
 
 function escapeXML(text: string): string {
@@ -127,14 +129,15 @@ export function registerExecutionFlowTool(registry: ToolRegistry, ctx: ServerCon
             type: 'number',
             description: 'Max total steps to return (default: 50)',
           },
+          project_root: PROJECT_ROOT_JSON_SCHEMA,
         },
         required: ['entry_point'],
       },
     },
     async (args) => {
-      const { entry_point, entry_file, depth, max_nodes } = Schema.parse(args);
+      const { entry_point, entry_file, depth, max_nodes, project_root } = Schema.parse(args);
 
-      const graph = await ctx.getGraph();
+      const graph = await ctx.getGraph(project_root);
       const callIdx = graph.getCallGraphIndex();
 
       // Resolve the entry file via (in priority order):

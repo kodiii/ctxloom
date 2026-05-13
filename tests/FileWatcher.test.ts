@@ -39,8 +39,13 @@ describe('FileWatcher', () => {
     });
     watcher.start();
 
-    // Wait for chokidar to finish its initial scan before writing any files
+    // Wait for chokidar to finish its initial scan, then a short settling
+    // buffer before writing.  On macOS/FSEvents there is a brief window after
+    // 'ready' fires where the directory watch hasn't fully committed; without
+    // this pause 'add' events fired immediately after ready are intermittently
+    // missed.  All other async FileWatcher tests use the same 100ms buffer.
     await watcher.ready();
+    await new Promise(r => setTimeout(r, 100));
 
     const newFile = path.join(tempDir, 'new-file.ts');
     fs.writeFileSync(newFile, 'export const x = 1;');

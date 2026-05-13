@@ -9,6 +9,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import type { ToolRegistry } from './registry.js';
 import type { ServerContext } from './context.js';
+import { ProjectRootField, PROJECT_ROOT_JSON_SCHEMA } from './projectRootParam.js';
 
 const Schema = z.object({
   symbol: z.string().min(1).describe('Symbol name to rename (exact, case-sensitive)'),
@@ -19,6 +20,7 @@ const Schema = z.object({
   max_files: z.number().min(1).max(200).optional().default(50).describe(
     'Maximum candidate files to process (default: 50)',
   ),
+  project_root: ProjectRootField,
 });
 
 function escapeXML(text: string): string {
@@ -72,13 +74,14 @@ export function registerApplyRefactorTool(registry: ToolRegistry, ctx: ServerCon
           new_name: { type: 'string', description: 'New name' },
           dry_run: { type: 'boolean', description: 'Preview only, no writes (default: false)' },
           max_files: { type: 'number', description: 'Max candidate files (default: 50)' },
+          project_root: PROJECT_ROOT_JSON_SCHEMA,
         },
         required: ['symbol', 'new_name'],
       },
     },
     async (args) => {
-      const { symbol, new_name, dry_run, max_files } = Schema.parse(args);
-      const graph = await ctx.getGraph();
+      const { symbol, new_name, dry_run, max_files, project_root } = Schema.parse(args);
+      const graph = await ctx.getGraph(project_root);
 
       const definitions = graph.lookupSymbol(symbol);
       const candidateSet = new Set<string>();

@@ -1,4 +1,5 @@
 import type { Tool } from '@modelcontextprotocol/sdk/types.js';
+import { logger } from '../utils/logger.js';
 
 export type ToolHandler = (args: unknown) => Promise<string>;
 
@@ -21,6 +22,11 @@ export class ToolRegistry {
   async dispatch(name: string, args: unknown): Promise<string> {
     const def = this.tools.get(name);
     if (!def) throw new Error(`Unknown tool: ${name}`);
+    const projectRoot =
+      args && typeof args === 'object' && 'project_root' in args
+        ? (args as Record<string, unknown>).project_root
+        : undefined;
+    logger.debug('tool.dispatch', { tool: name, project_root: projectRoot });
     return def.handler(args);
   }
 

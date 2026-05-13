@@ -10,10 +10,12 @@ import { z } from 'zod';
 import type { ToolRegistry } from './registry.js';
 import type { ServerContext } from './context.js';
 import type { SnapshotData } from './graph-snapshot.js';
+import { ProjectRootField, PROJECT_ROOT_JSON_SCHEMA } from './projectRootParam.js';
 
 const schema = z.object({
   baseline: z.string().min(1).describe('Name of the baseline snapshot (the "before" state).'),
   current: z.string().min(1).describe('Name of the current snapshot (the "after" state).'),
+  project_root: ProjectRootField,
 });
 
 export interface GraphDiffResult {
@@ -95,6 +97,7 @@ export function registerGraphDiffTool(registry: ToolRegistry, ctx: ServerContext
             type: 'string',
             description: 'Name of the current snapshot (the "after" state).',
           },
+          project_root: PROJECT_ROOT_JSON_SCHEMA,
         },
         required: ['baseline', 'current'],
       },

@@ -543,13 +543,27 @@ async function main(): Promise<void> {
     }
 
     case 'register': {
+      // Parse arguments: ctxloom register [path] [--alias <name>]
+      // The path argument may or may not be present; --alias is optional.
+      const registerArgs = process.argv.slice(3);
+      const aliasIdx = registerArgs.indexOf('--alias');
+      let alias: string | undefined;
+      if (aliasIdx !== -1) {
+        alias = registerArgs[aliasIdx + 1];
+        if (!alias) {
+          console.error('[ctxloom] --alias requires a value');
+          process.exit(1);
+        }
+        // Remove --alias <name> from args so the remaining arg (if any) is the path
+        registerArgs.splice(aliasIdx, 2);
+      }
       // Default to cwd when no path given — same convention as `git init`,
       // `npm init`, etc. Previous behavior printed Usage and exited 1,
       // which silently looked like success and produced an empty registry
       // (real bug report: users assumed `ctxloom register` registered the
       // current directory and were surprised the dashboard switcher
       // stayed empty).
-      const repoPath = process.argv[3] ?? '.';
+      const repoPath = registerArgs[0] ?? '.';
       const absPath = path.resolve(repoPath);
       // Sanity-check: refuse to register a non-existent directory rather
       // than silently writing a phantom entry.
@@ -563,11 +577,26 @@ async function main(): Promise<void> {
         console.error(`[ctxloom] Path does not exist: ${absPath}`);
         process.exit(1);
       }
+
+      if (alias !== undefined) {
+        const { validateAlias } = await import('@ctxloom/core');
+        const v = validateAlias(alias);
+        if (!v.ok) {
+          console.error(`[ctxloom] Invalid alias: ${v.reason}`);
+          process.exit(1);
+        }
+      }
+
       const dbPath = path.join(absPath, '.ctxloom', 'vectors.lancedb');
       const registryPath = path.join(os.homedir(), '.ctxloom', 'repos.json');
       const reg = new RepoRegistry(registryPath);
-      reg.register(absPath, dbPath);
-      console.log(`[ctxloom] Registered repo: ${absPath}`);
+      try {
+        reg.register(absPath, dbPath, alias !== undefined ? { alias } : {});
+      } catch (err) {
+        console.error(`[ctxloom] ${err instanceof Error ? err.message : String(err)}`);
+        process.exit(1);
+      }
+      console.log(`[ctxloom] Registered repo: ${absPath}${alias ? ` (alias: ${alias})` : ''}`);
       console.log(`[ctxloom] LanceDB path: ${dbPath}`);
       console.log(`[ctxloom] Registry: ${registryPath}`);
       break;
@@ -581,8 +610,13 @@ async function main(): Promise<void> {
         console.log('[ctxloom] No repos registered. Run `ctxloom register` from any project directory.');
       } else {
         console.log(`\n[ctxloom] Registered repos (${repos.length}):`);
+        const longestAlias = Math.max(5, ...repos.map((r) => (r.alias ?? '').length));
+        const longestName = Math.max(4, ...repos.map((r) => r.name.length));
+        console.log(`  ${'ALIAS'.padEnd(longestAlias)}  ${'NAME'.padEnd(longestName)}  ROOT`);
         for (const r of repos) {
-          console.log(`  ${r.name.padEnd(20)} ${r.root}`);
+          const alias = (r.alias ?? '').padEnd(longestAlias);
+          const name = r.name.padEnd(longestName);
+          console.log(`  ${alias}  ${name}  ${r.root}`);
         }
       }
       break;

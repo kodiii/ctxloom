@@ -10,6 +10,7 @@ import { z } from 'zod';
 import type { ToolRegistry } from './registry.js';
 import type { ServerContext } from './context.js';
 import type { DependencyGraph } from '../graph/DependencyGraph.js';
+import { ProjectRootField, PROJECT_ROOT_JSON_SCHEMA } from './projectRootParam.js';
 
 const schema = z.object({
   name: z.string().min(1).max(64).regex(/^[\w.-]+$/, 'Name may only contain letters, digits, dots, underscores, hyphens').describe(
@@ -18,6 +19,7 @@ const schema = z.object({
   overwrite: z.boolean().default(false).describe(
     'If true, overwrite an existing snapshot with the same name.',
   ),
+  project_root: ProjectRootField,
 });
 
 export interface SnapshotData {
@@ -94,13 +96,14 @@ export function registerGraphSnapshotTool(registry: ToolRegistry, ctx: ServerCon
             type: 'boolean',
             description: 'If true, overwrite an existing snapshot with the same name. Default: false.',
           },
+          project_root: PROJECT_ROOT_JSON_SCHEMA,
         },
         required: ['name'],
       },
     },
     async (args: unknown) => {
-      const { name, overwrite } = schema.parse(args);
-      const graph = await ctx.getGraph();
+      const { name, overwrite, project_root } = schema.parse(args);
+      const graph = await ctx.getGraph(project_root);
 
       try {
         saveNamedSnapshot(graph, name, ctx.projectRoot, overwrite);

@@ -11,6 +11,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import type { ToolRegistry } from './registry.js';
 import type { ServerContext } from './context.js';
+import { ProjectRootField, PROJECT_ROOT_JSON_SCHEMA } from './projectRootParam.js';
 
 const Schema = z.object({
   query: z.string().min(1).describe('Search term — literal or /regex/'),
@@ -18,6 +19,7 @@ const Schema = z.object({
   case_sensitive: z.boolean().optional().default(false),
   limit: z.number().min(1).max(100).optional().default(20),
   context_lines: z.number().min(0).max(5).optional().default(1),
+  project_root: ProjectRootField,
 });
 
 function escapeXML(text: string): string {
@@ -89,17 +91,18 @@ export function registerFullTextSearchTool(registry: ToolRegistry, ctx: ServerCo
           case_sensitive: { type: 'boolean', description: 'Case-sensitive match (default: false)' },
           limit: { type: 'number', description: 'Max results (default: 20)' },
           context_lines: { type: 'number', description: 'Context lines around each match (default: 1)' },
+          project_root: PROJECT_ROOT_JSON_SCHEMA,
         },
         required: ['query'],
       },
     },
     async (args) => {
-      const { query, mode, case_sensitive, limit, context_lines } = Schema.parse(args);
+      const { query, mode, case_sensitive, limit, context_lines, project_root } = Schema.parse(args);
 
       if (mode === 'semantic') {
         try {
           const { generateEmbedding } = await import('../indexer/embedder.js');
-          const store = await ctx.getStore();
+          const store = await ctx.getStore(project_root);
           const embedding = await generateEmbedding(query);
           const results = await store.search(embedding, limit);
           const xml = [`<full_text_search query="${escapeXML(query)}" mode="semantic" count="${results.length}">`];
@@ -118,7 +121,7 @@ export function registerFullTextSearchTool(registry: ToolRegistry, ctx: ServerCo
         return `<error>Invalid regex: ${escapeXML(query)}</error>`;
       }
 
-      const graph = await ctx.getGraph();
+      const graph = await ctx.getGraph(project_root);
       const files = graph.allFiles();
 
       const keywordResults: Array<{ filePath: string; score: number; matchCount: number; snippets: string[] }> = [];
@@ -142,7 +145,7 @@ export function registerFullTextSearchTool(registry: ToolRegistry, ctx: ServerCo
       if (mode === 'hybrid') {
         try {
           const { generateEmbedding } = await import('../indexer/embedder.js');
-          const store = await ctx.getStore();
+          const store = await ctx.getStore(project_root);
           const embedding = await generateEmbedding(query);
           const vectorResults = await store.search(embedding, Math.ceil(limit / 2));
           const seen = new Set(merged.map(r => r.filePath));

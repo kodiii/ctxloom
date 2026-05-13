@@ -8,6 +8,7 @@ import { z } from 'zod';
 import type { ToolRegistry } from './registry.js';
 import type { ServerContext } from './context.js';
 import type { DependencyGraph } from '../graph/DependencyGraph.js';
+import { ProjectRootField, PROJECT_ROOT_JSON_SCHEMA } from './projectRootParam.js';
 
 const schema = z.object({
   threshold: z.number().int().min(1).default(50).describe(
@@ -19,6 +20,7 @@ const schema = z.object({
   limit: z.number().int().min(1).max(200).default(30).describe(
     'Maximum results to return (default: 30).',
   ),
+  project_root: ProjectRootField,
 });
 
 export interface LargeFunctionResult {
@@ -95,12 +97,13 @@ export function registerFindLargeFunctionsTool(registry: ToolRegistry, ctx: Serv
             type: 'number',
             description: 'Maximum results to return (default: 30, max: 200).',
           },
+          project_root: PROJECT_ROOT_JSON_SCHEMA,
         },
       },
     },
     async (args: unknown) => {
-      const { threshold, file_filter, limit } = schema.parse(args);
-      const graph = await ctx.getGraph();
+      const { threshold, file_filter, limit, project_root } = schema.parse(args);
+      const graph = await ctx.getGraph(project_root);
 
       const results = findLargeFunctions(graph, threshold, file_filter).slice(0, limit);
 

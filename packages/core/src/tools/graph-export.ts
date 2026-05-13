@@ -10,11 +10,13 @@ import { z } from 'zod';
 import type { ToolRegistry } from './registry.js';
 import type { ServerContext } from './context.js';
 import { GraphExporter } from '../graph/GraphExporter.js';
+import { ProjectRootField, PROJECT_ROOT_JSON_SCHEMA } from './projectRootParam.js';
 
 const Schema = z.object({
   format: z.enum(['graphml', 'dot', 'obsidian', 'svg', 'html']).describe(
     'Output format: graphml (Gephi/yEd), dot (Graphviz), obsidian (wikilink vault), svg (inline, no dependencies), html (interactive D3.js browser view)',
   ),
+  project_root: ProjectRootField,
 });
 
 function escapeXML(text: string): string {
@@ -37,13 +39,14 @@ export function registerGraphExportTool(registry: ToolRegistry, ctx: ServerConte
             enum: ['graphml', 'dot', 'obsidian', 'svg', 'html'],
             description: 'Export format',
           },
+          project_root: PROJECT_ROOT_JSON_SCHEMA,
         },
         required: ['format'],
       },
     },
     async (args) => {
-      const { format } = Schema.parse(args);
-      const graph = await ctx.getGraph();
+      const { format, project_root } = Schema.parse(args);
+      const graph = await ctx.getGraph(project_root);
       const exporter = new GraphExporter(graph, ctx.projectRoot);
       const result = exporter.export(format);
       return `<graph_export format="${result.format}" output="${escapeXML(result.outputPath)}" nodes="${result.nodeCount}" edges="${result.edgeCount}" />`;

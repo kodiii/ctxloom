@@ -2,10 +2,12 @@ import { z } from 'zod';
 import path from 'node:path';
 import type { ToolRegistry } from './registry.js';
 import type { ServerContext } from './context.js';
+import { ProjectRootField, PROJECT_ROOT_JSON_SCHEMA } from './projectRootParam.js';
 
 const Schema = z.object({
   target_file: z.string().describe('Relative path to the primary file'),
   mode: z.enum(['edit', 'read']).optional().default('edit').describe('Context mode'),
+  project_root: ProjectRootField,
 });
 
 function escapeXML(text: string): string {
@@ -23,14 +25,15 @@ export function registerContextPacketTool(registry: ToolRegistry, ctx: ServerCon
         properties: {
           target_file: { type: 'string', description: 'Relative path to the primary file' },
           mode: { type: 'string', enum: ['edit', 'read'], description: 'Context mode (default: edit)' },
+          project_root: PROJECT_ROOT_JSON_SCHEMA,
         },
         required: ['target_file'],
       },
     },
     async (args) => {
-      const { target_file, mode } = Schema.parse(args);
-      const [skeletonizer, graph] = await Promise.all([ctx.getSkeletonizer(), ctx.getGraph()]);
-      const pathValidator = ctx.getPathValidator();
+      const { target_file, mode, project_root } = Schema.parse(args);
+      const [skeletonizer, graph] = await Promise.all([ctx.getSkeletonizer(project_root), ctx.getGraph(project_root)]);
+      const pathValidator = ctx.getPathValidator(project_root);
       const primaryContent = pathValidator.readFile(target_file);
       const imports = graph.getImports(target_file);
       const importers = graph.getImporters(target_file);

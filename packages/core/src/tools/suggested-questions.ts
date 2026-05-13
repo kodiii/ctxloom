@@ -14,12 +14,14 @@ import { promisify } from 'node:util';
 import type { ToolRegistry } from './registry.js';
 import type { ServerContext } from './context.js';
 import { logger } from '../utils/logger.js';
+import { ProjectRootField, PROJECT_ROOT_JSON_SCHEMA } from './projectRootParam.js';
 
 const execAsync = promisify(exec);
 
 const Schema = z.object({
   changed_files: z.array(z.string()).optional(),
   use_git: z.boolean().optional().default(true),
+  project_root: ProjectRootField,
 });
 
 const TEST_PATTERN = /(\.test\.|\.spec\.|\/tests\/|\/test\/|\/spec\/|__tests__)/;
@@ -56,11 +58,12 @@ export function registerSuggestedQuestionsTool(registry: ToolRegistry, ctx: Serv
             description: 'Changed file paths. Omit to auto-detect from git.',
           },
           use_git: { type: 'boolean', description: 'Auto-detect from git diff HEAD~1 (default: true)' },
+          project_root: PROJECT_ROOT_JSON_SCHEMA,
         },
       },
     },
     async (args) => {
-      const { changed_files, use_git } = Schema.parse(args);
+      const { changed_files, use_git, project_root } = Schema.parse(args);
 
       let files = changed_files ?? [];
       if (files.length === 0 && use_git) {
@@ -71,7 +74,7 @@ export function registerSuggestedQuestionsTool(registry: ToolRegistry, ctx: Serv
         return '<suggested_questions count="1" changed_files="0"><question>No changed files detected. Are you on a git branch with commits?</question></suggested_questions>';
       }
 
-      const graph = await ctx.getGraph();
+      const graph = await ctx.getGraph(project_root);
       const questions: string[] = [];
 
       const allImporters = new Set<string>();

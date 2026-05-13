@@ -27,6 +27,7 @@ export interface RegisteredRepoEntry {
   root: string;
   dbPath?: string;
   name?: string;
+  alias?: string;
   registeredAt?: string;
 }
 
@@ -35,6 +36,8 @@ export interface DashboardProject {
   slug: string;
   /** Human-readable name (basename of root by default). */
   name: string;
+  /** Optional short alias set via `ctxloom register --alias <name>`. */
+  alias?: string;
   /** Absolute path. NOT exposed via /api/health for privacy, but the
    *  switcher needs it to switch and to disambiguate same-name projects. */
   root: string;
@@ -95,13 +98,15 @@ export function listProjects(defaultRoot: string): DashboardProject[] {
     const abs = path.resolve(entry.root);
     if (seen.has(abs)) continue;
     seen.add(abs);
-    out.push({
+    const item: DashboardProject = {
       slug: slugFor(abs),
       name: entry.name ?? (path.basename(abs) || abs),
       root: abs,
       isDefault: false,
       hasSnapshot: existsSync(path.join(abs, '.ctxloom')),
-    });
+    };
+    if (entry.alias !== undefined) item.alias = entry.alias;
+    out.push(item);
   }
   return out;
 }

@@ -2,10 +2,12 @@ import { z } from 'zod';
 import { generateEmbedding } from '../indexer/embedder.js';
 import type { ToolRegistry } from './registry.js';
 import type { ServerContext } from './context.js';
+import { ProjectRootField, PROJECT_ROOT_JSON_SCHEMA } from './projectRootParam.js';
 
 const Schema = z.object({
   query: z.string().describe('Search query — natural language or code fragment'),
   limit: z.number().max(100).optional().default(10).describe('Maximum results to return'),
+  project_root: ProjectRootField,
 });
 
 function escapeXML(text: string): string {
@@ -23,13 +25,14 @@ export function registerSearchTool(registry: ToolRegistry, ctx: ServerContext): 
         properties: {
           query: { type: 'string', description: 'Search query — natural language or code fragment' },
           limit: { type: 'number', description: 'Maximum results to return (default: 10)' },
+          project_root: PROJECT_ROOT_JSON_SCHEMA,
         },
         required: ['query'],
       },
     },
     async (args) => {
-      const { query, limit } = Schema.parse(args);
-      const [store, graph] = await Promise.all([ctx.getStore(), ctx.getGraph()]);
+      const { query, limit, project_root } = Schema.parse(args);
+      const [store, graph] = await Promise.all([ctx.getStore(project_root), ctx.getGraph(project_root)]);
 
       const queryEmbedding = await generateEmbedding(query);
       const vectorResults = await store.search(queryEmbedding, limit);

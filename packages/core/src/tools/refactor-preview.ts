@@ -16,6 +16,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import type { ToolRegistry } from './registry.js';
 import type { ServerContext } from './context.js';
+import { ProjectRootField, PROJECT_ROOT_JSON_SCHEMA } from './projectRootParam.js';
 
 const Schema = z.object({
   symbol: z.string().min(1).describe('Symbol name to rename (exact match, case-sensitive)'),
@@ -23,6 +24,7 @@ const Schema = z.object({
   max_files: z.number().min(1).max(200).optional().default(50).describe(
     'Maximum number of files to scan for occurrences (default: 50)',
   ),
+  project_root: ProjectRootField,
 });
 
 function escapeXML(text: string): string {
@@ -91,14 +93,15 @@ export function registerRefactorPreviewTool(registry: ToolRegistry, ctx: ServerC
             type: 'number',
             description: 'Maximum number of candidate files to scan (default: 50)',
           },
+          project_root: PROJECT_ROOT_JSON_SCHEMA,
         },
         required: ['symbol', 'new_name'],
       },
     },
     async (args) => {
-      const { symbol, new_name, max_files } = Schema.parse(args);
+      const { symbol, new_name, max_files, project_root } = Schema.parse(args);
 
-      const graph = await ctx.getGraph();
+      const graph = await ctx.getGraph(project_root);
 
       // 1. Look up definitions
       const definitions = graph.lookupSymbol(symbol);

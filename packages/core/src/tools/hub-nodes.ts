@@ -8,6 +8,7 @@
 import { z } from 'zod';
 import type { ToolRegistry } from './registry.js';
 import type { ServerContext } from './context.js';
+import { ProjectRootField, PROJECT_ROOT_JSON_SCHEMA } from './projectRootParam.js';
 
 const Schema = z.object({
   limit: z.number().min(1).max(100).optional().default(20).describe('Number of hub nodes to return (default: 20)'),
@@ -15,6 +16,7 @@ const Schema = z.object({
   detail_level: z.enum(['standard', 'minimal']).default('standard').describe(
     '"standard" (default) returns full per-file listings. "minimal" returns counts only — ~60% fewer tokens.',
   ),
+  project_root: ProjectRootField,
 });
 
 function escapeXML(text: string): string {
@@ -40,12 +42,13 @@ export function registerHubNodesTool(registry: ToolRegistry, ctx: ServerContext)
             enum: ['standard', 'minimal'],
             description: '"standard" returns full listings. "minimal" returns counts only (saves ~60% tokens).',
           },
+          project_root: PROJECT_ROOT_JSON_SCHEMA,
         },
       },
     },
     async (args) => {
-      const { limit, min_degree, detail_level } = Schema.parse(args);
-      const graph = await ctx.getGraph();
+      const { limit, min_degree, detail_level, project_root } = Schema.parse(args);
+      const graph = await ctx.getGraph(project_root);
       const files = graph.allFiles();
 
       // Compute degree for each file

@@ -89,13 +89,16 @@ export { GrammarLoader } from './grammars/GrammarLoader.js';
 
 // ─── Tools ───────────────────────────────────────────────────────────────────
 export type { ServerContext } from './tools/context.js';
+export type { RenderStatusInput } from './tools/status.js';
+export { renderStatusXml } from './tools/status.js';
 export type { ToolHandler, ToolDefinition } from './tools/registry.js';
 export { ToolRegistry } from './tools/registry.js';
 export { createToolRegistry } from './tools/index.js';
 export type { RuleFile } from './tools/ruleManager.js';
 export { RuleManager } from './tools/ruleManager.js';
 export type { RegisteredRepo } from './tools/cross-repo-search.js';
-export { RepoRegistry } from './tools/cross-repo-search.js';
+export { RepoRegistry, validateAlias } from './tools/cross-repo-search.js';
+export type { AliasValidation } from './tools/cross-repo-search.js';
 export type { BlastRadiusOptions, BlastRadiusResult } from './tools/blast-radius.js';
 export { buildBlastRadiusXml } from './tools/blast-radius.js';
 export type { SnapshotData } from './tools/graph-snapshot.js';
@@ -186,3 +189,20 @@ export {
 } from './license/index.js';
 export type { TelemetryEvent } from './license/telemetry.js';
 export { track, captureError } from './license/telemetry.js';
+
+// ─── Multi-project server infrastructure (v1.1) ───────────────────────────
+export type { ProjectState } from './server/ProjectState.js';
+export { createProjectState, disposeProjectState, ensureVectorsInitialized } from './server/ProjectState.js';
+export { ProjectStateManager } from './server/ProjectStateManager.js';
+export type { ProjectStateManagerOptions } from './server/ProjectStateManager.js';
+export type { RegistryView, ResolveInput, ResolveOutcome } from './server/resolveProjectRoot.js';
+export { resolveProjectRoot, validateDefaultRoot } from './server/resolveProjectRoot.js';
+export {
+  noDefaultProjectError,
+  projectRootNotFoundError,
+  projectRootUnreadableError,
+  aliasNotFoundError,
+  noParseableSourcesWarning,
+} from './server/structuredErrors.js';
+export type { IndexingTier, EnvelopeInput } from './server/indexingEnvelope.js';
+export { wrapWithIndexingEnvelope, FirstTouchTracker } from './server/indexingEnvelope.js';

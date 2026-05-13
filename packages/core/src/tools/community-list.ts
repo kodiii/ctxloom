@@ -15,6 +15,7 @@ import { z } from 'zod';
 import type { ToolRegistry } from './registry.js';
 import type { ServerContext } from './context.js';
 import { CommunityDetector } from '../graph/CommunityDetector.js';
+import { ProjectRootField, PROJECT_ROOT_JSON_SCHEMA } from './projectRootParam.js';
 
 const Schema = z.object({
   show_files: z.boolean().optional().default(false).describe(
@@ -32,6 +33,7 @@ const Schema = z.object({
   detail_level: z.enum(['standard', 'minimal']).default('standard').describe(
     '"standard" (default) returns paged community list. "minimal" returns counts only — useful for a quick size check before paging.',
   ),
+  project_root: ProjectRootField,
 });
 
 function escapeXML(text: string): string {
@@ -72,12 +74,13 @@ export function registerCommunityListTool(registry: ToolRegistry, ctx: ServerCon
             enum: ['standard', 'minimal'],
             description: '"standard" returns the paged list. "minimal" returns counts only.',
           },
+          project_root: PROJECT_ROOT_JSON_SCHEMA,
         },
       },
     },
     async (args) => {
-      const { show_files, limit, offset, min_size, detail_level } = Schema.parse(args);
-      const graph = await ctx.getGraph();
+      const { show_files, limit, offset, min_size, detail_level, project_root } = Schema.parse(args);
+      const graph = await ctx.getGraph(project_root);
       const files = graph.allFiles();
 
       if (files.length === 0) {

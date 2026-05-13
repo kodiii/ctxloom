@@ -6,6 +6,35 @@ No cloud indexing. No Python. Everything runs on your machine.
 
 > **ctxloom requires a license.** Start a free 7-day trial — no credit card required.
 
+## Multi-Project Support (v1.1.0)
+
+ctxloom now supports analyzing multiple projects in a single MCP session. Every tool accepts an optional `project_root` parameter (alias or absolute path).
+
+**Register a project alias:**
+```bash
+ctxloom register --alias myapp /path/to/project
+```
+
+**Use the alias in tool calls:**
+```json
+{
+  "project_root": "myapp"
+}
+```
+
+Or use an absolute path directly:
+```json
+{
+  "project_root": "/path/to/project"
+}
+```
+
+**Project state management:** ctxloom maintains an LRU cache of active projects (cap 5 by default, override via `CTXLOOM_MAX_PROJECTS`). First-touch auto-indexing indexes the dependency graph (sync, Tier 1) and queues vector indexing (deferred, Tier 2). Responses include a `<ctxloom_indexing>` envelope on first-touch. Project-resolution errors return structured XML: `<error code="alias_not_found" .../>`, `<error code="no_default_project" .../>`, etc.
+
+**Backward compatibility:** Set `CTXLOOM_DISABLE_MULTIPROJECT=1` to revert to single-project (v1.0.31) behavior.
+
+---
+
 ## Getting Started
 
 **Prerequisites:** Node.js 20+ and an MCP-compatible AI tool (Claude Code, Cursor, Windsurf, etc.)
@@ -482,7 +511,8 @@ ctxloom dashboard                Open the web dashboard (port 7842)
 ctxloom dashboard --port=N       Start on a custom port
 ctxloom dashboard --open         Open browser automatically
 ctxloom setup                    Detect and configure MCP-compatible AI tools (interactive)
-ctxloom register <path>          Register a repo for cross-repo search
+ctxloom register <path>          Register a repo for cross-repo search (v1.0.x)
+ctxloom register --alias <name> <path>  Register a project with an alias for multi-project support (v1.1.0+)
 ctxloom repos                    List all registered repos
 ctxloom grammars                 Show grammar cache status
 ctxloom grammars --download      Pre-download all language grammars
@@ -598,6 +628,8 @@ Token counts use the standard 4 chars/token approximation. Per-repo range (57–
 | `CTXLOOM_ROOT` | Project root directory | Current working directory |
 | `LOG_LEVEL` | Logging verbosity: `debug` / `info` / `warn` / `error` | `info` |
 | `CTXLOOM_GRAMMAR_CDN` | CDN base URL for grammar downloads (air-gapped environments) | Built-in |
+| `CTXLOOM_MAX_PROJECTS` | LRU cache cap for multi-project state (v1.1.0+) | `5` |
+| `CTXLOOM_DISABLE_MULTIPROJECT` | Set to `1` to revert to v1.0.31 single-project mode (v1.1.0+) | (unset) |
 
 ---
 

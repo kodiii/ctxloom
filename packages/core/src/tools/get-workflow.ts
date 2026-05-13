@@ -5,9 +5,11 @@
 import { z } from 'zod';
 import type { ToolRegistry } from './registry.js';
 import type { ServerContext } from './context.js';
+import { ProjectRootField, PROJECT_ROOT_JSON_SCHEMA } from './projectRootParam.js';
 
 const Schema = z.object({
   workflow: z.enum(['review', 'debug', 'onboard', 'refactor', 'audit']),
+  project_root: ProjectRootField,
 });
 
 const WORKFLOWS: Record<string, string> = {
@@ -73,6 +75,7 @@ export function registerGetWorkflowTool(registry: ToolRegistry, _ctx: ServerCont
             enum: ['review', 'debug', 'onboard', 'refactor', 'audit'],
             description: 'Which workflow to return',
           },
+          project_root: PROJECT_ROOT_JSON_SCHEMA,
         },
         required: ['workflow'],
       },

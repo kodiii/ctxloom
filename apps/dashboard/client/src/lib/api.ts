@@ -33,6 +33,7 @@ export interface RefreshResponse {
 export interface DashboardProject {
   slug: string;
   name: string;
+  alias?: string;
   root: string;
   isDefault: boolean;
   hasSnapshot: boolean;

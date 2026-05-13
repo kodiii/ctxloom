@@ -10,6 +10,7 @@ import { z } from 'zod';
 import type { ToolRegistry } from './registry.js';
 import type { ServerContext } from './context.js';
 import { CommunityDetector } from '../graph/CommunityDetector.js';
+import { ProjectRootField, PROJECT_ROOT_JSON_SCHEMA } from './projectRootParam.js';
 
 const Schema = z.object({
   max_cycles: z.number().min(1).max(100).optional().default(20).describe(
@@ -21,6 +22,7 @@ const Schema = z.object({
   detail_level: z.enum(['standard', 'minimal']).default('standard').describe(
     '"standard" (default) returns full per-item listings. "minimal" returns counts only — ~60% fewer tokens.',
   ),
+  project_root: ProjectRootField,
 });
 
 const TEST_PATTERN = /(\.test\.|\.spec\.|\/tests\/|\/test\/|\/spec\/|__tests__)/;
@@ -112,12 +114,13 @@ export function registerSurprisingConnectionsTool(registry: ToolRegistry, ctx: S
             enum: ['standard', 'minimal'],
             description: '"standard" returns full listings. "minimal" returns counts only (saves ~60% tokens).',
           },
+          project_root: PROJECT_ROOT_JSON_SCHEMA,
         },
       },
     },
     async (args) => {
-      const { max_cycles, max_cross, detail_level } = Schema.parse(args);
-      const graph = await ctx.getGraph();
+      const { max_cycles, max_cross, detail_level, project_root } = Schema.parse(args);
+      const graph = await ctx.getGraph(project_root);
       const files = graph.allFiles();
 
       // ── Circular dependencies ─────────────────────────────────────────────

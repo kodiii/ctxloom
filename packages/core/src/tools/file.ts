@@ -1,8 +1,12 @@
 import { z } from 'zod';
 import type { ToolRegistry } from './registry.js';
 import type { ServerContext } from './context.js';
+import { ProjectRootField, PROJECT_ROOT_JSON_SCHEMA } from './projectRootParam.js';
 
-const Schema = z.object({ path: z.string().describe('Relative path to the file') });
+const Schema = z.object({
+  path: z.string().describe('Relative path to the file'),
+  project_root: ProjectRootField,
+});
 
 export function registerFileTool(registry: ToolRegistry, ctx: ServerContext): void {
   registry.register(
@@ -12,13 +16,16 @@ export function registerFileTool(registry: ToolRegistry, ctx: ServerContext): vo
       description: 'Read a file from the project. Path is validated to prevent traversal outside the project root. Returns the full file content.',
       inputSchema: {
         type: 'object',
-        properties: { path: { type: 'string', description: 'Relative path to the file' } },
+        properties: {
+          path: { type: 'string', description: 'Relative path to the file' },
+          project_root: PROJECT_ROOT_JSON_SCHEMA,
+        },
         required: ['path'],
       },
     },
     async (args) => {
-      const { path: filePath } = Schema.parse(args);
-      return ctx.getPathValidator().readFile(filePath);
+      const { path: filePath, project_root } = Schema.parse(args);
+      return ctx.getPathValidator(project_root).readFile(filePath);
     },
   );
 }

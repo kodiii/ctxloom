@@ -2,10 +2,12 @@ import { z } from 'zod';
 import { generateEmbedding } from '../indexer/embedder.js';
 import type { ToolRegistry } from './registry.js';
 import type { ServerContext } from './context.js';
+import { ProjectRootField, PROJECT_ROOT_JSON_SCHEMA } from './projectRootParam.js';
 
 const Schema = z.object({
   target_file: z.string().describe('Relative path to the file to find similar files for'),
   limit: z.number().max(100).optional().default(10).describe('Maximum results to return'),
+  project_root: ProjectRootField,
 });
 
 function escapeXML(text: string): string {
@@ -23,14 +25,15 @@ export function registerSimilarFilesTool(registry: ToolRegistry, ctx: ServerCont
         properties: {
           target_file: { type: 'string', description: 'Relative path to the file to find similar files for' },
           limit: { type: 'number', description: 'Maximum results to return (default: 10)' },
+          project_root: PROJECT_ROOT_JSON_SCHEMA,
         },
         required: ['target_file'],
       },
     },
     async (args) => {
-      const { target_file, limit } = Schema.parse(args);
-      const content = ctx.getPathValidator().readFile(target_file);
-      const store = await ctx.getStore();
+      const { target_file, limit, project_root } = Schema.parse(args);
+      const content = ctx.getPathValidator(project_root).readFile(target_file);
+      const store = await ctx.getStore(project_root);
       const queryEmbedding = await generateEmbedding(content);
       const results = (await store.search(queryEmbedding, limit + 1))
         .filter(r => r.filePath !== target_file)
