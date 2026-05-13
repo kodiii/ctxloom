@@ -207,3 +207,4 @@ export {
 export type { IndexingTier, EnvelopeInput } from './server/indexingEnvelope.js';
 export { wrapWithIndexingEnvelope, FirstTouchTracker } from './server/indexingEnvelope.js';
 export { hashProjectRoot } from './server/projectId.js';
+export { EmittedOnceTracker } from './server/EmittedOnceTracker.js';
