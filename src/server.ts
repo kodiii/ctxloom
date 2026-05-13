@@ -317,8 +317,8 @@ export function createServer(): { server: Server; ctx: ServerContext } {
                 project_id: hashProjectRoot(root),
                 tier: 'graph',
                 duration_ms: durationMs,
-                nodes: graphInst?.nodeCount?.() ?? null,
-                edges: graphInst?.edgeCount?.() ?? null,
+                nodes: graphInst?.allFiles().length ?? null,
+                edges: graphInst?.edgeCount() ?? null,
               });
             } catch {
               // Telemetry must never break the response.
