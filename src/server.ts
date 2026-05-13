@@ -365,6 +365,11 @@ export function createServer(): { server: Server; ctx: ServerContext } {
       return { content: [{ type: 'text' as const, text }] };
     } catch (err) {
       if (err instanceof Error && err.message === 'no_default_project') {
+        const hadArg10 = (args as Record<string, unknown> | undefined)?.project_root !== undefined;
+        track('project_resolution_failed', os.hostname(), {
+          error_code: 'no_default_project',
+          had_arg: hadArg10,
+        });
         const xml = noDefaultProjectError({
           attemptedRoot: PROJECT_ROOT,
           resolutionChain: 'CTXLOOM_ROOT env var→unset, fallback_cwd→' + PROJECT_ROOT,
@@ -376,6 +381,10 @@ export function createServer(): { server: Server; ctx: ServerContext } {
         try {
           const parsed = JSON.parse(err.message) as Record<string, unknown>;
           if (parsed.kind === 'alias_not_found') {
+            track('project_resolution_failed', os.hostname(), {
+              error_code: 'alias_not_found',
+              had_arg: true,
+            });
             const xml = aliasNotFoundError({
               alias: String(parsed.alias ?? ''),
               didYouMean: Array.isArray(parsed.didYouMean) ? (parsed.didYouMean as string[]) : [],
@@ -383,6 +392,10 @@ export function createServer(): { server: Server; ctx: ServerContext } {
             return { content: [{ type: 'text' as const, text: xml }], isError: true };
           }
           if (parsed.kind === 'project_root_not_found') {
+            track('project_resolution_failed', os.hostname(), {
+              error_code: 'project_root_not_found',
+              had_arg: true,
+            });
             const xml = projectRootNotFoundError({
               path: String(parsed.attemptedPath ?? ''),
               resolutionChain: String(parsed.resolutionChain ?? ''),
