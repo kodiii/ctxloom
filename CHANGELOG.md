@@ -5,6 +5,32 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
 ---
 
+## [1.1.4] — 2026-05-13
+
+### Added
+
+- **Sentry sourcemap upload on every tagged release.** New GitHub
+  Actions workflow `.github/workflows/sentry-sourcemaps.yml` triggers
+  on `v*` tag push, builds all three release artifacts (CLI bundle,
+  dashboard server bundle, dashboard client bundle), and uploads their
+  sourcemaps to Sentry with `--include-sources` so the original
+  TypeScript/TSX content is embedded directly into the `.map` files.
+  Sentry events from v1.1.4 onward show fully demangled stack traces
+  with original filenames, line numbers, and inline source.
+- Vite client build now emits sourcemaps (`build.sourcemap: true`).
+- `@sentry/cli` added as a devDependency for the workflow.
+
+### Notes
+
+- Sentry release name = bare version (e.g. `1.1.4`), which already
+  matches the `tags.release` field on every Sentry event payload.
+- Requires three GitHub repo settings to take effect: `SENTRY_AUTH_TOKEN`
+  secret + `SENTRY_ORG` and `SENTRY_PROJECT` variables. If any are
+  unset, the workflow logs a warning annotation and exits cleanly — the
+  release tag push does not fail.
+
+---
+
 ## [1.1.3] — 2026-05-13
 
 ### Added
