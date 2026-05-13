@@ -11,6 +11,8 @@ describe('TelemetryEvent union', () => {
     expectTypeOf<'kill_switch_active'>().toMatchTypeOf<TelemetryEvent>();
     expectTypeOf<'project_resolution_failed'>().toMatchTypeOf<TelemetryEvent>();
     expectTypeOf<'tool_dispatched'>().toMatchTypeOf<TelemetryEvent>();
+    expectTypeOf<'dashboard_loaded'>().toMatchTypeOf<TelemetryEvent>();
+    expectTypeOf<'dashboard_page_viewed'>().toMatchTypeOf<TelemetryEvent>();
   });
 
   it('still includes the existing license funnel events', () => {

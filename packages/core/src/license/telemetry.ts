@@ -55,7 +55,10 @@ export type TelemetryEvent =
   | 'multi_project_active'
   | 'kill_switch_active'
   | 'project_resolution_failed'
-  | 'tool_dispatched';
+  | 'tool_dispatched'
+  // v1.1.3 dashboard events
+  | 'dashboard_loaded'
+  | 'dashboard_page_viewed';
 
 // Module-level cache — populated on first track()/captureError() call.
 // Reset across test runs by vi.resetModules().
