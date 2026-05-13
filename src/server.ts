@@ -346,6 +346,22 @@ export function createServer(): { server: Server; ctx: ServerContext } {
         }
       }
 
+      if (Math.random() < 0.25) {
+        try {
+          const projectRootArg2 = (args as Record<string, unknown> | undefined)?.project_root as string | undefined;
+          if (!ctx.noDefaultMode || projectRootArg2 !== undefined) {
+            const sampleState = resolveOrDefault(projectRootArg2);
+            track('tool_dispatched', os.hostname(), {
+              project_id: hashProjectRoot(sampleState.projectRoot),
+              tool: name,
+              duration_ms: durationMs,
+            });
+          }
+        } catch {
+          /* skip sample on resolution error */
+        }
+      }
+
       return { content: [{ type: 'text' as const, text }] };
     } catch (err) {
       if (err instanceof Error && err.message === 'no_default_project') {
