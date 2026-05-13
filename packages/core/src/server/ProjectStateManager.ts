@@ -20,7 +20,6 @@ import { ProjectState, createProjectState, disposeProjectState } from './Project
 import { logger } from '../utils/logger.js';
 import { track, captureError } from '../license/telemetry.js';
 import { hashProjectRoot } from './projectId.js';
-import os from 'node:os';
 
 export interface ProjectStateManagerOptions {
   /** Max active (non-pinned + pinned) entries. Default 5. */
@@ -109,7 +108,7 @@ export class ProjectStateManager {
     }
     this.map.delete(victim.projectRoot);
     const pinnedCount = Array.from(this.map.values()).filter(s => s.pinned).length;
-    track('project_evicted', os.hostname(), {
+    track('project_evicted', {
       project_id: hashProjectRoot(victim.projectRoot),
       pinned_count: pinnedCount,
       cap: this.maxProjects,

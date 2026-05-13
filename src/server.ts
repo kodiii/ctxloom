@@ -12,7 +12,6 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
 import path from 'node:path';
 import fs from 'node:fs';
-import os from 'node:os';
 import {
   PathValidator,
   VectorStore,
@@ -201,7 +200,7 @@ function buildContext(
     try {
       const projectId = hashProjectRoot(state.projectRoot);
       if (emittedOnceTracker.markAndCheck(`project_resolved:${projectId}`)) {
-        track('project_resolved', os.hostname(), {
+        track('project_resolved', {
           project_id: projectId,
           source,
           via_alias: source === 'alias',
@@ -211,7 +210,7 @@ function buildContext(
         stateManager.size() >= 2 &&
         emittedOnceTracker.markAndCheck('multi_project_active')
       ) {
-        track('multi_project_active', os.hostname(), {
+        track('multi_project_active', {
           active_count: stateManager.size(),
           cap: stateManager.max,
         });
@@ -313,7 +312,7 @@ export function createServer(): { server: Server; ctx: ServerContext } {
           if (graphFirstTouch) {
             try {
               const graphInst = state.graphPromise ? await state.graphPromise : null;
-              track('project_first_touch', os.hostname(), {
+              track('project_first_touch', {
                 project_id: hashProjectRoot(root),
                 tier: 'graph',
                 duration_ms: durationMs,
@@ -336,7 +335,7 @@ export function createServer(): { server: Server; ctx: ServerContext } {
             const vectorsFirstTouch = firstTouchTracker.markAndCheck(root, 'vectors');
             if (vectorsFirstTouch) {
               try {
-                track('project_first_touch', os.hostname(), {
+                track('project_first_touch', {
                   project_id: hashProjectRoot(root),
                   tier: 'vectors',
                   duration_ms: durationMs,
@@ -363,7 +362,7 @@ export function createServer(): { server: Server; ctx: ServerContext } {
           const projectRootArg2 = (args as Record<string, unknown> | undefined)?.project_root as string | undefined;
           if (!ctx.noDefaultMode || projectRootArg2 !== undefined) {
             const sampleState = resolveOrDefault(projectRootArg2);
-            track('tool_dispatched', os.hostname(), {
+            track('tool_dispatched', {
               project_id: hashProjectRoot(sampleState.projectRoot),
               tool: name,
               duration_ms: durationMs,
@@ -379,7 +378,7 @@ export function createServer(): { server: Server; ctx: ServerContext } {
       if (err instanceof Error && err.message === 'no_default_project') {
         const hadArg10 = (args as Record<string, unknown> | undefined)?.project_root !== undefined;
         try {
-          track('project_resolution_failed', os.hostname(), {
+          track('project_resolution_failed', {
             error_code: 'no_default_project',
             had_arg: hadArg10,
           });
@@ -396,7 +395,7 @@ export function createServer(): { server: Server; ctx: ServerContext } {
           const parsed = JSON.parse(err.message) as Record<string, unknown>;
           if (parsed.kind === 'alias_not_found') {
             try {
-              track('project_resolution_failed', os.hostname(), {
+              track('project_resolution_failed', {
                 error_code: 'alias_not_found',
                 had_arg: true,
               });
@@ -409,7 +408,7 @@ export function createServer(): { server: Server; ctx: ServerContext } {
           }
           if (parsed.kind === 'project_root_not_found') {
             try {
-              track('project_resolution_failed', os.hostname(), {
+              track('project_resolution_failed', {
                 error_code: 'project_root_not_found',
                 had_arg: true,
               });
@@ -466,7 +465,7 @@ export async function startServer(opts: ServerOptions = {}): Promise<void> {
       'maxProjects is capped at 1 and project_root arguments are ignored. ' +
       'This kill switch will be removed in a future release.',
     );
-    track('kill_switch_active', os.hostname(), { cap: 1 });
+    track('kill_switch_active', { cap: 1 });
   }
 
   // Report the effective FD soft limit so users can correlate EMFILE
