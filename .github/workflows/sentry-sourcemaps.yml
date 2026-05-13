@@ -80,15 +80,15 @@ jobs:
           # CLI bundle — stack frames look like
           # /Users/~/.../node_modules/ctxloom-pro/dist/index.js after scrubPath.
           # Sentry matches by path SUFFIX, so url-prefix '~/dist' works for any home.
-          npx sentry-cli releases files "$VERSION" upload-sourcemaps \
-            --include-sources \
+          npx sentry-cli sourcemaps upload \
+            --release "$VERSION" \
             --url-prefix '~/dist' \
             dist/
 
           # Dashboard server bundle.
           if [ -d apps/dashboard/dist/server ]; then
-            npx sentry-cli releases files "$VERSION" upload-sourcemaps \
-              --include-sources \
+            npx sentry-cli sourcemaps upload \
+              --release "$VERSION" \
               --url-prefix '~/dashboard/server' \
               apps/dashboard/dist/server/
           fi
@@ -97,8 +97,8 @@ jobs:
           # (the `../dist/dashboard/client` outDir resolved from the client/ root).
           # Browser stack frames are at /assets/*.js → use '~/' as prefix.
           if [ -d apps/dashboard/dist/dashboard/client ]; then
-            npx sentry-cli releases files "$VERSION" upload-sourcemaps \
-              --include-sources \
+            npx sentry-cli sourcemaps upload \
+              --release "$VERSION" \
               --url-prefix '~/' \
               apps/dashboard/dist/dashboard/client/
           fi
