@@ -17,9 +17,38 @@
 
 import { getOrCreateDistinctId, markAliasSent, type DistinctIdRecord } from './DistinctIdStore.js';
 
-const TELEMETRY_DISABLED =
-  process.env['CTXLOOM_NO_TELEMETRY'] === '1' ||
-  process.env['DO_NOT_TRACK'] === '1';
+/**
+ * Telemetry levels, mirroring VS Code's `telemetry.telemetryLevel`:
+ *   - all   — PostHog events + Sentry errors (default)
+ *   - error — Sentry errors only (no usage analytics)
+ *   - off   — nothing leaves the machine (same as CTXLOOM_NO_TELEMETRY=1)
+ *
+ * Set with CTXLOOM_TELEMETRY_LEVEL=<level>. Invalid values fall through to
+ * the default (all) — we never break the CLI over a typo.
+ *
+ * Legacy opt-outs (CTXLOOM_NO_TELEMETRY=1, DO_NOT_TRACK=1) continue to work
+ * and are equivalent to level=off.
+ */
+export type TelemetryLevel = 'all' | 'error' | 'off';
+
+function resolveTelemetryLevel(): TelemetryLevel {
+  if (
+    process.env['CTXLOOM_NO_TELEMETRY'] === '1' ||
+    process.env['DO_NOT_TRACK'] === '1'
+  ) {
+    return 'off';
+  }
+  const raw = process.env['CTXLOOM_TELEMETRY_LEVEL']?.toLowerCase();
+  if (raw === 'off' || raw === 'error' || raw === 'all') return raw;
+  return 'all';
+}
+
+const TELEMETRY_LEVEL: TelemetryLevel = resolveTelemetryLevel();
+const TELEMETRY_DISABLED = TELEMETRY_LEVEL === 'off';
+
+export function getTelemetryLevel(): TelemetryLevel {
+  return TELEMETRY_LEVEL;
+}
 
 // __TELEMETRY_POSTHOG_KEY__ / __TELEMETRY_SENTRY_DSN__ are tsup `define`
 // constants substituted at build time. In source they're typed as the
@@ -75,7 +104,9 @@ function resolveDistinctId(): DistinctIdRecord | null {
 }
 
 export function track(event: TelemetryEvent, props: Record<string, unknown> = {}): void {
-  if (TELEMETRY_DISABLED || !POSTHOG_KEY) return;
+  // PostHog events ride on level=all only. level=error keeps Sentry alive
+  // for crash reports but silences usage analytics.
+  if (TELEMETRY_LEVEL !== 'all' || !POSTHOG_KEY) return;
   const record = resolveDistinctId();
   if (!record) return;
   void sendPostHog(event, record.id, props);

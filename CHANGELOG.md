@@ -5,6 +5,44 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
 ---
 
+## [1.2.0] — 2026-05-14
+
+### Added
+
+- **First-run telemetry notice.** The first time a CLI command runs on
+  a machine, ctxloom prints a one-time stderr banner explaining that
+  anonymous telemetry is on, what's never collected, and how to disable
+  it. A marker at `~/.ctxloom/telemetry_notice_shown` (mode `0o600`)
+  ensures it appears at most once per machine. Skipped automatically in
+  MCP stdio mode (where stdout/stderr is the protocol channel) and when
+  telemetry is already disabled. Brings ctxloom in line with industry
+  practice (Homebrew, npm, etc.).
+- **Granular telemetry levels** via `CTXLOOM_TELEMETRY_LEVEL`:
+  - `all` (default) — PostHog events + Sentry errors
+  - `error` — Sentry errors only (no usage analytics)
+  - `off` — both backends silent
+  Mirrors VS Code's `telemetry.telemetryLevel`. Legacy
+  `CTXLOOM_NO_TELEMETRY=1` and `DO_NOT_TRACK=1` continue to work and
+  force `off`.
+- **`docs/TELEMETRY.md`** — public, exhaustive documentation of every
+  event, every property, what is never collected, how project paths are
+  anonymized via SHA-256 truncation, and how stack frames are scrubbed
+  before reaching Sentry. Linked from the README's new Telemetry
+  section.
+- **`getTelemetryLevel()`** and **`shouldShowTelemetryNotice()`**
+  exported from `@ctxloom/core` for use by downstream integrations and
+  the CLI entrypoint.
+
+### Notes
+
+- The CLI surface gains exactly one new env var
+  (`CTXLOOM_TELEMETRY_LEVEL`). No existing behavior changes for users
+  who set nothing.
+- The notice is skipped when `command === undefined` (MCP server mode)
+  so it never corrupts JSON-RPC over stdio.
+
+---
+
 ## [1.1.5] — 2026-05-14
 
 ### Fixed
