@@ -5,6 +5,33 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
 ---
 
+## [1.1.5] — 2026-05-14
+
+### Fixed
+
+- **Dashboard browser telemetry now actually reaches PostHog.** v1.1.3
+  shipped browser-side `dashboard_loaded` / `dashboard_page_viewed`
+  events that the dashboard server accepted (`204 No Content`) but then
+  silently dropped because the dashboard server's tsup config
+  (`apps/dashboard/tsup.server.config.ts`) had no `define` block. The
+  bundled-in `@ctxloom/core` telemetry module fell back to an empty
+  `POSTHOG_KEY` and short-circuited every event in the
+  `if (!POSTHOG_KEY) return` guard. Added the missing `define` block so
+  `__TELEMETRY_POSTHOG_KEY__`, `__TELEMETRY_SENTRY_DSN__`, and
+  `__CTXLOOM_VERSION__` are baked in at build time, mirroring the root
+  CLI bundle.
+- **Publish smoke test extended** to scan the dashboard server bundle
+  for the empty-fallback pattern, not just the CLI bundle. Would have
+  caught this bug at v1.1.3 publish time.
+
+### Notes
+
+- CLI telemetry (`project_resolved`, `multi_project_active`,
+  `tool_dispatched`, etc.) was never affected — only browser events
+  routed through the dashboard server's `/api/telemetry/event` proxy.
+
+---
+
 ## [1.1.4] — 2026-05-13
 
 ### Added

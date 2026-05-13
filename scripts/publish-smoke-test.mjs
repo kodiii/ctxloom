@@ -159,7 +159,17 @@ try {
   //      Escape hatch: CTXLOOM_ALLOW_NO_TELEMETRY=1 for intentional
   //      no-telemetry builds (forks, sandboxed dev rebuilds).
   verifyTelemetryBaked(path.join(tmpDir, "node_modules/ctxloom-pro/dist"));
-  log("telemetry keys verified in bundle");
+  log("telemetry keys verified in CLI bundle");
+
+  // The dashboard server bundles its own copy of @ctxloom/core (via
+  // noExternal in apps/dashboard/tsup.server.config.ts), so its tsup
+  // config needs its own `define` block. v1.1.3–v1.1.4 shipped without
+  // it — the dashboard server accepted /api/telemetry/event POSTs but
+  // its `track()` early-returned on an empty POSTHOG_KEY, dropping every
+  // dashboard_loaded / dashboard_page_viewed event. This second sweep
+  // catches the same shape of bug in the dashboard server bundle.
+  verifyTelemetryBaked(path.join(tmpDir, "node_modules/ctxloom-pro/apps/dashboard/dist/server"));
+  log("telemetry keys verified in dashboard server bundle");
 } finally {
   rmSync(tmpDir, { recursive: true, force: true });
   // Always clean up the tarball — it sits at the repo root after npm pack.
