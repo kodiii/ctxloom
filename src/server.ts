@@ -303,6 +303,18 @@ export function createServer(): { server: Server; ctx: ServerContext } {
           const root = state.projectRoot;
           const graphFirstTouch = firstTouchTracker.markAndCheck(root, 'graph');
           if (graphFirstTouch) {
+            try {
+              const graphInst = state.graphPromise ? await state.graphPromise : null;
+              track('project_first_touch', os.hostname(), {
+                project_id: hashProjectRoot(root),
+                tier: 'graph',
+                duration_ms: durationMs,
+                nodes: graphInst?.nodeCount?.() ?? null,
+                edges: graphInst?.edgeCount?.() ?? null,
+              });
+            } catch {
+              // Telemetry must never break the response.
+            }
             const wrapped = wrapWithIndexingEnvelope(
               { firstTouch: true, projectRoot: root, tier: 'graph', durationMs },
               text,
@@ -315,6 +327,11 @@ export function createServer(): { server: Server; ctx: ServerContext } {
           if (state.vectorsInitialized) {
             const vectorsFirstTouch = firstTouchTracker.markAndCheck(root, 'vectors');
             if (vectorsFirstTouch) {
+              track('project_first_touch', os.hostname(), {
+                project_id: hashProjectRoot(root),
+                tier: 'vectors',
+                duration_ms: durationMs,
+              });
               const wrapped = wrapWithIndexingEnvelope(
                 { firstTouch: true, projectRoot: root, tier: 'vectors', durationMs },
                 text,
