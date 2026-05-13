@@ -145,6 +145,15 @@ async function initSkeletonizer(state: ProjectState): Promise<Skeletonizer> {
   return state.skeletonizerPromise;
 }
 
+type ResolutionSource = 'alias' | 'arg-path' | 'env' | 'cwd';
+
+function classifyResolutionSource(arg: string | undefined, env: string | undefined): ResolutionSource {
+  if (arg !== undefined) {
+    return /[/\\~]|^[A-Za-z]:/.test(arg) ? 'arg-path' : 'alias';
+  }
+  return env ? 'env' : 'cwd';
+}
+
 function buildContext(
   defaultRoot: string | null,
   noDefaultMode: boolean,
@@ -152,28 +161,58 @@ function buildContext(
   const repoRegistry = new RepoRegistry(repoRegistryPath);
 
   function resolveOrDefault(arg: string | undefined): ProjectState {
+    let state: ProjectState;
+    let source: ResolutionSource;
+
     if (DISABLE_MULTIPROJECT) {
       if (!defaultRoot) {
         throw new Error('CTXLOOM_DISABLE_MULTIPROJECT=1 but server has no default root.');
       }
-      return stateManager.get(defaultRoot);
-    }
-    if (arg === undefined) {
+      state = stateManager.get(defaultRoot);
+      source = 'env';
+    } else if (arg === undefined) {
       if (!defaultRoot) {
-        throw new Error('no_default_project'); // converted to structured error at tool layer (Phase 6)
+        throw new Error('no_default_project');
       }
-      return stateManager.get(defaultRoot);
+      state = stateManager.get(defaultRoot);
+      source = classifyResolutionSource(undefined, process.env.CTXLOOM_ROOT);
+    } else {
+      const outcome = resolveRoot({
+        arg,
+        env: process.env.CTXLOOM_ROOT,
+        cwd: process.cwd(),
+        registry: repoRegistry,
+      });
+      if (outcome.kind !== 'ok') {
+        throw new Error(JSON.stringify(outcome));
+      }
+      state = stateManager.get(outcome.root);
+      source = classifyResolutionSource(arg, process.env.CTXLOOM_ROOT);
     }
-    const outcome = resolveRoot({
-      arg,
-      env: process.env.CTXLOOM_ROOT,
-      cwd: process.cwd(),
-      registry: repoRegistry,
-    });
-    if (outcome.kind !== 'ok') {
-      throw new Error(JSON.stringify(outcome));
+
+    try {
+      const projectId = hashProjectRoot(state.projectRoot);
+      if (emittedOnceTracker.markAndCheck(`project_resolved:${projectId}`)) {
+        track('project_resolved', os.hostname(), {
+          project_id: projectId,
+          source,
+          via_alias: source === 'alias',
+        });
+      }
+      if (
+        stateManager.size() >= 2 &&
+        emittedOnceTracker.markAndCheck('multi_project_active')
+      ) {
+        track('multi_project_active', os.hostname(), {
+          active_count: stateManager.size(),
+          cap: stateManager.max,
+        });
+      }
+    } catch {
+      // Telemetry must never break the resolver.
     }
-    return stateManager.get(outcome.root);
+
+    return state;
   }
 
   const ctx: ServerContext = {
