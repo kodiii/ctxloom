@@ -123,12 +123,20 @@ async function initParser(state: ProjectState): Promise<ASTParser> {
 async function initGraph(state: ProjectState): Promise<DependencyGraph> {
   if (!state.graphPromise) {
     state.graphPromise = (async () => {
-      const parser = await initParser(state);
-      const graph = new DependencyGraph();
-      graph.setParser(parser);
-      await graph.buildFromDirectory(state.projectRoot);
-      state.graphInitialized = true;
-      return graph;
+      try {
+        const parser = await initParser(state);
+        const graph = new DependencyGraph();
+        graph.setParser(parser);
+        await graph.buildFromDirectory(state.projectRoot);
+        state.graphInitialized = true;
+        return graph;
+      } catch (err) {
+        captureError(err, {
+          project_id: hashProjectRoot(state.projectRoot),
+          phase: 'graph_init',
+        });
+        throw err;
+      }
     })();
   }
   return state.graphPromise;
@@ -415,6 +423,20 @@ export function createServer(): { server: Server; ctx: ServerContext } {
         } catch {
           // JSON.parse failed — fall through to generic error
         }
+      }
+      try {
+        const projectRootArg13 = (args as Record<string, unknown> | undefined)?.project_root as string | undefined;
+        let projectIdForCtx: string | undefined;
+        try {
+          const fallbackState = resolveOrDefault(projectRootArg13);
+          projectIdForCtx = hashProjectRoot(fallbackState.projectRoot);
+        } catch { /* couldn't resolve — capture without project_id */ }
+        captureError(err, {
+          tool: name,
+          ...(projectIdForCtx ? { project_id: projectIdForCtx } : {}),
+        });
+      } catch {
+        /* never let telemetry break the response */
       }
       return {
         content: [{ type: 'text' as const, text: `Error: ${err instanceof Error ? err.message : String(err)}` }],
