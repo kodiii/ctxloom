@@ -1,0 +1,106 @@
+name: Sentry sourcemap upload
+
+# Runs after the user publishes to npm and pushes the tag (see the release
+# protocol). Builds the same artifacts that ship to users and uploads their
+# sourcemaps to Sentry, tagged with the release version that matches the
+# `release` property already on every Sentry event payload.
+#
+# Repo configuration required (Settings → Secrets and variables → Actions):
+#   - Secret:   SENTRY_AUTH_TOKEN  (write-scoped, project:releases permission)
+#   - Variable: SENTRY_ORG         (Sentry organization slug)
+#   - Variable: SENTRY_PROJECT     (Sentry project slug)
+#
+# If any are unset, the workflow logs an error annotation and exits cleanly —
+# first-time setup will never break a release.
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  upload:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Extract version from tag
+        id: version
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "Detected version: $version"
+
+      - name: Verify required Sentry config is present
+        id: gate
+        env:
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+          SENTRY_ORG: ${{ vars.SENTRY_ORG }}
+          SENTRY_PROJECT: ${{ vars.SENTRY_PROJECT }}
+        run: |
+          missing=()
+          [ -z "$SENTRY_AUTH_TOKEN" ] && missing+=("SENTRY_AUTH_TOKEN (secret)")
+          [ -z "$SENTRY_ORG" ] && missing+=("SENTRY_ORG (variable)")
+          [ -z "$SENTRY_PROJECT" ] && missing+=("SENTRY_PROJECT (variable)")
+          if [ ${#missing[@]} -gt 0 ]; then
+            echo "::warning::Sentry config missing — sourcemap upload skipped: ${missing[*]}"
+            echo "Configure these in repo Settings → Secrets and variables → Actions."
+            echo "skip=1" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=0" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/setup-node@v4
+        if: steps.gate.outputs.skip == '0'
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        if: steps.gate.outputs.skip == '0'
+        run: npm ci
+
+      - name: Build all release artifacts
+        if: steps.gate.outputs.skip == '0'
+        run: npm run build
+
+      - name: Create Sentry release + upload sourcemaps
+        if: steps.gate.outputs.skip == '0'
+        env:
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+          SENTRY_ORG: ${{ vars.SENTRY_ORG }}
+          SENTRY_PROJECT: ${{ vars.SENTRY_PROJECT }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          npx sentry-cli releases new "$VERSION"
+
+          # CLI bundle — stack frames look like
+          # /Users/~/.../node_modules/ctxloom-pro/dist/index.js after scrubPath.
+          # Sentry matches by path SUFFIX, so url-prefix '~/dist' works for any home.
+          npx sentry-cli releases files "$VERSION" upload-sourcemaps \
+            --include-sources \
+            --url-prefix '~/dist' \
+            dist/
+
+          # Dashboard server bundle.
+          if [ -d apps/dashboard/dist/server ]; then
+            npx sentry-cli releases files "$VERSION" upload-sourcemaps \
+              --include-sources \
+              --url-prefix '~/dashboard/server' \
+              apps/dashboard/dist/server/
+          fi
+
+          # Dashboard client bundle — Vite outputs to apps/dashboard/dist/dashboard/client/
+          # (the `../dist/dashboard/client` outDir resolved from the client/ root).
+          # Browser stack frames are at /assets/*.js → use '~/' as prefix.
+          if [ -d apps/dashboard/dist/dashboard/client ]; then
+            npx sentry-cli releases files "$VERSION" upload-sourcemaps \
+              --include-sources \
+              --url-prefix '~/' \
+              apps/dashboard/dist/dashboard/client/
+          fi
+
+          npx sentry-cli releases finalize "$VERSION"

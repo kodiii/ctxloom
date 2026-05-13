@@ -96,6 +96,7 @@
   },
   "devDependencies": {
     "@ctxloom/core": "*",
+    "@sentry/cli": "^3.4.2",
     "@types/js-yaml": "^4.0.9",
     "@types/node": "^22.0.0",
     "@types/picomatch": "^4.0.3",

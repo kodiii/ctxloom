@@ -7,6 +7,7 @@ export default defineConfig({
   build: {
     outDir: '../dist/dashboard/client',
     emptyOutDir: true,
+    sourcemap: true,
   },
   server: {
     proxy: {
