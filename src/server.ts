@@ -12,6 +12,7 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
 import path from 'node:path';
 import fs from 'node:fs';
+import os from 'node:os';
 import {
   PathValidator,
   VectorStore,
@@ -39,6 +40,10 @@ import {
   aliasNotFoundError,
   FirstTouchTracker,
   wrapWithIndexingEnvelope,
+  track,
+  captureError,
+  hashProjectRoot,
+  EmittedOnceTracker,
 } from '@ctxloom/core';
 
 // ─── Server startup options ──────────────────────────────────────────────────
@@ -90,6 +95,7 @@ const stateManager = new ProjectStateManager({
 });
 
 const firstTouchTracker = new FirstTouchTracker();
+const emittedOnceTracker = new EmittedOnceTracker();
 
 // Lazy helpers — each one inits the corresponding field on the project state.
 async function initStore(state: ProjectState): Promise<VectorStore> {
@@ -343,6 +349,7 @@ export async function startServer(opts: ServerOptions = {}): Promise<void> {
       'maxProjects is capped at 1 and project_root arguments are ignored. ' +
       'This kill switch will be removed in a future release.',
     );
+    track('kill_switch_active', os.hostname(), { cap: 1 });
   }
 
   // Report the effective FD soft limit so users can correlate EMFILE
