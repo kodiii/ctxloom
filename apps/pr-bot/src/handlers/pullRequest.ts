@@ -1,6 +1,6 @@
 import type { Context } from 'probot';
 import { parse as parseYaml } from 'yaml';
-import { DependencyGraph } from '../../../../src/graph/DependencyGraph.js';
+import { DependencyGraph } from '@ctxloom/core';
 import { buildReview } from '../review/buildReview.js';
 import { suggestReviewers } from '../review/reviewerSuggest.js';
 import { findBotComment, buildCommentBody } from '../review/idempotency.js';

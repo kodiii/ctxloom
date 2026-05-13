@@ -1,9 +1,12 @@
-import { detectChanges, getImpactRadius } from '../../../../src/lib/index.js';
-import type { DependencyGraph } from '../../../../src/graph/DependencyGraph.js';
-import type { GitOverlayStore } from '../../../../src/git/GitOverlayStore.js';
+import {
+  detectChanges,
+  getImpactRadius,
+  type DependencyGraph,
+  type GitOverlayStore,
+  type RiskLevel,
+} from '@ctxloom/core';
 import type { ReviewPayload } from './types.js';
 import type { RepoConfig } from '../config.js';
-import type { RiskLevel } from '../../../../src/lib/index.js';
 import { riskLabelFromScore } from './types.js';
 
 export interface BuildReviewInput {
