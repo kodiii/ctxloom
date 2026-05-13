@@ -230,7 +230,7 @@ async function checkLicense(): Promise<void> {
 
   const active = await isActive();
   if (!active) {
-    track('license_gate_hit', os.hostname());
+    track('license_gate_hit');
     // BUG-002: Must use stderr — stdout is the MCP JSON-RPC channel when
     // running as an MCP server. Writing plain text to stdout corrupts the
     // protocol and causes "Server disconnected" in the client.
@@ -274,7 +274,7 @@ async function runTrial(): Promise<void> {
     process.stdout.write(`  ${style.link(result.checkoutUrl)}\n\n`);
     process.stdout.write(`  ${style.dim(`Your license key will arrive at ${email} after checkout.`)}\n`);
     process.stdout.write(fmtNextStep('Activate on this machine', 'ctxloom activate <KEY>'));
-    track('trial_started', os.hostname(), { email });
+    track('trial_started', { email });
   } catch (err) {
     if (err instanceof FingerprintAlreadyUsedError) {
       process.stdout.write(fmtErrorBlock('A trial has already been used on this machine.', [
@@ -317,7 +317,7 @@ async function runActivate(key: string): Promise<void> {
       ['Machine', `${os.hostname()} (${os.platform()}-${os.arch()})`],
     ]));
     process.stdout.write(fmtNextStep('Configure your AI tools', 'ctxloom setup'));
-    track('license_activated', os.hostname(), { tier: license.tier });
+    track('license_activated', { tier: license.tier });
   } catch (err) {
     if (err instanceof SeatLimitError) {
       process.stdout.write(fmtErrorBlock('Seat limit reached.', [
@@ -353,7 +353,7 @@ async function runDeactivate(): Promise<void> {
     await deactivateLicense();
     process.stdout.write(`  ${fmtSuccess('Deactivated')}\n`);
     process.stdout.write(fmtNextStep('Activate on another machine', 'ctxloom activate <KEY>'));
-    track('license_deactivated', os.hostname());
+    track('license_deactivated');
   } catch (err) {
     if (err instanceof NetworkError) {
       process.stderr.write(fmtErrorBlock('Deactivation failed — network error.', [
@@ -597,7 +597,7 @@ async function main(): Promise<void> {
         process.exit(1);
       }
       if (alias !== undefined) {
-        track('alias_registered', os.hostname(), {
+        track('alias_registered', {
           alias_length: alias.length,
           was_collision: false,
         });

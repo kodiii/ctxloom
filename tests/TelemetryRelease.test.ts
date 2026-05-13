@@ -1,19 +1,30 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import fs from 'node:fs';
+import path from 'node:path';
+import os from 'node:os';
 
 describe('telemetry release tag', () => {
   let fetchSpy: ReturnType<typeof vi.spyOn>;
+  let tmpHome: string;
+  let originalHome: string | undefined;
 
   beforeEach(() => {
-    vi.resetModules();
+    tmpHome = fs.mkdtempSync(path.join(os.tmpdir(), 'ctxloom-test-'));
+    originalHome = process.env.HOME;
+    process.env.HOME = tmpHome;
     process.env.POSTHOG_API_KEY = 'phc_test';
     process.env.SENTRY_DSN = 'https://abc@o1.ingest.sentry.io/123';
     delete process.env.CTXLOOM_NO_TELEMETRY;
     delete process.env.DO_NOT_TRACK;
     fetchSpy = vi.spyOn(global, 'fetch').mockResolvedValue(new Response(null, { status: 200 }));
+    vi.resetModules();
   });
 
   afterEach(() => {
     fetchSpy.mockRestore();
+    if (originalHome !== undefined) process.env.HOME = originalHome;
+    else delete process.env.HOME;
+    fs.rmSync(tmpHome, { recursive: true, force: true });
     delete process.env.POSTHOG_API_KEY;
     delete process.env.SENTRY_DSN;
   });
@@ -35,7 +46,7 @@ describe('telemetry release tag', () => {
 
   it('PostHog payload includes properties.release', async () => {
     const { track } = await import('@ctxloom/core');
-    track('trial_started', 'test-host', { email: 'x@y.z' });
+    track('trial_started', { email: 'x@y.z' });
     await new Promise(r => setImmediate(r));
     const posthogCall = fetchSpy.mock.calls.find(c =>
       typeof c[0] === 'string' && c[0].includes('posthog.com')

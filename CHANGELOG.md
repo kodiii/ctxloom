@@ -5,6 +5,27 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
 ---
 
+## [1.1.2] — 2026-05-13
+
+### Changed
+
+- **Telemetry `distinct_id` is now a stable anonymous UUID** persisted at
+  `~/.ctxloom/distinct_id` (mode `0o600`) instead of `os.hostname()`.
+  Users who rename their machine or work across multiple machines remain
+  a single user in PostHog instead of fragmenting across hostnames.
+- **First event after upgrade fires a PostHog `$create_alias`** that
+  merges the user's pre-1.1.2 hostname-keyed event history with the new
+  UUID identity. Best-effort and idempotent — if the alias request
+  fails, `alias_pending` stays on disk and the next event retries.
+- **Internal `track(event, props)` signature** — the explicit
+  `distinctId` argument is gone; the UUID is resolved internally on
+  first call and cached for the process lifetime. CLI surface unchanged.
+- **`captureError` now carries `distinct_id` in Sentry `extra` context**
+  so Sentry incidents can be cross-referenced with the user's PostHog
+  event stream.
+
+---
+
 ## [1.1.1] — 2026-05-13
 
 ### Added

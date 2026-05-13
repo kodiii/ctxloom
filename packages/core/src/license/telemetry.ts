@@ -15,6 +15,8 @@
  * source repo never contains live keys.
  */
 
+import { getOrCreateDistinctId, markAliasSent, type DistinctIdRecord } from './DistinctIdStore.js';
+
 const TELEMETRY_DISABLED =
   process.env['CTXLOOM_NO_TELEMETRY'] === '1' ||
   process.env['DO_NOT_TRACK'] === '1';
@@ -55,18 +57,36 @@ export type TelemetryEvent =
   | 'project_resolution_failed'
   | 'tool_dispatched';
 
-export function track(
-  event: TelemetryEvent,
-  distinctId: string,
-  props: Record<string, unknown> = {},
-): void {
+// Module-level cache — populated on first track()/captureError() call.
+// Reset across test runs by vi.resetModules().
+let cachedDistinctId: DistinctIdRecord | null = null;
+
+function resolveDistinctId(): DistinctIdRecord | null {
+  if (cachedDistinctId) return cachedDistinctId;
+  try {
+    cachedDistinctId = getOrCreateDistinctId();
+    return cachedDistinctId;
+  } catch {
+    return null;
+  }
+}
+
+export function track(event: TelemetryEvent, props: Record<string, unknown> = {}): void {
   if (TELEMETRY_DISABLED || !POSTHOG_KEY) return;
-  void sendPostHog(event, distinctId, props);
+  const record = resolveDistinctId();
+  if (!record) return;
+  void sendPostHog(event, record.id, props);
+  if (record.alias_pending) {
+    const oldAlias = record.alias_pending;
+    void sendAlias(record.id, oldAlias);
+  }
 }
 
 export function captureError(err: unknown, context: Record<string, unknown> = {}): void {
   if (TELEMETRY_DISABLED || !SENTRY_DSN) return;
-  void sendSentry(err, context);
+  const record = resolveDistinctId();
+  const augmented = record ? { ...context, distinct_id: record.id } : context;
+  void sendSentry(err, augmented);
 }
 
 async function sendPostHog(
@@ -92,6 +112,32 @@ async function sendPostHog(
     });
   } catch {
     // fire-and-forget — telemetry must never break the CLI
+  }
+}
+
+async function sendAlias(newId: string, oldAlias: string): Promise<void> {
+  try {
+    const res = await fetch(`${POSTHOG_HOST}/capture/`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        api_key: POSTHOG_KEY,
+        distinct_id: newId,
+        event: '$create_alias',
+        properties: {
+          $lib: 'ctxloom-cli',
+          release: CTXLOOM_VERSION,
+          alias: oldAlias,
+        },
+      }),
+      signal: AbortSignal.timeout(4000),
+    });
+    if (res.ok) {
+      try { markAliasSent(); } catch { /* best-effort */ }
+      if (cachedDistinctId) cachedDistinctId = { id: cachedDistinctId.id };
+    }
+  } catch {
+    // fire-and-forget; retries on next track()
   }
 }
 
