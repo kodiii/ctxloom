@@ -185,10 +185,10 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
 ---
 
-## [Unreleased]
+## [1.1.0] — 2026-05-13
 
 ### Added
-- **Multi-project support (v1.1.0)** — every tool now accepts an optional `project_root` parameter (alias or absolute path)
+- **Multi-project support** — every tool now accepts an optional `project_root` parameter (alias or absolute path)
   - `ctxloom register --alias <name> <path>` CLI command to register project aliases
   - `ProjectStateManager` with LRU eviction (cap 5, override via `CTXLOOM_MAX_PROJECTS`)
   - Multi-project view in `ctx_status` (active projects, registered projects)

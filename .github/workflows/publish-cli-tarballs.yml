@@ -14,6 +14,12 @@ permissions:
 # stalled runner blocks the dependent job for up to 24h. Splitting moves
 # the unreliable platform out of the release's critical path.
 
+# Opt into Node.js 24 for actions/checkout@v4 + actions/setup-node@v4.
+# GitHub forces this by June 2026; setting it explicitly silences the
+# deprecation warning and gives us forward-compatible behavior today.
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
+
 jobs:
   build:
     # Fast, reliable platforms — release waits on these.
