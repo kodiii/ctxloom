@@ -17,6 +17,12 @@ on:
   push:
     tags:
       - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to build sourcemaps for (e.g. v1.1.4)'
+        required: true
+        type: string
 
 jobs:
   upload:
@@ -25,11 +31,14 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.ref }}
 
       - name: Extract version from tag
         id: version
         run: |
-          version="${GITHUB_REF_NAME#v}"
+          raw="${{ inputs.tag || github.ref_name }}"
+          version="${raw#v}"
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "Detected version: $version"
 
