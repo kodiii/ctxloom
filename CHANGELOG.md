@@ -5,6 +5,40 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
 ---
 
+## [1.1.3] — 2026-05-13
+
+### Added
+
+- **Dashboard browser telemetry.** The React dashboard now fires two
+  PostHog events: `dashboard_loaded` (once per session, on initial app
+  mount) and `dashboard_page_viewed` (on every route change, with
+  `path` as the only payload). All events carry `surface: 'dashboard'`
+  so they can be filtered separately from CLI/MCP events in PostHog.
+- **Dashboard server telemetry proxy.** New endpoints under
+  `/api/telemetry`:
+  - `GET /identity` — returns `{ enabled }`, honors
+    `CTXLOOM_NO_TELEMETRY=1` / `DO_NOT_TRACK=1`
+  - `POST /event` — validates against a hardcoded 2-event allowlist
+    (`dashboard_loaded`, `dashboard_page_viewed`) before forwarding to
+    `@ctxloom/core` `track()`. The browser cannot forge `license_*` or
+    `project_*` events.
+  - `POST /error` — caps `message` at 2000 chars and `stack` at 10000
+    chars, forwards to `captureError`
+- Browser inherits the v1.1.2 stable UUID identity, alias-once
+  migration, `release` tag, and stack-frame scrubbing for free — the
+  proxy resolves identity via the existing module-level cache in
+  `@ctxloom/core`.
+
+### Notes
+
+- The browser never sees the PostHog write-key or the user's
+  `distinct_id`; events are posted to the dashboard's own server and
+  the server forwards them.
+- React `ErrorBoundary` auto-capture, project-switch tracking, and
+  search/graph-click events are intentionally deferred.
+
+---
+
 ## [1.1.2] — 2026-05-13
 
 ### Changed
