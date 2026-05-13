@@ -1,6 +1,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import type { Context } from 'probot';
+import { captureError } from '@ctxloom/core';
 
 const DEFAULT_BASE_DIR = '/var/lib/ctxloom-bot';
 
@@ -20,7 +21,18 @@ export async function onInstallationDeleted(
 
   context.log.info({ installationId, installDir }, 'Removing cache for deleted installation');
 
-  await fs.rm(installDir, { recursive: true, force: true });
-
-  context.log.info({ installationId }, 'Cache directory removed for deleted installation');
+  try {
+    await fs.rm(installDir, { recursive: true, force: true });
+    context.log.info({ installationId }, 'Cache directory removed for deleted installation');
+  } catch (err) {
+    // fs.rm with `force: true` swallows ENOENT, so anything that lands
+    // here is a real problem (permissions, EBUSY, etc.). Surface it.
+    captureError(err, {
+      component: 'pr-bot',
+      handler: 'installation_deleted',
+      installation_id: installationId,
+      install_dir: installDir,
+    });
+    throw err;
+  }
 }
