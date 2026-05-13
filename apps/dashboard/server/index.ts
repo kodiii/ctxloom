@@ -16,6 +16,7 @@ import { buildTokensRouter } from './routes/tokens.js';
 import { buildTrendsRouter } from './routes/trends.js';
 import { buildFileTrendsRouter } from './routes/file-trends.js';
 import { buildProjectsRouter } from './routes/projects.js';
+import { buildTelemetryRouter } from './routes/telemetry.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -128,6 +129,7 @@ export async function startDashboard(options: {
 
   attachSnapshotWatcher(ctx.root);
 
+  app.use('/api/telemetry', buildTelemetryRouter());
   app.use('/api/projects', buildProjectsRouter({
     ctx,
     defaultRoot: root,
