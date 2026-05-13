@@ -1,5 +1,5 @@
 import type { ReviewPayload } from './types.js';
-import type { ChangedFile } from '../../../../src/lib/index.js';
+import type { ChangedFile } from '@ctxloom/core';
 
 const CHAR_LIMIT = 60_000;
 const RISK_BREAKDOWN_ROWS = 5;

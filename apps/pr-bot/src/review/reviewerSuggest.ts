@@ -1,4 +1,4 @@
-import type { GitOverlayStore } from '../../../../src/git/GitOverlayStore.js';
+import type { GitOverlayStore } from '@ctxloom/core';
 
 export interface ReviewerSuggestion {
   login: string;

@@ -1,4 +1,4 @@
-import type { ChangedFile } from '../../../../src/lib/index.js';
+import type { ChangedFile } from '@ctxloom/core';
 import type { ReviewPayload } from './types.js';
 
 export interface InlineComment {

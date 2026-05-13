@@ -1,4 +1,4 @@
-import type { ChangedFile, ImpactReport } from '../../../../src/lib/index.js';
+import type { ChangedFile, ImpactReport } from '@ctxloom/core';
 import type { RepoConfig } from '../config.js';
 
 export interface ReviewPayload {
