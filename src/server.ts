@@ -12,6 +12,7 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
 import path from 'node:path';
 import fs from 'node:fs';
+import os from 'node:os';
 import {
   PathValidator,
   VectorStore,
@@ -39,6 +40,10 @@ import {
   aliasNotFoundError,
   FirstTouchTracker,
   wrapWithIndexingEnvelope,
+  track,
+  captureError,
+  hashProjectRoot,
+  EmittedOnceTracker,
 } from '@ctxloom/core';
 
 // ─── Server startup options ──────────────────────────────────────────────────
@@ -90,6 +95,7 @@ const stateManager = new ProjectStateManager({
 });
 
 const firstTouchTracker = new FirstTouchTracker();
+const emittedOnceTracker = new EmittedOnceTracker();
 
 // Lazy helpers — each one inits the corresponding field on the project state.
 async function initStore(state: ProjectState): Promise<VectorStore> {
@@ -117,12 +123,20 @@ async function initParser(state: ProjectState): Promise<ASTParser> {
 async function initGraph(state: ProjectState): Promise<DependencyGraph> {
   if (!state.graphPromise) {
     state.graphPromise = (async () => {
-      const parser = await initParser(state);
-      const graph = new DependencyGraph();
-      graph.setParser(parser);
-      await graph.buildFromDirectory(state.projectRoot);
-      state.graphInitialized = true;
-      return graph;
+      try {
+        const parser = await initParser(state);
+        const graph = new DependencyGraph();
+        graph.setParser(parser);
+        await graph.buildFromDirectory(state.projectRoot);
+        state.graphInitialized = true;
+        return graph;
+      } catch (err) {
+        captureError(err, {
+          project_id: hashProjectRoot(state.projectRoot),
+          phase: 'graph_init',
+        });
+        throw err;
+      }
     })();
   }
   return state.graphPromise;
@@ -139,6 +153,15 @@ async function initSkeletonizer(state: ProjectState): Promise<Skeletonizer> {
   return state.skeletonizerPromise;
 }
 
+type ResolutionSource = 'alias' | 'arg-path' | 'env' | 'cwd';
+
+function classifyResolutionSource(arg: string | undefined, env: string | undefined): ResolutionSource {
+  if (arg !== undefined) {
+    return /[/\\~]|^[A-Za-z]:/.test(arg) ? 'arg-path' : 'alias';
+  }
+  return env ? 'env' : 'cwd';
+}
+
 function buildContext(
   defaultRoot: string | null,
   noDefaultMode: boolean,
@@ -146,28 +169,58 @@ function buildContext(
   const repoRegistry = new RepoRegistry(repoRegistryPath);
 
   function resolveOrDefault(arg: string | undefined): ProjectState {
+    let state: ProjectState;
+    let source: ResolutionSource;
+
     if (DISABLE_MULTIPROJECT) {
       if (!defaultRoot) {
         throw new Error('CTXLOOM_DISABLE_MULTIPROJECT=1 but server has no default root.');
       }
-      return stateManager.get(defaultRoot);
-    }
-    if (arg === undefined) {
+      state = stateManager.get(defaultRoot);
+      source = 'env';
+    } else if (arg === undefined) {
       if (!defaultRoot) {
-        throw new Error('no_default_project'); // converted to structured error at tool layer (Phase 6)
+        throw new Error('no_default_project');
       }
-      return stateManager.get(defaultRoot);
+      state = stateManager.get(defaultRoot);
+      source = classifyResolutionSource(undefined, process.env.CTXLOOM_ROOT);
+    } else {
+      const outcome = resolveRoot({
+        arg,
+        env: process.env.CTXLOOM_ROOT,
+        cwd: process.cwd(),
+        registry: repoRegistry,
+      });
+      if (outcome.kind !== 'ok') {
+        throw new Error(JSON.stringify(outcome));
+      }
+      state = stateManager.get(outcome.root);
+      source = classifyResolutionSource(arg, process.env.CTXLOOM_ROOT);
     }
-    const outcome = resolveRoot({
-      arg,
-      env: process.env.CTXLOOM_ROOT,
-      cwd: process.cwd(),
-      registry: repoRegistry,
-    });
-    if (outcome.kind !== 'ok') {
-      throw new Error(JSON.stringify(outcome));
+
+    try {
+      const projectId = hashProjectRoot(state.projectRoot);
+      if (emittedOnceTracker.markAndCheck(`project_resolved:${projectId}`)) {
+        track('project_resolved', os.hostname(), {
+          project_id: projectId,
+          source,
+          via_alias: source === 'alias',
+        });
+      }
+      if (
+        stateManager.size() >= 2 &&
+        emittedOnceTracker.markAndCheck('multi_project_active')
+      ) {
+        track('multi_project_active', os.hostname(), {
+          active_count: stateManager.size(),
+          cap: stateManager.max,
+        });
+      }
+    } catch {
+      // Telemetry must never break the resolver.
     }
-    return stateManager.get(outcome.root);
+
+    return state;
   }
 
   const ctx: ServerContext = {
@@ -258,6 +311,18 @@ export function createServer(): { server: Server; ctx: ServerContext } {
           const root = state.projectRoot;
           const graphFirstTouch = firstTouchTracker.markAndCheck(root, 'graph');
           if (graphFirstTouch) {
+            try {
+              const graphInst = state.graphPromise ? await state.graphPromise : null;
+              track('project_first_touch', os.hostname(), {
+                project_id: hashProjectRoot(root),
+                tier: 'graph',
+                duration_ms: durationMs,
+                nodes: graphInst?.allFiles().length ?? null,
+                edges: graphInst?.edgeCount() ?? null,
+              });
+            } catch {
+              // Telemetry must never break the response.
+            }
             const wrapped = wrapWithIndexingEnvelope(
               { firstTouch: true, projectRoot: root, tier: 'graph', durationMs },
               text,
@@ -270,6 +335,15 @@ export function createServer(): { server: Server; ctx: ServerContext } {
           if (state.vectorsInitialized) {
             const vectorsFirstTouch = firstTouchTracker.markAndCheck(root, 'vectors');
             if (vectorsFirstTouch) {
+              try {
+                track('project_first_touch', os.hostname(), {
+                  project_id: hashProjectRoot(root),
+                  tier: 'vectors',
+                  duration_ms: durationMs,
+                });
+              } catch {
+                // Telemetry must never break the response.
+              }
               const wrapped = wrapWithIndexingEnvelope(
                 { firstTouch: true, projectRoot: root, tier: 'vectors', durationMs },
                 text,
@@ -284,9 +358,32 @@ export function createServer(): { server: Server; ctx: ServerContext } {
         }
       }
 
+      if (Math.random() < 0.25) {
+        try {
+          const projectRootArg2 = (args as Record<string, unknown> | undefined)?.project_root as string | undefined;
+          if (!ctx.noDefaultMode || projectRootArg2 !== undefined) {
+            const sampleState = resolveOrDefault(projectRootArg2);
+            track('tool_dispatched', os.hostname(), {
+              project_id: hashProjectRoot(sampleState.projectRoot),
+              tool: name,
+              duration_ms: durationMs,
+            });
+          }
+        } catch {
+          /* skip sample on resolution error */
+        }
+      }
+
       return { content: [{ type: 'text' as const, text }] };
     } catch (err) {
       if (err instanceof Error && err.message === 'no_default_project') {
+        const hadArg10 = (args as Record<string, unknown> | undefined)?.project_root !== undefined;
+        try {
+          track('project_resolution_failed', os.hostname(), {
+            error_code: 'no_default_project',
+            had_arg: hadArg10,
+          });
+        } catch { /* telemetry must never block error responses */ }
         const xml = noDefaultProjectError({
           attemptedRoot: PROJECT_ROOT,
           resolutionChain: 'CTXLOOM_ROOT env var→unset, fallback_cwd→' + PROJECT_ROOT,
@@ -298,6 +395,12 @@ export function createServer(): { server: Server; ctx: ServerContext } {
         try {
           const parsed = JSON.parse(err.message) as Record<string, unknown>;
           if (parsed.kind === 'alias_not_found') {
+            try {
+              track('project_resolution_failed', os.hostname(), {
+                error_code: 'alias_not_found',
+                had_arg: true,
+              });
+            } catch { /* telemetry must never block error responses */ }
             const xml = aliasNotFoundError({
               alias: String(parsed.alias ?? ''),
               didYouMean: Array.isArray(parsed.didYouMean) ? (parsed.didYouMean as string[]) : [],
@@ -305,6 +408,12 @@ export function createServer(): { server: Server; ctx: ServerContext } {
             return { content: [{ type: 'text' as const, text: xml }], isError: true };
           }
           if (parsed.kind === 'project_root_not_found') {
+            try {
+              track('project_resolution_failed', os.hostname(), {
+                error_code: 'project_root_not_found',
+                had_arg: true,
+              });
+            } catch { /* telemetry must never block error responses */ }
             const xml = projectRootNotFoundError({
               path: String(parsed.attemptedPath ?? ''),
               resolutionChain: String(parsed.resolutionChain ?? ''),
@@ -314,6 +423,20 @@ export function createServer(): { server: Server; ctx: ServerContext } {
         } catch {
           // JSON.parse failed — fall through to generic error
         }
+      }
+      try {
+        const projectRootArg13 = (args as Record<string, unknown> | undefined)?.project_root as string | undefined;
+        let projectIdForCtx: string | undefined;
+        try {
+          const fallbackState = resolveOrDefault(projectRootArg13);
+          projectIdForCtx = hashProjectRoot(fallbackState.projectRoot);
+        } catch { /* couldn't resolve — capture without project_id */ }
+        captureError(err, {
+          tool: name,
+          ...(projectIdForCtx ? { project_id: projectIdForCtx } : {}),
+        });
+      } catch {
+        /* never let telemetry break the response */
       }
       return {
         content: [{ type: 'text' as const, text: `Error: ${err instanceof Error ? err.message : String(err)}` }],
@@ -343,6 +466,7 @@ export async function startServer(opts: ServerOptions = {}): Promise<void> {
       'maxProjects is capped at 1 and project_root arguments are ignored. ' +
       'This kill switch will be removed in a future release.',
     );
+    track('kill_switch_active', os.hostname(), { cap: 1 });
   }
 
   // Report the effective FD soft limit so users can correlate EMFILE

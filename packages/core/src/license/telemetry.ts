@@ -24,6 +24,11 @@ const TELEMETRY_DISABLED =
 // empty string; the published bundle has the real values inlined.
 declare const __TELEMETRY_POSTHOG_KEY__: string | undefined;
 declare const __TELEMETRY_SENTRY_DSN__: string | undefined;
+declare const __CTXLOOM_VERSION__: string | undefined;
+const CTXLOOM_VERSION =
+  typeof __CTXLOOM_VERSION__ === 'string' && __CTXLOOM_VERSION__.length > 0
+    ? __CTXLOOM_VERSION__
+    : 'dev';
 
 const POSTHOG_HOST = 'https://eu.i.posthog.com';
 const POSTHOG_KEY =
@@ -39,7 +44,16 @@ export type TelemetryEvent =
   | 'license_deactivated'
   | 'license_expired'
   | 'license_gate_hit'
-  | 'license_revoked';
+  | 'license_revoked'
+  // v1.1.1 multi-project events
+  | 'project_resolved'
+  | 'project_first_touch'
+  | 'project_evicted'
+  | 'alias_registered'
+  | 'multi_project_active'
+  | 'kill_switch_active'
+  | 'project_resolution_failed'
+  | 'tool_dispatched';
 
 export function track(
   event: TelemetryEvent,
@@ -70,6 +84,7 @@ async function sendPostHog(
         event,
         properties: {
           $lib: 'ctxloom-cli',
+          release: CTXLOOM_VERSION,
           ...props,
         },
       }),
@@ -109,7 +124,7 @@ async function sendSentry(err: unknown, context: Record<string, unknown>): Promi
           ],
         },
         extra: context,
-        tags: { runtime: 'node', component: 'cli-license' },
+        tags: { runtime: 'node', component: 'cli-license', release: CTXLOOM_VERSION },
       }),
       signal: AbortSignal.timeout(4000),
     });
@@ -128,6 +143,14 @@ function parseDsn(dsn: string): { host: string; key: string; projectId: string }
   }
 }
 
+function scrubPath(filename: string): string {
+  return filename
+    .replace(/^\/Users\/[^/]+\//, '/Users/~/')
+    .replace(/^\/home\/[^/]+\//, '/home/~/')
+    .replace(/^([A-Z]:\\\\Users\\\\)[^\\]+\\\\/, '$1~\\\\')
+    .replace(/^([A-Z]:\\Users\\)[^\\]+\\/, '$1~\\');
+}
+
 function parseStack(stack: string): Array<{ filename: string; lineno: number; function: string }> {
   return stack
     .split('\n')
@@ -135,7 +158,7 @@ function parseStack(stack: string): Array<{ filename: string; lineno: number; fu
     .map(line => {
       const m = line.trim().match(/at (.+?) \((.+?):(\d+):\d+\)/);
       if (!m) return null;
-      return { function: m[1] ?? '', filename: m[2] ?? '', lineno: Number(m[3]) };
+      return { function: m[1] ?? '', filename: scrubPath(m[2] ?? ''), lineno: Number(m[3]) };
     })
     .filter((f): f is NonNullable<typeof f> => f !== null)
     .slice(0, 20);

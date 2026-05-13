@@ -5,6 +5,40 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
 ---
 
+## [1.1.1] — 2026-05-13
+
+### Added
+
+- **Multi-project instrumentation.** PostHog state-transition events
+  (`project_resolved`, `project_first_touch`, `project_evicted`,
+  `alias_registered`, `multi_project_active`, `kill_switch_active`,
+  `project_resolution_failed`) plus 25% sampled `tool_dispatched`.
+- **Sentry coverage** for all non-structured tool-dispatch errors,
+  `initGraph` failures, `ensureVectorsInitialized` rejections, and
+  LRU dispose failures. Structured resolver errors (`alias_not_found`,
+  `no_default_project`, `project_root_not_found`) deliberately stay
+  Sentry-free — they are user mistakes, captured to PostHog only.
+- **Sentry `release` tag** on every captured event, sourced from
+  `package.json` version via the existing `__CTXLOOM_VERSION__` build
+  constant.
+- **Client-side stack-frame scrubbing.** `/Users/<name>/`,
+  `/home/<name>/`, and `C:\Users\<name>\` are replaced with `~/`
+  before transmission.
+- **Project paths are never sent.** All multi-project events carry an
+  opaque `project_id` (first 16 hex chars of SHA-256 over the canonical
+  path). Aliases are sent only as `alias_length`.
+- **`hashProjectRoot()` and `EmittedOnceTracker`** exported from
+  `@ctxloom/core` for downstream integrations.
+
+### Compatibility
+
+- `CTXLOOM_NO_TELEMETRY=1` and `DO_NOT_TRACK=1` continue to disable
+  both backends.
+- `distinct_id` remains `os.hostname()` (matches existing license
+  funnels).
+
+---
+
 ## [Unreleased]
 
 ### Added
