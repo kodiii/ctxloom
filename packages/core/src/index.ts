@@ -189,6 +189,8 @@ export {
 } from './license/index.js';
 export type { TelemetryEvent } from './license/telemetry.js';
 export { track, captureError } from './license/telemetry.js';
+export { getOrCreateDistinctId, markAliasSent } from './license/DistinctIdStore.js';
+export type { DistinctIdRecord } from './license/DistinctIdStore.js';
 
 // ─── Multi-project server infrastructure (v1.1) ───────────────────────────
 export type { ProjectState } from './server/ProjectState.js';
