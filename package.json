@@ -1,6 +1,6 @@
 {
   "name": "ctxloom-pro",
-  "version": "1.1.3",
+  "version": "1.1.4",
   "description": "ctxloom — The Universal Code Context Engine. A local-first MCP server providing intelligent code context via hybrid Vector + AST + Graph search with Skeletonization (92% token reduction).",
   "type": "module",
   "main": "dist/index.js",
@@ -96,6 +96,7 @@
   },
   "devDependencies": {
     "@ctxloom/core": "*",
+    "@sentry/cli": "^3.4.2",
     "@types/js-yaml": "^4.0.9",
     "@types/node": "^22.0.0",
     "@types/picomatch": "^4.0.3",
