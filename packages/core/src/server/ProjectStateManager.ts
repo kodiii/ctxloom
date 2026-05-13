@@ -18,7 +18,7 @@
  */
 import { ProjectState, createProjectState, disposeProjectState } from './ProjectState.js';
 import { logger } from '../utils/logger.js';
-import { track } from '../license/telemetry.js';
+import { track, captureError } from '../license/telemetry.js';
 import { hashProjectRoot } from './projectId.js';
 import os from 'node:os';
 
@@ -117,13 +117,20 @@ export class ProjectStateManager {
     // Fire-and-forget — the LRU eviction signal isn't waitable from a
     // synchronous get() call. Dispose errors are swallowed inside
     // disposeProjectState.
-    void this.onDispose(victim).then(() => {
-      logger.info('project.evicted', {
-        root: victim!.projectRoot,
-        reason: 'lru_cap_reached',
-        ttl_seconds: Math.round((Date.now() - victim!.lastTouchedAt) / 1000),
+    void this.onDispose(victim)
+      .then(() => {
+        logger.info('project.evicted', {
+          root: victim!.projectRoot,
+          reason: 'lru_cap_reached',
+          ttl_seconds: Math.round((Date.now() - victim!.lastTouchedAt) / 1000),
+        });
+      })
+      .catch(err => {
+        captureError(err, {
+          project_id: hashProjectRoot(victim!.projectRoot),
+          phase: 'dispose',
+        });
       });
-    });
   }
 
   /**
