@@ -56,6 +56,8 @@ import {
   track,
   captureError,
   recordTrendSnapshot,
+  shouldShowTelemetryNotice,
+  getTelemetryLevel,
 } from '@ctxloom/core';
 import type { CandidateActivity } from '@ctxloom/core';
 import type { CodeownersRule } from '@ctxloom/core';
@@ -408,7 +410,37 @@ async function runStatus(): Promise<void> {
   process.stdout.write('\n');
 }
 
+/**
+ * Print the one-time telemetry notice the very first time a CLI command
+ * runs on this machine. Skipped when:
+ *   - Running as the MCP server (stdio mode) — `command === undefined`.
+ *     Anything written to stdout would corrupt the JSON-RPC stream.
+ *   - Telemetry is already disabled (level=off / CTXLOOM_NO_TELEMETRY=1 /
+ *     DO_NOT_TRACK=1). No reason to tell users about a thing that's off.
+ *   - The marker at `~/.ctxloom/telemetry_notice_shown` already exists
+ *     (i.e. we've shown the notice before).
+ *
+ * Writes to stderr to stay clear of any command output that gets piped.
+ */
+function maybePrintTelemetryNotice(): void {
+  if (command === undefined) return;
+  if (getTelemetryLevel() === 'off') return;
+  if (!shouldShowTelemetryNotice()) return;
+
+  process.stderr.write(
+    `\n${style.dim('─'.repeat(60))}\n` +
+      `${style.bold('ctxloom collects anonymous usage telemetry')} to improve the tool.\n` +
+      `No file contents, paths, or aliases are ever transmitted.\n` +
+      `\n` +
+      `Disable with:   ${style.highlight('CTXLOOM_NO_TELEMETRY=1')}\n` +
+      `Errors only:    ${style.highlight('CTXLOOM_TELEMETRY_LEVEL=error')}\n` +
+      `Details:        ${style.highlight('https://github.com/kodiii/ctxloom/blob/main/docs/TELEMETRY.md')}\n` +
+      `${style.dim('─'.repeat(60))}\n\n`,
+  );
+}
+
 async function main(): Promise<void> {
+  maybePrintTelemetryNotice();
   await checkLicense();
 
   switch (command) {

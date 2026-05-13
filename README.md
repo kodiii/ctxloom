@@ -630,6 +630,19 @@ Token counts use the standard 4 chars/token approximation. Per-repo range (57–
 | `CTXLOOM_GRAMMAR_CDN` | CDN base URL for grammar downloads (air-gapped environments) | Built-in |
 | `CTXLOOM_MAX_PROJECTS` | LRU cache cap for multi-project state (v1.1.0+) | `5` |
 | `CTXLOOM_DISABLE_MULTIPROJECT` | Set to `1` to revert to v1.0.31 single-project mode (v1.1.0+) | (unset) |
+| `CTXLOOM_NO_TELEMETRY` | Set to `1` to disable anonymous telemetry entirely (v1.2.0+) | (unset) |
+| `CTXLOOM_TELEMETRY_LEVEL` | `all` / `error` / `off` — granular telemetry scope (v1.2.0+) | `all` |
+| `DO_NOT_TRACK` | Universal cross-tool opt-out — equivalent to `CTXLOOM_NO_TELEMETRY=1` | (unset) |
+
+---
+
+## Telemetry
+
+ctxloom collects **anonymous, opt-out telemetry** to understand which features are used and to catch crashes. **No file contents, paths, project names, or aliases are ever transmitted.** Project identifiers are SHA-256 hashes of the absolute path. The `distinct_id` is a random UUID at `~/.ctxloom/distinct_id`.
+
+Disable with `CTXLOOM_NO_TELEMETRY=1` or the cross-tool `DO_NOT_TRACK=1`. For a granular middle ground (crash reports yes, usage analytics no) use `CTXLOOM_TELEMETRY_LEVEL=error`.
+
+The complete list of events, properties, what is *never* collected, and how project paths are anonymized is documented in **[docs/TELEMETRY.md](docs/TELEMETRY.md)**.
 
 ---
 
