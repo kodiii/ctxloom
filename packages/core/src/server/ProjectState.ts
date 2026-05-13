@@ -17,6 +17,8 @@ import { GitOverlayStore } from '../git/GitOverlayStore.js';
 import { RuleManager } from '../tools/ruleManager.js';
 import { FileWatcher } from '../watcher/FileWatcher.js';
 import { PathValidator } from '../security/PathValidator.js';
+import { captureError } from '../license/telemetry.js';
+import { hashProjectRoot } from './projectId.js';
 
 export interface ProjectState {
   /** Canonical absolute path. Key in ProjectStateManager.map. */
@@ -83,8 +85,16 @@ export function createProjectState(projectRoot: string, opts: { pinned?: boolean
 export async function ensureVectorsInitialized(state: ProjectState): Promise<void> {
   if (state.vectorsInitialized) return;
   if (!state.storePromise) return;
-  await state.storePromise;
-  state.vectorsInitialized = true;
+  try {
+    await state.storePromise;
+    state.vectorsInitialized = true;
+  } catch (err) {
+    captureError(err, {
+      project_id: hashProjectRoot(state.projectRoot),
+      phase: 'vector_init',
+    });
+    throw err;
+  }
 }
 
 /**
