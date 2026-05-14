@@ -17,8 +17,12 @@ COPY apps/pr-bot/ apps/pr-bot/
 # we don't need to ship them in the image. `--ignore-scripts` skips
 # the root `postinstall` (which calls dist/setup/postinstall.js — a
 # file only present after the root CLI build).
-RUN npm ci --workspaces=false --include-workspace-root --ignore-scripts \
- && npm ci -w @ctxloom/pr-bot --ignore-scripts
+#
+# We need to install both the workspace's direct deps AND the root
+# package's deps (workspace resolution requires the lockfile to be
+# materialized at the root). `--include-workspace-root -w @ctxloom/pr-bot`
+# does both in a single pass.
+RUN npm ci --ignore-scripts --include-workspace-root -w @ctxloom/pr-bot
 
 # tsup-bundle the pr-bot entrypoint. @ctxloom/core is inlined; the
 # heavy native deps stay external and are resolved from node_modules
@@ -35,9 +39,11 @@ ENV NODE_ENV=production
 # The Action surface: bundled entrypoint + the slim runtime deps tsup
 # marked external (octokit, yaml, zod, graphology, simple-git). Heavy
 # native modules are NOT copied — they aren't referenced by the bundle.
+# npm hoists workspace deps to /app/node_modules, so we copy from
+# there rather than from apps/pr-bot/node_modules.
 COPY --from=builder /app/apps/pr-bot/dist/ ./dist/
 COPY --from=builder /app/apps/pr-bot/package.json ./package.json
-COPY --from=builder /app/apps/pr-bot/node_modules/ ./node_modules/
+COPY --from=builder /app/node_modules/ ./node_modules/
 
 # GitHub injects the event payload, workspace path, and token at run
 # time. The entrypoint reads them via env and posts comments via the
