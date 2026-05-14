@@ -1,7 +1,11 @@
 import * as vscode from 'vscode';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 import type { Tools } from '../client/tools.js';
 import type { Logger } from '../shared/logger.js';
 import type { LicenseGate } from '../license/LicenseGate.js';
+
+const execFileAsync = promisify(execFile);
 
 type LicenseOps = {
   startTrial: (email: string) => Promise<{ checkoutUrl: string }>;
@@ -23,6 +27,8 @@ export interface CommandDeps {
   triggerCliInstall: () => void;          // Re-runs startServer() — invokes CliInstaller if needed
   resetCliFailureCount: () => void;
   restartServer: () => Promise<void>;
+  /** Returns the absolute path to the resolved ctxloom CLI binary. */
+  resolveCliBinary: () => string;
 }
 
 export function registerCommands(context: vscode.ExtensionContext, deps: CommandDeps): void {
@@ -104,6 +110,47 @@ export function registerCommands(context: vscode.ExtensionContext, deps: Command
         `ctxloom CLI install path: ${root}/ctxloom-cli/${cliVersion}/`,
         'Open',
       ).then(choice => { if (choice === 'Open') { vscode.env.openExternal(vscode.Uri.file(root)); } });
+    }),
+
+    // Shells out to `ctxloom install-pr-bot` in the active workspace
+    // folder. The CLI does the heavy lifting (git-repo detection,
+    // default-branch resolution, --force semantics). We surface the
+    // result via a VS Code notification so users don't need to dig
+    // through a terminal to see what happened.
+    vscode.commands.registerCommand('ctxloom.installPrBot', async () => {
+      const folder = vscode.workspace.workspaceFolders?.[0];
+      if (!folder) {
+        vscode.window.showErrorMessage(
+          'ctxloom: install-pr-bot requires an open workspace folder.',
+        );
+        return;
+      }
+      const cliPath = deps.resolveCliBinary();
+      try {
+        const { stdout } = await execFileAsync(cliPath, ['install-pr-bot'], {
+          cwd: folder.uri.fsPath,
+        });
+        deps.logger.info(`install-pr-bot output:\n${stdout}`);
+        const action = await vscode.window.showInformationMessage(
+          'ctxloom: PR-bot workflow installed. Commit and push to enable it on the next PR.',
+          'Open workflow',
+          'Show output',
+        );
+        if (action === 'Open workflow') {
+          const uri = vscode.Uri.joinPath(folder.uri, '.github', 'workflows', 'ctxloom-review.yml');
+          await vscode.commands.executeCommand('vscode.open', uri);
+        } else if (action === 'Show output') {
+          // The logger writes to the ctxloom output channel; this is
+          // the same affordance the "Show Output" Settings button uses.
+          deps.logger.info('(See the ctxloom output channel for the full install-pr-bot stdout.)');
+        }
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        deps.logger.error(`install-pr-bot failed: ${msg}`);
+        vscode.window.showErrorMessage(
+          `ctxloom: install-pr-bot failed — ${msg.split('\n')[0]}`,
+        );
+      }
     }),
   );
 }

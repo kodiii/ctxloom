@@ -16,6 +16,7 @@ interface PanelState {
   license: { kind: string; tier?: string; daysLeft?: number; expiresAt?: string };
   settings: Record<string, unknown>;
   banner?: { kind: 'info' | 'warn' | 'error'; text: string };
+  telemetryDisabledByEnv?: { variable: 'CTXLOOM_NO_TELEMETRY' | 'DO_NOT_TRACK' };
 }
 
 let state: PanelState | null = null;
@@ -77,8 +78,7 @@ function render(): void {
     </section>
     <section class="section${disabled}" data-section="telemetry">
       <h2>Telemetry</h2>
-      ${renderToggle('Send anonymous usage data', 'telemetry.enabled', s.settings)}
-      <div class="hint">Off by default. Never sends code or file paths.</div>
+      ${renderTelemetrySection(s)}
     </section>
     <section class="section${disabled}" data-section="advanced">
       <h2>Advanced</h2>
@@ -138,6 +138,54 @@ function renderText(label: string, key: string, settings: Record<string, unknown
   return `<div class="row"><label>${escapeHtml(label)}</label><input class="input" type="text" data-text="${key}" value="${escapeHtml(display)}" placeholder="${escapeHtml(placeholder)}" /></div>`;
 }
 
+function renderSelect(label: string, key: string, options: Array<{ value: string; label: string }>, settings: Record<string, unknown>): string {
+  const current = String(settings[key] ?? '');
+  const opts = options
+    .map(o => `<option value="${escapeHtml(o.value)}"${o.value === current ? ' selected' : ''}>${escapeHtml(o.label)}</option>`)
+    .join('');
+  return `<div class="row"><label>${escapeHtml(label)}</label><select class="input" data-select="${key}">${opts}</select></div>`;
+}
+
+const TELEMETRY_DOCS_URL = 'https://github.com/kodiii/ctxloom/blob/main/docs/TELEMETRY.md';
+
+function renderTelemetrySection(s: PanelState): string {
+  if (s.telemetryDisabledByEnv) {
+    return `
+      <div class="hint" style="margin-bottom:8px;">
+        <strong>Disabled by environment</strong> — the
+        <code>${escapeHtml(s.telemetryDisabledByEnv.variable)}</code>
+        env var is set on this host, so telemetry is force-off. The
+        settings below have no effect until the env var is cleared.
+      </div>
+      ${renderToggle('Send anonymous usage data', 'telemetry.enabled', s.settings)}
+      ${renderSelect('Level', 'telemetry.level', [
+        { value: 'off', label: 'off — nothing sent' },
+        { value: 'error', label: 'error — Sentry crash reports only' },
+        { value: 'all', label: 'all — events + crash reports' },
+      ], s.settings)}
+      <div class="hint">
+        <a data-action="open-external" data-url="${escapeHtml(TELEMETRY_DOCS_URL)}">What does ctxloom collect? →</a>
+      </div>
+    `;
+  }
+  return `
+    ${renderToggle('Send anonymous usage data', 'telemetry.enabled', s.settings)}
+    ${renderSelect('Level', 'telemetry.level', [
+      { value: 'off', label: 'off — nothing sent' },
+      { value: 'error', label: 'error — Sentry crash reports only' },
+      { value: 'all', label: 'all — events + crash reports' },
+    ], s.settings)}
+    <div class="hint">
+      Off by default. Never sends code, file paths, or aliases. The
+      <code>CTXLOOM_NO_TELEMETRY=1</code> and <code>DO_NOT_TRACK=1</code>
+      env vars override this setting and force-disable.
+    </div>
+    <div class="hint">
+      <a data-action="open-external" data-url="${escapeHtml(TELEMETRY_DOCS_URL)}">What does ctxloom collect? →</a>
+    </div>
+  `;
+}
+
 function attachHandlers(): void {
   if (root === null) return;
   root.querySelectorAll<HTMLDivElement>('[data-toggle]').forEach(el => {
@@ -160,6 +208,19 @@ function attachHandlers(): void {
       } else {
         setSetting(key, v === '' ? null : v);
       }
+    });
+  });
+  root.querySelectorAll<HTMLSelectElement>('[data-select]').forEach(el => {
+    el.addEventListener('change', () => setSetting(el.dataset.select!, el.value));
+  });
+  // "What does ctxloom collect? →" link uses the existing openExternal
+  // message rather than a raw <a href> so VS Code can route through its
+  // approval UI.
+  root.querySelectorAll<HTMLAnchorElement>('[data-action="open-external"]').forEach(el => {
+    el.addEventListener('click', (e) => {
+      e.preventDefault();
+      const url = el.dataset.url;
+      if (url) vscode.postMessage({ kind: 'openExternal', url });
     });
   });
   bindAction('start-trial', () => root.querySelector<HTMLDivElement>('.license-trial-form')?.removeAttribute('hidden'));

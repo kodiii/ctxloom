@@ -33,6 +33,19 @@ Works in VS Code, Cursor, Windsurf, VSCodium, and any other VS Code fork.
 
 Open VS Code Settings (Ctrl+,) and search "ctxloom" for all options. Or use the branded Settings panel: `ctxloom: Open Settings`.
 
+## Telemetry & privacy
+
+The extension defers to the ctxloom CLI's telemetry policy: **anonymous, opt-out, no file contents / paths / aliases ever transmitted**. By default the extension's `ctxloom.telemetry.enabled` setting is `false`, so nothing is sent until you turn it on.
+
+When enabled, only crash reports flow to Sentry (`ctxloom.telemetry.level = error`). Set the level to `all` to also include usage analytics — equivalent to the CLI's full telemetry.
+
+Universal opt-outs are honored regardless of this setting:
+
+- `CTXLOOM_NO_TELEMETRY=1`
+- `DO_NOT_TRACK=1` (cross-tool standard)
+
+The complete list of events, properties, what is never collected, and how project paths are anonymized via SHA-256 truncation is in **[docs/TELEMETRY.md](../../docs/TELEMETRY.md)**.
+
 ## Manual test plan (run before each release)
 
 1. **Trial flow:** fresh install → `ctxloom: Start Free Trial` → completes in browser → email arrives → paste key → activate. Status bar shows "trial 7d".

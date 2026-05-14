@@ -33,7 +33,7 @@ const SETTINGS_KEYS = [
   'cliPath', 'serverArgs', 'debounceMs', 'cacheTtlSeconds',
   'features.hover', 'features.diagnostics', 'features.gutterDecorations', 'features.codeLens', 'features.quickFixes', 'features.mcpBridge',
   'gutter.churnThresholdHigh', 'gutter.churnThresholdMedium', 'gutter.showDeadCodeMarker',
-  'dashboardUrl', 'telemetry.enabled',
+  'dashboardUrl', 'telemetry.enabled', 'telemetry.level',
 ] as const;
 
 function readSettings(): Record<string, unknown> {
@@ -46,7 +46,18 @@ function readSettings(): Record<string, unknown> {
 let licenseGate: LicenseGate | null = null;
 
 function computeState(): PanelState {
-  return { license: licenseGate?.current() ?? { kind: 'NO_LICENSE' }, settings: readSettings() };
+  const state: PanelState = {
+    license: licenseGate?.current() ?? { kind: 'NO_LICENSE' },
+    settings: readSettings(),
+  };
+  // Surface universal env-var opt-outs to the Settings UI so the
+  // user understands why their toggles do nothing.
+  if (process.env['CTXLOOM_NO_TELEMETRY'] === '1') {
+    state.telemetryDisabledByEnv = { variable: 'CTXLOOM_NO_TELEMETRY' };
+  } else if (process.env['DO_NOT_TRACK'] === '1') {
+    state.telemetryDisabledByEnv = { variable: 'DO_NOT_TRACK' };
+  }
+  return state;
 }
 
 async function handleMessage(msg: WebviewToHost, licenseOps?: { startTrial: (email: string) => Promise<{ checkoutUrl: string }>; activate: (key: string) => Promise<void>; deactivate: () => Promise<void> }): Promise<void> {
@@ -74,6 +85,37 @@ async function handleMessage(msg: WebviewToHost, licenseOps?: { startTrial: (ema
   if (msg.kind === 'deactivateLicense' && licenseOps) {
     await licenseOps.deactivate(); await licenseGate?.evaluate(); panel?.send({ kind: 'deactivationResult', ok: true } as never); panel?.refresh();
     return;
+  }
+}
+
+const TELEMETRY_NOTICE_KEY = 'ctxloom.telemetryNoticeShown';
+const TELEMETRY_DOCS_URL = 'https://github.com/kodiii/ctxloom/blob/main/docs/TELEMETRY.md';
+
+/**
+ * Show a one-time information message explaining what the extension's
+ * telemetry collects, the first time it's enabled. Skipped when:
+ *   - telemetry is off (or force-off via env)
+ *   - the notice has already been shown on this machine
+ *
+ * Persisted in `globalState`, so re-enabling telemetry later won't
+ * re-prompt (mirrors the CLI's marker-file model).
+ */
+async function maybeShowTelemetryNotice(context: vscode.ExtensionContext): Promise<void> {
+  if (process.env['CTXLOOM_NO_TELEMETRY'] === '1' || process.env['DO_NOT_TRACK'] === '1') return;
+  const cfg = vscode.workspace.getConfiguration('ctxloom');
+  if (!cfg.get<boolean>('telemetry.enabled')) return;
+  if (context.globalState.get<boolean>(TELEMETRY_NOTICE_KEY)) return;
+
+  await context.globalState.update(TELEMETRY_NOTICE_KEY, true);
+  const action = await vscode.window.showInformationMessage(
+    'ctxloom: anonymous telemetry is enabled in this extension. No code, file paths, or aliases are ever transmitted.',
+    'What does ctxloom collect?',
+    'Disable',
+  );
+  if (action === 'What does ctxloom collect?') {
+    await vscode.env.openExternal(vscode.Uri.parse(TELEMETRY_DOCS_URL));
+  } else if (action === 'Disable') {
+    await cfg.update('telemetry.enabled', false, vscode.ConfigurationTarget.Global);
   }
 }
 
@@ -205,6 +247,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   extensionContext = context;
   logger = createOutputLogger();
   context.subscriptions.push({ dispose: () => logger?.dispose() });
+
+  // One-time telemetry notice. Fires the first time the user enables
+  // telemetry (or activates the extension with telemetry already on
+  // via settings sync), and never again. Mirrors what the CLI does on
+  // its first run; scaled to a non-blocking VS Code information
+  // message so it doesn't disrupt the editor.
+  void maybeShowTelemetryNotice(context);
 
   // Load license module dynamically (ESM-only package). Gracefully degrade if
   // the module cannot be loaded (e.g., in headless test environments).
@@ -393,6 +442,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     triggerCliInstall: () => { void startServer(context); },
     resetCliFailureCount: () => { cliInstaller?.resetFailureCount(); },
     restartServer: () => restartServer(context),
+    resolveCliBinary: () => {
+      const override = vscode.workspace.getConfiguration('ctxloom').get<string | null>('cliPath') ?? null;
+      return resolveCliPath({
+        globalStorageRoot: context.globalStorageUri.fsPath,
+        cliVersion: manifestCliVersion(),
+        override,
+      }).path;
+    },
   });
 
   // Auto-open settings on first run with no license
