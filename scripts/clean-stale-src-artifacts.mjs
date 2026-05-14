@@ -18,17 +18,59 @@
  * Cross-platform: pure Node, no `find`. Skips dotfiles (.git etc.) and
  * leaves anything outside src/ alone.
  */
-import { readdirSync, statSync, rmSync } from "node:fs";
+import { readdirSync, statSync, rmSync, existsSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const STALE_SUFFIXES = [".js", ".js.map", ".d.ts", ".d.ts.map"];
+
+// Files that legitimately live as .js inside otherwise-TypeScript trees
+// (Tailwind/PostCSS configs, etc.). Don't sweep these — they're build
+// inputs, not stale artifacts.
+const ALLOWLIST = new Set([
+  "tailwind.config.js",
+  "postcss.config.js",
+  "vite.config.js",
+  "vitest.config.js",
+]);
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const srcDir = path.resolve(__dirname, "..", "src");
+const repoRoot = path.resolve(__dirname, "..");
+
+// Every directory in the monorepo that should be TypeScript-only.
+// Root, plus each workspace package's src/. Without this, stale
+// .js files in packages/core/src/ get picked up by tsup-bundling
+// consumers (apps/pr-bot, etc.) — they shadow the .ts source and
+// resolve to pre-refactor module shapes.
+function collectSrcDirs() {
+  const dirs = [];
+  const candidates = [
+    path.join(repoRoot, "src"),
+  ];
+
+  // Walk packages/* and apps/* looking for src/ subdirs.
+  for (const groupDir of ["packages", "apps"]) {
+    const groupPath = path.join(repoRoot, groupDir);
+    if (!existsSync(groupPath)) continue;
+    for (const entry of readdirSync(groupPath)) {
+      if (entry.startsWith(".")) continue;
+      candidates.push(path.join(groupPath, entry, "src"));
+      // apps/dashboard ships TypeScript in server/ and client/ rather
+      // than src/, so include those too.
+      candidates.push(path.join(groupPath, entry, "server"));
+      candidates.push(path.join(groupPath, entry, "client"));
+    }
+  }
+
+  for (const dir of candidates) {
+    if (existsSync(dir)) dirs.push(dir);
+  }
+  return dirs;
+}
 
 let removed = 0;
 
 function isStale(filename) {
+  if (ALLOWLIST.has(filename)) return false;
   return STALE_SUFFIXES.some((suf) => filename.endsWith(suf));
 }
 
@@ -57,8 +99,10 @@ function walk(dir) {
   }
 }
 
-walk(srcDir);
+for (const dir of collectSrcDirs()) {
+  walk(dir);
+}
 
 if (removed > 0) {
-  console.log(`[clean-stale-src] removed ${removed} stale build artifact(s) from src/`);
+  console.log(`[clean-stale-src] removed ${removed} stale build artifact(s)`);
 }

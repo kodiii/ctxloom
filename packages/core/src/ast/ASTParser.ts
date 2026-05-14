@@ -12,13 +12,23 @@
  *   - import_statement (newer tree-sitter-typescript)
  *   - import_declaration (older tree-sitter-typescript)
  */
-import * as TreeSitter from 'web-tree-sitter';
+// Lazy: web-tree-sitter ships native bindings + a WASM loader. Consumers
+// that don't parse code (e.g. apps/pr-bot reading a precomputed graph)
+// shouldn't pay the load cost. We import types eagerly (erased at
+// compile time) and the runtime module on first init().
+import type * as TreeSitter from 'web-tree-sitter';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
 import { GrammarLoader } from '../grammars/GrammarLoader.js';
 import { extractNotebookPythonSource } from '../utils/notebookExtractor.js';
+
+let _ts: typeof TreeSitter | null = null;
+async function loadTreeSitter(): Promise<typeof TreeSitter> {
+  if (_ts === null) _ts = await import('web-tree-sitter');
+  return _ts;
+}
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -112,7 +122,9 @@ export class ASTParser {
   private getParser(language: TreeSitter.Language): TreeSitter.Parser {
     let parser = this.parserCache.get(language);
     if (parser) return parser;
-    parser = new TreeSitter.Parser();
+    // `init()` always runs before any user code reaches getParser, so the
+    // module is loaded by here. Non-null assertion is safe.
+    parser = new _ts!.Parser();
     parser.setLanguage(language);
     this.parserCache.set(language, parser);
     return parser;
@@ -121,7 +133,8 @@ export class ASTParser {
   private grammarLoader = new GrammarLoader();
 
   async init(): Promise<void> {
-    await TreeSitter.Parser.init({
+    const TS = await loadTreeSitter();
+    await TS.Parser.init({
       locateFile: () => path.join(WASM_DIR, 'tree-sitter.wasm'),
     });
 
@@ -148,7 +161,7 @@ export class ASTParser {
       throw new Error('Could not locate tree-sitter-typescript.wasm grammar file');
     }
 
-    this.tsLang = await TreeSitter.Language.load(grammarPath);
+    this.tsLang = await _ts!.Language.load(grammarPath);
   }
 
   /**
@@ -158,7 +171,7 @@ export class ASTParser {
     if (this.pyLang) return;
     try {
       const wasmPath = await this.grammarLoader.ensureGrammar('python');
-      this.pyLang = await TreeSitter.Language.load(wasmPath);
+      this.pyLang = await _ts!.Language.load(wasmPath);
     } catch (err) {
       // Python grammar unavailable — log warning, skip Python files
       const { logger } = await import('../utils/logger.js');
@@ -173,7 +186,7 @@ export class ASTParser {
     if (this.goLang) return;
     try {
       const wasmPath = await this.grammarLoader.ensureGrammar('go');
-      this.goLang = await TreeSitter.Language.load(wasmPath);
+      this.goLang = await _ts!.Language.load(wasmPath);
     } catch (err) {
       const { logger } = await import('../utils/logger.js');
       logger.warn('Go grammar unavailable', { detail: err instanceof Error ? err.message : String(err) });
@@ -187,7 +200,7 @@ export class ASTParser {
     if (this.rustLang) return;
     try {
       const wasmPath = await this.grammarLoader.ensureGrammar('rust');
-      this.rustLang = await TreeSitter.Language.load(wasmPath);
+      this.rustLang = await _ts!.Language.load(wasmPath);
     } catch (err) {
       const { logger } = await import('../utils/logger.js');
       logger.warn('Rust grammar unavailable', { detail: err instanceof Error ? err.message : String(err) });
@@ -201,7 +214,7 @@ export class ASTParser {
     if (this.javaLang) return;
     try {
       const wasmPath = await this.grammarLoader.ensureGrammar('java');
-      this.javaLang = await TreeSitter.Language.load(wasmPath);
+      this.javaLang = await _ts!.Language.load(wasmPath);
     } catch (err) {
       const { logger } = await import('../utils/logger.js');
       logger.warn('Java grammar unavailable', { detail: err instanceof Error ? err.message : String(err) });
@@ -212,7 +225,7 @@ export class ASTParser {
     if (this.csLang) return;
     try {
       const wasmPath = await this.grammarLoader.ensureGrammar('csharp');
-      this.csLang = await TreeSitter.Language.load(wasmPath);
+      this.csLang = await _ts!.Language.load(wasmPath);
     } catch (err) {
       const { logger } = await import('../utils/logger.js');
       logger.warn('C# grammar unavailable', { detail: err instanceof Error ? err.message : String(err) });
@@ -223,7 +236,7 @@ export class ASTParser {
     if (this.rubyLang) return;
     try {
       const wasmPath = await this.grammarLoader.ensureGrammar('ruby');
-      this.rubyLang = await TreeSitter.Language.load(wasmPath);
+      this.rubyLang = await _ts!.Language.load(wasmPath);
     } catch (err) {
       const { logger } = await import('../utils/logger.js');
       logger.warn('Ruby grammar unavailable', { detail: err instanceof Error ? err.message : String(err) });
@@ -234,7 +247,7 @@ export class ASTParser {
     if (this.kotlinLang) return;
     try {
       const wasmPath = await this.grammarLoader.ensureGrammar('kotlin');
-      this.kotlinLang = await TreeSitter.Language.load(wasmPath);
+      this.kotlinLang = await _ts!.Language.load(wasmPath);
     } catch (err) {
       const { logger } = await import('../utils/logger.js');
       logger.warn('Kotlin grammar unavailable', { detail: err instanceof Error ? err.message : String(err) });
@@ -245,7 +258,7 @@ export class ASTParser {
     if (this.swiftLang) return;
     try {
       const wasmPath = await this.grammarLoader.ensureGrammar('swift');
-      this.swiftLang = await TreeSitter.Language.load(wasmPath);
+      this.swiftLang = await _ts!.Language.load(wasmPath);
     } catch (err) {
       const { logger } = await import('../utils/logger.js');
       logger.warn('Swift grammar unavailable', { detail: err instanceof Error ? err.message : String(err) });
@@ -256,7 +269,7 @@ export class ASTParser {
     if (this.phpLang) return;
     try {
       const wasmPath = await this.grammarLoader.ensureGrammar('php');
-      this.phpLang = await TreeSitter.Language.load(wasmPath);
+      this.phpLang = await _ts!.Language.load(wasmPath);
     } catch (err) {
       const { logger } = await import('../utils/logger.js');
       logger.warn('PHP grammar unavailable', { detail: err instanceof Error ? err.message : String(err) });
@@ -267,7 +280,7 @@ export class ASTParser {
     if (this.dartLang) return;
     try {
       const wasmPath = await this.grammarLoader.ensureGrammar('dart');
-      this.dartLang = await TreeSitter.Language.load(wasmPath);
+      this.dartLang = await _ts!.Language.load(wasmPath);
     } catch (err) {
       const { logger } = await import('../utils/logger.js');
       logger.warn('Dart grammar unavailable', { detail: err instanceof Error ? err.message : String(err) });
