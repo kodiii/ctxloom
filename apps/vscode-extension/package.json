@@ -2,7 +2,7 @@
   "name": "ctxloom-vscode",
   "displayName": "ctxloom — Code Context for Code Review",
   "description": "AST + git + graph context, in your editor. Hover risk, blast radius, dead code, MCP bridge for AI assistants.",
-  "version": "1.2.0",
+  "version": "1.3.0",
   "ctxloomCliVersion": "1.0.5",
   "private": true,
   "publisher": "ctxloom",
@@ -88,6 +88,10 @@
       {
         "command": "ctxloom.installPrBot",
         "title": "ctxloom: Install PR-bot workflow"
+      },
+      {
+        "command": "ctxloom.previewPrReview",
+        "title": "ctxloom: Preview PR review"
       }
     ],
     "viewsContainers": {
