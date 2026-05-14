@@ -1,0 +1,82 @@
+name: pr-bot publish image
+
+# Builds the apps/pr-bot Docker image with the full monorepo as build
+# context (so `COPY packages/core/` etc. resolve), then pushes to GHCR
+# tagged with the release version + the floating major tag.
+#
+# Why this workflow exists: GitHub Actions' built-in `image: Dockerfile`
+# resolution for Docker container actions uses the action's directory
+# (apps/pr-bot/) as the Docker build context. Our Dockerfile reaches
+# across to packages/core/ and the workspace root, which only resolve
+# from the repo root. Pre-building here, pushing to GHCR, and pointing
+# action.yml at `docker://ghcr.io/...` sidesteps the limitation.
+#
+# Triggers:
+#   - push of any `v*` tag (release pipeline)
+#   - workflow_dispatch with a `tag` input (manual bootstrap / re-issue)
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to build the image for (e.g. v1.2.2). Image is also tagged v1 and latest.'
+        required: true
+        type: string
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository_owner }}/ctxloom-pr-bot
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write     # required to push to ghcr.io
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+
+      - name: Extract version
+        id: version
+        run: |
+          raw="${{ inputs.tag || github.ref_name }}"
+          version="${raw#v}"
+          # Major tag for the floating ref (e.g. `v1`). If the input is a
+          # bare `v1` we leave the floating tag equal to the version.
+          major=$(echo "$version" | cut -d. -f1)
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "major=v$major" >> "$GITHUB_OUTPUT"
+          echo "Build: $version (floating major: v$major)"
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build & push pr-bot image
+        uses: docker/build-push-action@v6
+        with:
+          # Build context is the monorepo root so the Dockerfile's
+          # `COPY packages/core/ ...` and `COPY apps/pr-bot/ ...` lines
+          # resolve correctly.
+          context: .
+          file: apps/pr-bot/Dockerfile
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.version.outputs.version }}
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.version.outputs.major }}
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

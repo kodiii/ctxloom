@@ -18,13 +18,17 @@ inputs:
     required: false
     default: ${{ github.token }}
 
-# Docker action: GitHub pulls the image once per runner and caches it.
-# Switched from a JS action because @ctxloom/core's transitive native
-# deps (@lancedb/lancedb, onnxruntime, tree-sitter) can't be safely
-# bundled into a single .js file. A container is the right surface here
-# even though cold pulls cost a few extra seconds.
+# Docker action backed by a pre-built image on GHCR. Built and pushed
+# by `.github/workflows/pr-bot-publish-image.yml` on every `v*` tag.
+#
+# Why pre-built (not `image: Dockerfile`): GitHub's built-in Dockerfile
+# resolution uses the action's directory (apps/pr-bot/) as the Docker
+# build context. Our Dockerfile reaches into ../../packages/core/ for
+# the workspace dep, which only resolves from the repo root. Building
+# in our own workflow with the monorepo as context, pushing to GHCR,
+# and pointing here at `docker://ghcr.io/...` sidesteps the limitation.
 runs:
   using: 'docker'
-  image: 'Dockerfile'
+  image: 'docker://ghcr.io/kodiii/ctxloom-pr-bot:v1'
   env:
     GITHUB_TOKEN: ${{ inputs.github-token }}
