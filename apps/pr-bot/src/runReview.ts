@@ -74,15 +74,47 @@ async function loadRepoConfig(
 }
 
 // ---------------------------------------------------------------------------
-// Helper: list changed file paths from the PR
+// Helper: list changed file paths from the PR + a path→firstChangedLine map
 // ---------------------------------------------------------------------------
+
+interface ChangedFileInfo {
+  filenames: string[];
+  /** Map of filename → first line on the RIGHT side that's in the diff. */
+  firstChangedLine: Map<string, number>;
+}
+
+/**
+ * Extract the first new-side line number from a unified diff patch.
+ *
+ * Patches look like:
+ *
+ *     @@ -135,7 +135,13 @@ some context
+ *      unchanged line
+ *     -old
+ *     +new at line 136
+ *
+ * The `+A` value in the hunk header is the start of the new-side block.
+ * Any line in `[A, A+B-1]` is valid for an inline comment with
+ * `side: 'RIGHT'`. Returning `A` (the first one) is always safe.
+ *
+ * Returns null when the patch has no hunks (binary files, renames with
+ * no content change, etc.) — inline comments should be skipped for
+ * those rather than posted at line 1, which GitHub rejects with 422.
+ */
+function firstAddedLineFromPatch(patch: string | undefined): number | null {
+  if (!patch) return null;
+  const match = /^@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@/m.exec(patch);
+  if (!match) return null;
+  const start = Number.parseInt(match[1] ?? '', 10);
+  return Number.isFinite(start) && start > 0 ? start : null;
+}
 
 async function listChangedFiles(
   octokit: Octokit,
   owner: string,
   repo: string,
   pullNumber: number,
-): Promise<string[]> {
+): Promise<ChangedFileInfo> {
   const response = await (octokit as unknown as {
     pulls: {
       listFiles: (params: {
@@ -90,11 +122,19 @@ async function listChangedFiles(
         repo: string;
         pull_number: number;
         per_page: number;
-      }) => Promise<{ data: Array<{ filename: string }> }>;
+      }) => Promise<{ data: Array<{ filename: string; patch?: string }> }>;
     };
   }).pulls.listFiles({ owner, repo, pull_number: pullNumber, per_page: 100 });
 
-  return response.data.map(f => f.filename);
+  const firstChangedLine = new Map<string, number>();
+  for (const f of response.data) {
+    const line = firstAddedLineFromPatch(f.patch);
+    if (line !== null) firstChangedLine.set(f.filename, line);
+  }
+  return {
+    filenames: response.data.map(f => f.filename),
+    firstChangedLine,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -167,10 +207,12 @@ async function postInlineComments(
   pullNumber: number,
   headSha: string,
   review: Awaited<ReturnType<typeof buildReview>>,
+  firstChangedLine: Map<string, number>,
   maxInline: number,
+  log: ReviewInput['log'],
 ): Promise<void> {
   const comments = review.changedFiles
-    .map(f => renderInline(f, review))
+    .map(f => renderInline(f, review, firstChangedLine.get(f.file)))
     .filter((c): c is NonNullable<typeof c> => c !== null)
     .slice(0, maxInline);
 
@@ -195,6 +237,7 @@ async function postInlineComments(
     event: 'COMMENT',
     comments,
   });
+  log.info?.(`posted ${comments.length} inline comment(s)`);
 }
 
 // ---------------------------------------------------------------------------
@@ -239,7 +282,12 @@ export async function runReview(input: ReviewInput): Promise<void> {
 
   try {
     const config = await loadRepoConfig(octokit, owner, repo);
-    const changedFiles = await listChangedFiles(octokit, owner, repo, prNumber);
+    const { filenames: changedFiles, firstChangedLine } = await listChangedFiles(
+      octokit,
+      owner,
+      repo,
+      prNumber,
+    );
 
     const { graph, overlay, isStub } = await buildLocalGraph(workspace, log);
 
@@ -268,20 +316,49 @@ export async function runReview(input: ReviewInput): Promise<void> {
 
     await upsertSummaryComment(octokit, owner, repo, prNumber, headSha, commentBody);
 
+    // Inline + check_run are best-effort. The summary is the most
+    // valuable output; we don't want one of these throwing to nuke
+    // the whole review (which would also turn the PR check red).
     if (config.inline_comments) {
-      await postInlineComments(
-        octokit,
-        owner,
-        repo,
-        prNumber,
-        headSha,
-        review,
-        config.max_inline_per_pr,
-      );
+      try {
+        await postInlineComments(
+          octokit,
+          owner,
+          repo,
+          prNumber,
+          headSha,
+          review,
+          firstChangedLine,
+          config.max_inline_per_pr,
+          log,
+        );
+      } catch (err) {
+        log.warn('inline comments failed (non-fatal):', err);
+        captureError(err, {
+          component: 'pr-bot',
+          handler: 'pull_request',
+          phase: 'inline_comments',
+          owner,
+          repo,
+          pr_number: prNumber,
+        });
+      }
     }
 
     if (config.check_run) {
-      await publishCheck(octokit, { owner, name: repo }, review);
+      try {
+        await publishCheck(octokit, { owner, name: repo }, review);
+      } catch (err) {
+        log.warn('check run failed (non-fatal):', err);
+        captureError(err, {
+          component: 'pr-bot',
+          handler: 'pull_request',
+          phase: 'check_run',
+          owner,
+          repo,
+          pr_number: prNumber,
+        });
+      }
     }
   } catch (err) {
     captureError(err, {

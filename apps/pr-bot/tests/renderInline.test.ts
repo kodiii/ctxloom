@@ -55,14 +55,14 @@ describe('renderInline', () => {
       hasTestCoverage: true,
       risk: null,
     };
-    const result = renderInline(file, payload);
+    const result = renderInline(file, payload, 100);
     expect(result).toBeNull();
   });
 
   it('returns an InlineComment with correct path, line, side, and body', () => {
     const payload = makePayload();
     const file = payload.changedFiles[0];
-    const result = renderInline(file, payload);
+    const result = renderInline(file, payload, 100);
 
     expect(result).not.toBeNull();
     expect(result?.path).toBe('src/auth.ts');
@@ -75,7 +75,7 @@ describe('renderInline', () => {
   it('body contains the blast radius caller count', () => {
     const payload = makePayload();
     const file = payload.changedFiles[0];
-    const result = renderInline(file, payload);
+    const result = renderInline(file, payload, 100);
 
     // importerCount is 5
     expect(result?.body).toContain('5');
@@ -84,7 +84,7 @@ describe('renderInline', () => {
   it('body contains the inline marker with headSha', () => {
     const payload = makePayload();
     const file = payload.changedFiles[0];
-    const result = renderInline(file, payload);
+    const result = renderInline(file, payload, 100);
 
     expect(result?.body).toContain(`<!-- ctxloom:inline:${PR.headSha} -->`);
   });
@@ -92,7 +92,7 @@ describe('renderInline', () => {
   it('body contains top coupled sibling when coupling data is present', () => {
     const payload = makePayload();
     const file = payload.changedFiles[0];
-    const result = renderInline(file, payload);
+    const result = renderInline(file, payload, 100);
 
     expect(result?.body).toContain('src/user.ts');
   });
@@ -111,7 +111,7 @@ describe('renderInline', () => {
       ],
     });
     const file = payload.changedFiles[0];
-    const result = renderInline(file, payload);
+    const result = renderInline(file, payload, 100);
     expect(result).toBeNull();
   });
 
@@ -129,7 +129,32 @@ describe('renderInline', () => {
       ],
     });
     const file = payload.changedFiles[0];
-    const result = renderInline(file, payload);
+    const result = renderInline(file, payload, 100);
     expect(result).not.toBeNull();
+  });
+
+  // Regression: line=1 was being posted for every file regardless of
+  // what was in the actual PR diff. GitHub's review API rejected the
+  // whole review with 422 when line 1 wasn't in any hunk. The renderer
+  // now refuses to emit an inline when the caller can't supply a valid
+  // line (binary file, rename without content change, etc.).
+  it('returns null when validLine is undefined', () => {
+    const payload = makePayload();
+    const file = payload.changedFiles[0];
+    expect(renderInline(file, payload, undefined)).toBeNull();
+  });
+
+  it('returns null when validLine is 0 or negative', () => {
+    const payload = makePayload();
+    const file = payload.changedFiles[0];
+    expect(renderInline(file, payload, 0)).toBeNull();
+    expect(renderInline(file, payload, -5)).toBeNull();
+  });
+
+  it('uses the caller-supplied line, not a hardcoded 1', () => {
+    const payload = makePayload();
+    const file = payload.changedFiles[0];
+    expect(renderInline(file, payload, 42)?.line).toBe(42);
+    expect(renderInline(file, payload, 999)?.line).toBe(999);
   });
 });

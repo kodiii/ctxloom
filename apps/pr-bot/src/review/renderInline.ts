@@ -21,6 +21,7 @@ function buildCouplingLine(file: ChangedFile): string {
 export function renderInline(
   file: ChangedFile,
   payload: ReviewPayload,
+  validLine: number | undefined,
 ): InlineComment | null {
   // Only emit for files that are in the changed set
   const isChanged = payload.changedFiles.some(f => f.file === file.file);
@@ -28,6 +29,16 @@ export function renderInline(
 
   // Skip files with no interesting data
   if (file.importerCount === 0 && !file.risk) return null;
+
+  // GitHub's review API rejects the whole review (422) if any inline
+  // comment references a line that isn't in the PR's unified diff.
+  // The caller passes us the first line of the file's first diff hunk
+  // (from `pulls.listFiles` → `patch`); if there isn't one — binary
+  // file, rename without content change, etc. — we can't anchor an
+  // inline and must skip.
+  if (typeof validLine !== 'number' || !Number.isFinite(validLine) || validLine < 1) {
+    return null;
+  }
 
   const { headSha } = payload.pr;
   const couplingLine = buildCouplingLine(file);
@@ -39,7 +50,7 @@ export function renderInline(
 
   return {
     path: file.file,
-    line: 1,
+    line: validLine,
     side: 'RIGHT',
     body,
   };
