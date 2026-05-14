@@ -30,6 +30,7 @@ export default defineConfig({
     '@octokit/rest',
     '@octokit/core',
     'yaml',
+    'js-yaml',
     'zod',
     // Heavy / native — must live in node_modules at runtime.
     /^@lancedb\/.*/,

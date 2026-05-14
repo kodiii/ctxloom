@@ -12,9 +12,11 @@ COPY packages/core/ packages/core/
 COPY apps/pr-bot/ apps/pr-bot/
 
 # Install just what pr-bot needs; the dashboard and root CLI are
-# unused at action runtime.
-RUN npm ci --workspaces=false --include-workspace-root \
- && npm ci -w @ctxloom/pr-bot
+# unused at action runtime. `--ignore-scripts` skips the root
+# `postinstall` (which calls dist/setup/postinstall.js — a file that
+# only exists after the root CLI is built, which we don't need to do).
+RUN npm ci --workspaces=false --include-workspace-root --ignore-scripts \
+ && npm ci -w @ctxloom/pr-bot --ignore-scripts
 
 # tsup-bundle the pr-bot entrypoint. @ctxloom/core is inlined; the
 # heavy native deps stay external and are resolved from node_modules
