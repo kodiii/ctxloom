@@ -45,8 +45,25 @@ jobs:
       - name: Install dependencies
         run: npm ci --ignore-scripts
 
-      - name: Build pr-bot
+      - name: Build pr-bot bundle
         run: npm run build -w @ctxloom/pr-bot
 
       - name: Test pr-bot
         run: npm test -w @ctxloom/pr-bot
+
+      - name: Build Docker image (Action runtime)
+        run: docker build -f apps/pr-bot/Dockerfile -t ctxloom-pr-bot-test .
+
+      - name: Smoke-test the Action container
+        run: |
+          # The Action expects $GITHUB_EVENT_PATH and $GITHUB_EVENT_NAME.
+          # Pass a synthetic 'push' event so the entrypoint exits cleanly
+          # at the early-return guard (no pull_request → noop). This
+          # proves the container starts, resolves all native deps, and
+          # the entrypoint is wired correctly.
+          echo '{}' > /tmp/event.json
+          docker run --rm \
+            -e GITHUB_EVENT_NAME=push \
+            -e GITHUB_EVENT_PATH=/tmp/event.json \
+            -v /tmp/event.json:/tmp/event.json:ro \
+            ctxloom-pr-bot-test

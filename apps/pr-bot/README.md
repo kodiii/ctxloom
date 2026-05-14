@@ -1,186 +1,125 @@
-# @ctxloom/pr-bot
+# ctxloom PR review
 
-A GitHub App that integrates ctxloom's code analysis engine directly into your pull request workflow. Every PR gets an automated, risk-scored review before a human ever looks at it.
+A **GitHub Action** that posts a risk-scored summary comment and inline review notes on every pull request. Runs entirely inside your CI — **no hosted service, no LLM calls, no external accounts**, no per-PR cost.
 
-## What it does
+Uses ctxloom's local dependency graph + git overlay to find:
 
-- Posts a **risk-scored summary comment** on every opened or synchronised PR, showing which files carry the highest blast radius and why
-- Leaves **inline review comments** on individual diff hunks that exceed the configured risk threshold, so reviewers know exactly where to focus
-- Suggests **reviewers** based on who has touched the highest-risk modules most recently
-- Responds to **slash commands** in PR comments: `/ctxloom explain`, `/ctxloom ignore`, `/ctxloom refresh`
-- Optionally creates a **Check Run** that blocks merge when the overall PR risk score is above threshold (opt-in via `.ctxloom.yml`)
+- Which files in the diff have the highest blast radius
+- Who has historically owned the high-risk modules (reviewer suggestions)
+- Co-change patterns from git history that imports alone wouldn't surface
 
 ---
 
-## Install
+## Quick start
 
-The pr-bot is currently **self-hosted only** — there is no public GitHub Marketplace listing yet. To run it on your own infrastructure, follow the **Self-host** section below.
+Add this workflow to any repo you want reviewed:
 
-If you register a private GitHub App against your own organization, grant it these permissions:
+```yaml
+# .github/workflows/ctxloom-review.yml
+name: ctxloom review
 
-| Permission       | Level |
-| ---------------- | ----- |
-| Contents         | Read  |
-| Pull requests    | Write |
-| Checks           | Write |
-| Metadata         | Read  |
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
 
-…and subscribe to **Pull request** and **Issue comment** events.
+permissions:
+  contents: read
+  pull-requests: write
+  checks: write
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # needed for git overlay (co-change history)
+
+      - uses: kodiii/ctxloom/apps/pr-bot@v1
+```
+
+That's it. The first run builds the dependency graph for your repo (~10–60s for typical projects), subsequent runs reuse the workflow cache.
 
 ---
 
-## Self-host
+## Cost
 
-### Prerequisites
+| Resource | Who pays | When |
+|---|---|---|
+| GitHub Actions minutes | The repo owner | Per PR (each run takes ~30–90s on `ubuntu-latest`) |
+| Docker image hosting | GitHub (GHCR) | Free, cached per runner |
+| LLM tokens | Nobody | This action does not call any LLM |
+| Cloud server hosting | Nobody | No hosted service exists |
 
-- Node.js 20 or Docker
-- A GitHub App registered under your account or organisation
-
-### Create your GitHub App
-
-Follow the [GitHub docs — Creating a GitHub App](https://docs.github.com/en/apps/creating-github-apps/registering-a-github-app/registering-a-github-app).
-
-Required settings:
-
-- **Webhook URL**: `https://<your-host>/`
-- **Webhook secret**: any strong random string — you will use it as `WEBHOOK_SECRET`
-- **Permissions** (same as above): Contents: Read, Pull requests: Write, Checks: Write, Metadata: Read
-- **Subscribe to events**: Pull request, Issue comment
-
-After creation, generate a private key and note your **App ID**.
-
-### Configure secrets
-
-Three environment variables are required at runtime:
-
-| Variable | Description |
-|---|---|
-| `APP_ID` | Numeric App ID from the GitHub App settings page |
-| `PRIVATE_KEY` | PEM private key. Must start with `-----BEGIN [RSA ]PRIVATE KEY-----`. |
-| `WEBHOOK_SECRET` | Webhook secret configured in the GitHub App |
-
-For deployments where multi-line PEM is awkward (some CI systems, GitHub Actions secrets), base64-encode the key and **also** set `PRIVATE_KEY_BASE64=1`:
-
-```bash
-# Encode once
-base64 -w0 < github-app.pem    # macOS: base64 -i github-app.pem
-
-# Then deploy with both
-PRIVATE_KEY="<base64-blob>" PRIVATE_KEY_BASE64=1
-```
-
-The bot rejects ambiguous input loudly — see [`src/auth/installation.ts`](src/auth/installation.ts) for the exact rules.
-
-Optional:
-
-| Variable | Description |
-|---|---|
-| `CTXLOOM_CACHE_DIR` | Override the default cache path (`/var/lib/ctxloom-bot`) |
-
-### Run with Docker
-
-Build the image from the **monorepo root** (the Dockerfile relies on the full workspace):
-
-```bash
-# From the repository root
-docker build -f apps/pr-bot/Dockerfile -t ctxloom-pr-bot .
-```
-
-Run with your secrets passed as environment variables:
-
-```bash
-docker run -d \
-  --name ctxloom-pr-bot \
-  -p 3000:3000 \
-  -v ctxloom_data:/var/lib/ctxloom-bot \
-  -e APP_ID="<your-app-id>" \
-  -e PRIVATE_KEY="<pem-contents-or-base64>" \
-  -e WEBHOOK_SECRET="<your-webhook-secret>" \
-  ctxloom-pr-bot
-```
-
-### Deploy to Fly.io
-
-```bash
-# 1. Launch the app (skip initial deploy)
-fly launch --no-deploy --config apps/pr-bot/fly.toml
-
-# 2. Set required secrets
-fly secrets set \
-  APP_ID="<your-app-id>" \
-  PRIVATE_KEY="<pem-contents-or-base64>" \
-  WEBHOOK_SECRET="<your-webhook-secret>" \
-  --config apps/pr-bot/fly.toml
-
-# 3. Deploy
-fly deploy --config apps/pr-bot/fly.toml
-```
-
-A 10 GB persistent volume (`ctxloom_data`) is created automatically on first deploy and mounted at `/var/lib/ctxloom-bot`.
+Free for public repos. For private repos, runs against the standard 2,000 free Actions minutes/month included with GitHub Free / Pro.
 
 ---
 
 ## Configure (`.ctxloom.yml`)
 
-Place a `.ctxloom.yml` file in the root of any repository where the bot is installed to override defaults. A JSON Schema is published at [`apps/pr-bot/schema/ctxloom.schema.json`](schema/ctxloom.schema.json) — editors with YAML language services (VS Code's YAML extension, JetBrains IDEs) will autocomplete keys and flag typos when you reference it:
+Optional. Place at your repo root to override defaults:
 
 ```yaml
 # yaml-language-server: $schema=https://raw.githubusercontent.com/kodiii/ctxloom/main/apps/pr-bot/schema/ctxloom.schema.json
+
+risk_threshold: 0.7            # 0-1, comments fire above this
+inline_comments: true          # post per-file inline notes
+suggested_reviewers: true      # nominate reviewers from git history
+check_run: false               # set true to block merge on high risk
+excluded_paths: []             # globs the bot ignores
+max_inline_per_pr: 10          # cap on inline comments (avoids spam)
 ```
 
-
-```yaml
-# .ctxloom.yml — ctxloom pr-bot configuration
-# All fields are optional. Shown values are defaults.
-
-# Minimum risk score (0–1) that triggers inline comments or blocks the check run
-risk_threshold: 0.7
-
-# Post inline review comments on high-risk diff hunks
-inline_comments: true
-
-# Suggest reviewers based on ownership of high-risk modules
-suggested_reviewers: true
-
-# Create a GitHub Check Run (can block merge when risk_threshold is exceeded)
-check_run: false
-
-# Glob patterns for files the bot should never comment on
-excluded_paths: []
-# Example:
-# excluded_paths:
-#   - "**/*.lock"
-#   - "docs/**"
-
-# Maximum number of inline comments to post per PR (avoids comment spam)
-max_inline_per_pr: 10
-```
+The published [`schema/ctxloom.schema.json`](schema/ctxloom.schema.json) gives editor autocomplete in VS Code's YAML extension and JetBrains IDEs.
 
 ---
 
-## Security and privacy
+## Privacy
 
-- **No source code leaves the bot host.** All analysis is performed locally by the ctxloom engine. Only file paths and risk scores are included in GitHub API calls.
-- **LLM-powered explain** (`/ctxloom explain`) is opt-in and not available until v2. No LLM calls are made in v1.
-- **`WEBHOOK_SECRET` is required.** The bot rejects any webhook payload whose signature does not match. Do not deploy without it.
-- **Tokens are never logged.** The GitHub installation token used to post comments is redacted from all log output.
+- **Your code never leaves your runner.** Analysis happens in the same job that checked out the code.
+- The Action calls the GitHub API exclusively — to post comments, read the diff, and (optionally) post a check run. No other network calls except:
+  - Optional Sentry crash reports, **only if** you set `SENTRY_DSN` in your workflow's `env:` (off by default).
+  - The Docker image is pulled from GHCR on the first run per runner.
+- No telemetry of any kind is collected.
 
 ---
 
-## Troubleshooting
+## What the bot posts
 
-**Bot fails to start with "missing required environment variable"**
+A typical summary comment looks like:
 
-`APP_ID`, `PRIVATE_KEY`, and `WEBHOOK_SECRET` must all be present at startup. Verify they are set in your container environment or Fly secrets (`fly secrets list`).
+```
+🧵 ctxloom review · HIGH risk
 
-**Webhook deliveries show a non-2xx response in GitHub**
+3 files changed, max risk score 0.81.
 
-Open your GitHub App settings, go to **Advanced → Recent Deliveries**, and inspect the response body. A 400 usually means a signature mismatch — double-check that `WEBHOOK_SECRET` matches the value configured in the app. A 500 with a stack trace means an unhandled error; check the bot's logs.
+| File | Risk | Impact |
+|---|---|---|
+| src/auth/session.ts | critical | 14 dependents |
+| src/db/migrations/047_add_role.sql | high | 8 dependents |
+| README.md | low | 0 dependents |
 
-**PR opened but no summary comment posted**
+Suggested reviewers: @alice (touched src/auth/* in 4 of last 10 PRs)
+```
 
-Confirm the bot installation has **Pull requests: Write** permission on the target repository. If the permission was added after installation, ask a repo admin to re-approve the app.
+Inline comments fire only on files with risk ≥ `risk_threshold`. They reference specific hunks rather than whole files.
 
-**Permission denied writing to `/var/lib/ctxloom-bot`**
+---
 
-The cache directory must be writable by the Node process. When running with Docker, ensure the volume is mounted with the correct ownership. On Fly.io this is handled automatically. For custom deployments, set `CTXLOOM_CACHE_DIR` to a path the process owns.
+## Self-host the bot as a long-running service (advanced)
+
+Not supported in v1. The Action is the only deployment surface — it's strictly better for distribution and cost, and there's no hosted version to maintain.
+
+If you have a use case that genuinely requires a long-running webhook server (e.g. you want the bot to respond to issue comments outside of PR events), please open an issue describing the workflow.
+
+---
+
+## Development
+
+```bash
+# From the monorepo root
+npm test -w @ctxloom/pr-bot          # 52 tests, all unit
+npm run build -w @ctxloom/pr-bot     # tsup bundle to dist/index.js
+```
+
+The Docker image is built and tested in CI ([`pr-bot-ci.yml`](../../.github/workflows/pr-bot-ci.yml)). Releases bake the version of `ctxloom-pro` from the root `package.json` into the bundle as `__CTXLOOM_VERSION__`, so Sentry events from the Action are correlated with the corresponding release tag.

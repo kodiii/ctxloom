@@ -1,14 +1,46 @@
-import type { Context } from 'probot';
+/**
+ * Pure review-runner — no Probot, no webhook context, no global state.
+ *
+ * Takes an Octokit instance plus PR coordinates, runs the ctxloom
+ * analysis, and posts the resulting summary comment / inline comments /
+ * check run. Designed so the Action entrypoint (src/action.ts) and any
+ * future tests can drive it with a mock Octokit.
+ *
+ * The Probot-flavored `handlers/pullRequest.ts` predecessor lived here
+ * historically; this file is its successor with the framework wrapper
+ * stripped off.
+ */
 import { parse as parseYaml } from 'yaml';
-import { DependencyGraph, captureError } from '@ctxloom/core';
-import { buildReview } from '../review/buildReview.js';
-import { suggestReviewers } from '../review/reviewerSuggest.js';
-import { findBotComment, buildCommentBody } from '../review/idempotency.js';
-import { renderInline } from '../review/renderInline.js';
-import { publishCheck } from '../checks/publishCheck.js';
-import { parseRepoConfig } from '../config.js';
-import type { RepoConfig } from '../config.js';
+import {
+  DependencyGraph,
+  captureError,
+  GitOverlayStore,
+} from '@ctxloom/core';
 import type { Octokit } from '@octokit/core';
+
+import { buildReview } from './review/buildReview.js';
+import { suggestReviewers } from './review/reviewerSuggest.js';
+import { findBotComment, buildCommentBody } from './review/idempotency.js';
+import { renderInline } from './review/renderInline.js';
+import { publishCheck } from './checks/publishCheck.js';
+import { parseRepoConfig, type RepoConfig } from './config.js';
+
+export interface ReviewInput {
+  octokit: Octokit;
+  owner: string;
+  repo: string;
+  prNumber: number;
+  headSha: string;
+  baseSha: string;
+  /** Absolute path to the checked-out working tree (Actions: `$GITHUB_WORKSPACE`). */
+  workspace?: string;
+  /** Console-compatible logger. Action runner passes a thin wrapper around process.stdout. */
+  log: {
+    info: (...args: unknown[]) => void;
+    warn: (...args: unknown[]) => void;
+    error: (...args: unknown[]) => void;
+  };
+}
 
 // ---------------------------------------------------------------------------
 // Config loader
@@ -28,11 +60,7 @@ async function loadRepoConfig(
           path: string;
         }) => Promise<{ data: { type: string; content: string } }>;
       };
-    }).repos.getContent({
-      owner,
-      repo,
-      path: '.ctxloom.yml',
-    });
+    }).repos.getContent({ owner, repo, path: '.ctxloom.yml' });
 
     const { data } = response;
     if (data.type !== 'file') return parseRepoConfig(undefined);
@@ -64,12 +92,7 @@ async function listChangedFiles(
         per_page: number;
       }) => Promise<{ data: Array<{ filename: string }> }>;
     };
-  }).pulls.listFiles({
-    owner,
-    repo,
-    pull_number: pullNumber,
-    per_page: 100,
-  });
+  }).pulls.listFiles({ owner, repo, pull_number: pullNumber, per_page: 100 });
 
   return response.data.map(f => f.filename);
 }
@@ -161,12 +184,7 @@ async function postInlineComments(
         pull_number: number;
         commit_id: string;
         event: string;
-        comments: Array<{
-          path: string;
-          line: number;
-          side: string;
-          body: string;
-        }>;
+        comments: Array<{ path: string; line: number; side: string; body: string }>;
       }) => Promise<unknown>;
     };
   }).pulls.createReview({
@@ -180,41 +198,56 @@ async function postInlineComments(
 }
 
 // ---------------------------------------------------------------------------
-// Main handler
+// Build a real graph + overlay against the checked-out workspace.
+// In Actions this is `$GITHUB_WORKSPACE`. When unset (or empty) we fall
+// back to the previous Probot behavior — an empty graph stub with the
+// summary comment annotated to explain why scores are file-count only.
 // ---------------------------------------------------------------------------
 
-export async function onPullRequest(context: Context<'pull_request'>): Promise<void> {
-  const { owner, repo } = context.repo();
-  const pr = context.payload.pull_request;
-  const prNumber = pr.number;
-  const headSha: string = pr.head.sha;
-  const baseSha: string = pr.base.sha;
+async function buildLocalGraph(
+  workspace: string | undefined,
+  log: ReviewInput['log'],
+): Promise<{ graph: DependencyGraph; overlay: GitOverlayStore | undefined; isStub: boolean }> {
+  if (!workspace || workspace.trim() === '') {
+    return { graph: new DependencyGraph(), overlay: undefined, isStub: true };
+  }
 
   try {
-    const config = await loadRepoConfig(context.octokit as unknown as Octokit, owner, repo);
-    const changedFiles = await listChangedFiles(
-      context.octokit as unknown as Octokit,
-      owner,
-      repo,
-      prNumber,
-    );
-
-    // Use an empty graph stub — real graph building (Task 4 ensureGraph) is a future enhancement
     const graph = new DependencyGraph();
+    await graph.buildFromDirectory(workspace);
+    let overlay: GitOverlayStore | undefined;
+    try {
+      overlay = new GitOverlayStore(workspace);
+      await overlay.refresh();
+    } catch (err) {
+      log.warn('git overlay unavailable, proceeding without:', err);
+      overlay = undefined;
+    }
+    return { graph, overlay, isStub: false };
+  } catch (err) {
+    log.warn('graph build failed, falling back to stub:', err);
+    return { graph: new DependencyGraph(), overlay: undefined, isStub: true };
+  }
+}
 
-    const prInfo = {
-      owner,
-      repo,
-      number: prNumber,
-      headSha,
-      baseSha,
-    };
+// ---------------------------------------------------------------------------
+// Main entrypoint
+// ---------------------------------------------------------------------------
+
+export async function runReview(input: ReviewInput): Promise<void> {
+  const { octokit, owner, repo, prNumber, headSha, baseSha, workspace, log } = input;
+
+  try {
+    const config = await loadRepoConfig(octokit, owner, repo);
+    const changedFiles = await listChangedFiles(octokit, owner, repo, prNumber);
+
+    const { graph, overlay, isStub } = await buildLocalGraph(workspace, log);
 
     const rawReview = await buildReview({
       graph,
-      overlay: undefined,
+      overlay,
       changedFiles,
-      pr: prInfo,
+      pr: { owner, repo, number: prNumber, headSha, baseSha },
       config,
     });
 
@@ -222,30 +255,22 @@ export async function onPullRequest(context: Context<'pull_request'>): Promise<v
       ...rawReview,
       suggestedReviewers: suggestReviewers({
         filesTouched: changedFiles,
-        overlay: undefined,
+        overlay,
         recentApprovers: [],
       }),
     };
 
-    const graphEmpty = graph.allFiles().length === 0;
     let commentBody = buildCommentBody(review);
-    if (graphEmpty) {
+    if (isStub) {
       commentBody +=
-        '\n\n> ⚠️ Graph not yet available for this repo — risk scores are based on file count only, not dependency analysis.';
+        '\n\n> ⚠️ Graph not available for this run — risk scores are based on file count only, not dependency analysis.';
     }
 
-    await upsertSummaryComment(
-      context.octokit as unknown as Octokit,
-      owner,
-      repo,
-      prNumber,
-      headSha,
-      commentBody,
-    );
+    await upsertSummaryComment(octokit, owner, repo, prNumber, headSha, commentBody);
 
     if (config.inline_comments) {
       await postInlineComments(
-        context.octokit as unknown as Octokit,
+        octokit,
         owner,
         repo,
         prNumber,
@@ -256,15 +281,9 @@ export async function onPullRequest(context: Context<'pull_request'>): Promise<v
     }
 
     if (config.check_run) {
-      await publishCheck(
-        context.octokit as unknown as Octokit,
-        { owner, name: repo },
-        review,
-      );
+      await publishCheck(octokit, { owner, name: repo }, review);
     }
   } catch (err) {
-    // Surface to Sentry with installation context — these are the
-    // crashes that would otherwise vanish into pod logs no one reads.
     captureError(err, {
       component: 'pr-bot',
       handler: 'pull_request',
@@ -272,7 +291,7 @@ export async function onPullRequest(context: Context<'pull_request'>): Promise<v
       repo,
       pr_number: prNumber,
     });
-    await (context.octokit as unknown as {
+    await (octokit as unknown as {
       issues: {
         createComment: (params: {
           owner: string;
@@ -287,5 +306,6 @@ export async function onPullRequest(context: Context<'pull_request'>): Promise<v
       issue_number: prNumber,
       body: '🧵 ctxloom: analysis failed — see logs.',
     });
+    throw err;
   }
 }

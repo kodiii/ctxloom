@@ -1,0 +1,31 @@
+name: 'ctxloom PR review'
+description: >-
+  Posts a risk-scored summary comment + inline review notes on every pull
+  request, using ctxloom's local dependency graph + git overlay. No LLM
+  calls, no external services — runs entirely inside your CI on a
+  GHCR-hosted container image.
+author: 'Codzign'
+branding:
+  icon: 'git-pull-request'
+  color: 'purple'
+
+inputs:
+  github-token:
+    description: >-
+      GitHub token used to post comments. Defaults to the
+      ${{ secrets.GITHUB_TOKEN }} provided by the Actions runner. Your
+      workflow must declare `permissions: { pull-requests: write,
+      contents: read, checks: write }`.
+    required: false
+    default: ${{ github.token }}
+
+# Docker action: GitHub pulls the image once per runner and caches it.
+# Switched from a JS action because @ctxloom/core's transitive native
+# deps (@lancedb/lancedb, onnxruntime, tree-sitter) can't be safely
+# bundled into a single .js file. A container is the right surface here
+# even though cold pulls cost a few extra seconds.
+runs:
+  using: 'docker'
+  image: 'Dockerfile'
+  env:
+    GITHUB_TOKEN: ${{ inputs.github-token }}

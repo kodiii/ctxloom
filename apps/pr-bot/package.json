@@ -5,13 +5,13 @@
   "main": "dist/index.js",
   "scripts": {
     "build": "tsup",
-    "dev": "tsx src/index.ts",
-    "lint": "tsc --noEmit",
+    "dev": "tsx src/action.ts",
     "test": "vitest run"
   },
   "dependencies": {
     "@ctxloom/core": "*",
-    "probot": "^13.4.7",
+    "@octokit/rest": "^21.0.0",
+    "@octokit/core": "^6.0.0",
     "yaml": "^2.5.0",
     "zod": "^3.22.0"
   },

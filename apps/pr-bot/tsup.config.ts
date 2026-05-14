@@ -1,23 +1,16 @@
 /**
- * Bundle the pr-bot with tsup, mirroring apps/dashboard.
+ * Bundle the ctxloom Action entrypoint.
  *
- * Why tsup (not tsc): `@ctxloom/core`'s package.json points `main` at
- * TypeScript source. tsc enforces `rootDir`, which forbids reaching into
- * another workspace's source — so plain tsc fails with TS6059 on every
- * cross-package import. tsup bundles everything into a single output and
- * sidesteps the rootDir problem (same pattern the dashboard and the
- * root CLI build already use).
- *
- * Output: dist/index.js — the entry the Dockerfile launches with
- * `node dist/index.js`.
+ * Mirror of apps/dashboard/tsup.server.config.ts. We're a Docker action,
+ * so the runtime container has a real node_modules — heavy native deps
+ * (lancedb, onnxruntime, tree-sitter) stay external and resolve there
+ * at load time. Only @ctxloom/core gets bundled in so we don't need a
+ * separate core dist inside the image.
  */
 import { defineConfig } from 'tsup';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 
-// Use the root ctxloom-pro release version as the bundle's release tag.
-// Without this, every captureError() from pr-bot lands in Sentry with
-// `release: dev` and we can't correlate crashes with the deploy.
 const rootVersion = (
   JSON.parse(readFileSync(path.resolve('..', '..', 'package.json'), 'utf8')) as {
     version: string;
@@ -25,34 +18,21 @@ const rootVersion = (
 ).version;
 
 export default defineConfig({
-  entry: { index: 'src/index.ts' },
+  entry: { index: 'src/action.ts' },
   outDir: 'dist',
   format: ['esm'],
   target: 'node22',
   platform: 'node',
   sourcemap: true,
   clean: true,
-  // Workspace-internal package; bundle it in so the deployed image
-  // doesn't need a separate @ctxloom/core dist.
   noExternal: ['@ctxloom/core'],
-  // SECURITY/OBSERVABILITY: telemetry credentials are NOT baked here —
-  // pr-bot has no end-user analytics, only error reporting. Sentry DSN
-  // is provided via the SENTRY_DSN env var at runtime (Fly secret) so
-  // the public image doesn't ship credentials. __CTXLOOM_VERSION__ is
-  // baked so error events carry the right release tag.
-  define: {
-    __TELEMETRY_POSTHOG_KEY__: JSON.stringify(''),
-    __TELEMETRY_SENTRY_DSN__: JSON.stringify(''),
-    __CTXLOOM_VERSION__: JSON.stringify(rootVersion),
-  },
   external: [
-    // Big runtime deps the container resolves from node_modules. Native
-    // bindings and CJS-only packages must NOT be bundled into ESM.
-    'probot',
-    'pino',
+    '@octokit/rest',
+    '@octokit/core',
     'yaml',
+    'js-yaml',
     'zod',
-    /^@octokit\/.*/,
+    // Heavy / native — must live in node_modules at runtime.
     /^@lancedb\/.*/,
     'sharp',
     'onnxruntime-node',
@@ -70,4 +50,13 @@ export default defineConfig({
   ],
   splitting: false,
   bundle: true,
+  define: {
+    // pr-bot only emits crash events to Sentry; analytics don't make sense
+    // from a fan-out CI surface. SENTRY_DSN can be set at runtime via the
+    // workflow's `env:` block; build-time fallback stays empty so forks
+    // produce a zero-telemetry binary by default.
+    __TELEMETRY_POSTHOG_KEY__: JSON.stringify(''),
+    __TELEMETRY_SENTRY_DSN__: JSON.stringify(''),
+    __CTXLOOM_VERSION__: JSON.stringify(rootVersion),
+  },
 });
