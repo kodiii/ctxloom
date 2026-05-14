@@ -36,11 +36,18 @@ FROM node:22-slim
 # `simple-git` (used by @ctxloom/core's GitOverlayStore for co-change
 # history) spawns `git` as a subprocess. Without this the action
 # crashes on every invocation with `spawn git ENOENT`.
-# ca-certificates is needed for any future https traffic the action
-# might do directly (Sentry, etc.) since slim trims the CA bundle.
+# ca-certificates is needed for HTTPS traffic the action might do
+# directly (Sentry, etc.) since slim trims the CA bundle.
 RUN apt-get update \
  && apt-get install -y --no-install-recommends git ca-certificates \
  && rm -rf /var/lib/apt/lists/*
+
+# GitHub Actions mounts the checkout at /github/workspace and the
+# container runs as root, but the files are owned by the runner user
+# (uid 1001). Without this, every git command in the action fails
+# with "fatal: detected dubious ownership in repository". Marking the
+# workspace as a safe directory globally tells git to trust it.
+RUN git config --system --add safe.directory '*'
 
 WORKDIR /action
 

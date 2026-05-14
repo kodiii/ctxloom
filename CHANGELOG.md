@@ -5,6 +5,56 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
 ---
 
+## [1.2.4] — 2026-05-14
+
+### Fixed
+
+- **pr-bot Docker image trusts `/github/workspace`.** GitHub Actions
+  mounts the checkout as one uid and runs the action container as
+  another (root), which trips git's "dubious ownership" guard.
+  Every `git log` call from the action's `GitOverlayStore` failed,
+  the overlay came back empty, and risk scoring was degraded. The
+  Dockerfile now runs `git config --system --add safe.directory '*'`
+  at build time.
+- **Inline review comments use valid diff line numbers.** The
+  renderer was hardcoding `line: 1`, which GitHub's review API
+  rejected with `422 Line could not be resolved` whenever line 1
+  wasn't in the PR diff (almost always). `runReview` now parses
+  each file's patch from `pulls.listFiles` to find the first line
+  on the RIGHT side of the first hunk and passes that to
+  `renderInline`. Files where no valid line can be found (binary,
+  rename without content change) get skipped instead of failing the
+  whole review.
+- **Inline + check-run failures no longer kill the review.** Both
+  steps are wrapped in their own try/catch with `captureError`.
+  The summary comment is the most valuable output; one of the
+  optional steps throwing shouldn't blow up the whole bot.
+- **Risk scorer no longer flags doc-only PRs as `medium`.** A change
+  touching only `README.md` (or `CHANGELOG.md`, `LICENSE`, lockfiles,
+  images) was coming back at 50% risk because the scorer penalized
+  "no test coverage" for every file. Now non-source files
+  (extensions `.md/.mdx/.txt/.rst/.adoc`, lockfiles, images, and
+  basenames like `README`, `LICENSE`, `CHANGELOG`, `NOTICE`,
+  `AUTHORS`) skip the coverage penalty and start at `low`. A
+  non-source hub still escalates to `high`. JSON/YAML/TOML configs
+  are deliberately **not** in the list — `package.json`,
+  `tsconfig.json`, and workflow yaml all affect runtime behavior.
+- **pr-bot review comment footer no longer advertises dead slash
+  commands.** The Probot-era `/ctxloom explain | ignore | refresh`
+  handlers were deleted when pr-bot pivoted to a fire-and-forget
+  GitHub Action (PR #83) — the Action doesn't listen to
+  `issue_comment` events. The footer now links to the README and
+  the issue-filing form.
+
+### Notes
+
+- CLI behavior is unchanged; the scorer fix is in `@ctxloom/core`'s
+  `detectChanges` (used by both the CLI's `ctx_detect_changes` tool
+  and the pr-bot Action). To pick up the new behavior on the Action,
+  the v1 image gets rebuilt on every `v*` tag.
+
+---
+
 ## [1.2.3] — 2026-05-14
 
 ### Fixed

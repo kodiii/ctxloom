@@ -50,6 +50,38 @@ export interface DetectChangesResult {
 const TEST_PATTERN = /(\.test\.|\.spec\.|\/tests\/|\/test\/|\/spec\/|__tests__)/;
 const RISK_ORDER: Record<RiskLevel, number> = { critical: 0, high: 1, medium: 2, low: 3 };
 
+/**
+ * Files that don't carry executable code and therefore can't be
+ * "tested" in the conventional sense. Penalizing them for "no test
+ * coverage" produces nonsense results — a README.md change was
+ * coming back as medium risk solely because there's no `README.test.md`.
+ *
+ * Conservative list: only extensions/patterns whose criticality is
+ * universally low regardless of name. JSON/YAML/TOML are NOT included
+ * — package.json, tsconfig.json, and workflow yaml all genuinely
+ * affect runtime behavior and deserve coverage scrutiny.
+ */
+const NON_SOURCE_EXTENSIONS = /\.(?:md|mdx|markdown|txt|rst|adoc|lock|sum|png|jpg|jpeg|gif|svg|ico|webp|woff2?|ttf|otf|eot|mp4|mov|webm|wav|mp3)$/i;
+
+const NON_SOURCE_LOCKFILES = new Set([
+  'package-lock.json',
+  'yarn.lock',
+  'pnpm-lock.yaml',
+  'composer.lock',
+  'Gemfile.lock',
+  'Cargo.lock',
+]);
+
+const NON_SOURCE_BASENAMES = /^(?:LICEN[CS]E|CHANGELOG|README|AUTHORS|CONTRIBUTORS|NOTICE)(?:\.[a-z]+)?$/i;
+
+function isNonSourceFile(filePath: string): boolean {
+  if (NON_SOURCE_EXTENSIONS.test(filePath)) return true;
+  const basename = filePath.split('/').pop() ?? filePath;
+  if (NON_SOURCE_LOCKFILES.has(basename)) return true;
+  if (NON_SOURCE_BASENAMES.test(basename)) return true;
+  return false;
+}
+
 function fileHasTestCoverage(filePath: string, graph: DependencyGraph): boolean {
   const importers = graph.getImporters(filePath);
   if (importers.some(f => TEST_PATTERN.test(f))) return true;
@@ -65,11 +97,18 @@ function computeFileRiskLevel(
   const isTest = TEST_PATTERN.test(filePath);
   const importerCount = graph.getImporters(filePath).length;
   const isHub = importerCount >= 5;
-  const hasCoverage = isTest || fileHasTestCoverage(filePath, graph);
+  // Non-source files (README, LICENSE, lockfiles, images) can't have
+  // tests. Treat them as having coverage so the "no coverage = risk"
+  // penalty doesn't apply. They still surface as `high` if they're a
+  // hub somehow, which would be a meaningful signal (e.g. a shared
+  // CHANGELOG that 20 packages link to).
+  const isNonSource = isNonSourceFile(filePath);
+  const hasCoverage = isTest || isNonSource || fileHasTestCoverage(filePath, graph);
 
   let level: RiskLevel;
-  if (isTest) {
-    level = 'low';
+  if (isTest || isNonSource) {
+    // Non-source files start at low; only escalate if they're a hub.
+    level = isHub ? 'high' : 'low';
   } else if (isHub && !hasCoverage) {
     level = 'critical';
   } else if (isHub || (!hasCoverage && importerCount > 2)) {
