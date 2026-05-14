@@ -156,8 +156,14 @@ describe('embedder first-load retry', () => {
     const p2 = generateEmbedding('b');
     const p3 = generateEmbedding('c');
 
-    // Three concurrent calls should still trigger only ONE pipeline load.
-    expect(pipelineMock).toHaveBeenCalledTimes(1);
+    // The embedder dynamic-imports @huggingface/transformers, so the
+    // mock isn't called synchronously after generateEmbedding(). Wait
+    // until the mock has been invoked (or 1s elapses) rather than
+    // guessing how many microtasks the dynamic import takes — that
+    // was flaky in the full-suite run.
+    await vi.waitFor(() => expect(pipelineMock).toHaveBeenCalledTimes(1), {
+      timeout: 1000,
+    });
 
     // Resolve the one in-flight load; all three should complete.
     resolveLoad!(fakePipe);

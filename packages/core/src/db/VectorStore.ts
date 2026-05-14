@@ -4,9 +4,12 @@
  * Uses @lancedb/lancedb (corrected package per flaw analysis).
  * Schema: id (string), filePath (string), embedding (Float32[]), content (string)
  */
-import lancedb from '@lancedb/lancedb';
+// LanceDB is heavy (~150 MB across platform-specific native binaries).
+// Consumers that only need the dependency graph (e.g. apps/pr-bot) never
+// instantiate a VectorStore, so defer the `import('@lancedb/lancedb')`
+// until `.init()` is called. Type imports are erased at compile time and
+// don't trigger runtime resolution.
 import type { Connection, Table } from '@lancedb/lancedb';
-import { makeArrowTable } from '@lancedb/lancedb';
 import path from 'node:path';
 import fs from 'node:fs';
 import { logger } from '../utils/logger.js';
@@ -46,7 +49,12 @@ export class VectorStore {
       fs.mkdirSync(dir, { recursive: true });
     }
 
-    this.db = await lancedb.connect(this.dbPath);
+    // Lazy: only consumers that actually open a vector store pay the
+    // cost of loading LanceDB's platform-specific native binding.
+    const lancedb = await import('@lancedb/lancedb');
+    const { makeArrowTable } = lancedb;
+
+    this.db = await lancedb.default.connect(this.dbPath);
 
     // Create or open table
     const existingTables = await this.db.tableNames();

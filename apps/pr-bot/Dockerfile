@@ -11,15 +11,18 @@ COPY package.json package-lock.json* tsconfig.json ./
 COPY packages/core/ packages/core/
 COPY apps/pr-bot/ apps/pr-bot/
 
-# Install all workspace deps. pr-bot's bundle leaves @ctxloom/core's
-# heavy transitive deps (huggingface/transformers, lancedb, tree-sitter,
-# etc.) external — they must be present in node_modules at runtime even
-# though pr-bot itself never calls them, because static imports in the
-# core graph trigger module resolution before any user code runs.
-# `--ignore-scripts` skips the root `postinstall` (which calls
-# dist/setup/postinstall.js — a file only present after the root CLI's
-# tsup build, which we don't need to do here).
-RUN npm ci --ignore-scripts
+# Install only what pr-bot's bundle actually requires at runtime.
+# `@ctxloom/core` now lazy-loads its heavy native deps (huggingface,
+# lancedb, web-tree-sitter) so they're absent from pr-bot's bundle —
+# we don't need to ship them in the image. `--ignore-scripts` skips
+# the root `postinstall` (which calls dist/setup/postinstall.js — a
+# file only present after the root CLI build).
+#
+# We need to install both the workspace's direct deps AND the root
+# package's deps (workspace resolution requires the lockfile to be
+# materialized at the root). `--include-workspace-root -w @ctxloom/pr-bot`
+# does both in a single pass.
+RUN npm ci --ignore-scripts --include-workspace-root -w @ctxloom/pr-bot
 
 # tsup-bundle the pr-bot entrypoint. @ctxloom/core is inlined; the
 # heavy native deps stay external and are resolved from node_modules
@@ -33,10 +36,11 @@ WORKDIR /action
 
 ENV NODE_ENV=production
 
-# The Action surface: bundled entrypoint + the runtime deps tsup marked
-# external. npm hoists workspace deps to /app/node_modules at the root,
-# so we copy that whole tree — it contains everything tsup left as
-# `require("@huggingface/transformers")` etc.
+# The Action surface: bundled entrypoint + the slim runtime deps tsup
+# marked external (octokit, yaml, zod, graphology, simple-git). Heavy
+# native modules are NOT copied — they aren't referenced by the bundle.
+# npm hoists workspace deps to /app/node_modules, so we copy from
+# there rather than from apps/pr-bot/node_modules.
 COPY --from=builder /app/apps/pr-bot/dist/ ./dist/
 COPY --from=builder /app/apps/pr-bot/package.json ./package.json
 COPY --from=builder /app/node_modules/ ./node_modules/

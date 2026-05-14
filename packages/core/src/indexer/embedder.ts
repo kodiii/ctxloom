@@ -6,10 +6,16 @@
  *
  * Corrected from @xenova/transformers per flaw analysis.
  */
-import { pipeline, type FeatureExtractionPipeline } from '@huggingface/transformers';
+import type { FeatureExtractionPipeline } from '@huggingface/transformers';
 import fs from 'node:fs';
 import path from 'node:path';
 import { logger } from '../utils/logger.js';
+
+// Heavy ML stack — defer the actual `import('@huggingface/transformers')`
+// until the embedder is first loaded. Consumers that only need the
+// dependency graph (e.g. apps/pr-bot) never trigger this, which keeps
+// their bundle / container slim. The type import above is erased at
+// compile time and adds no runtime cost.
 
 const EMBEDDING_DIMENSION = 384;
 const MODEL_ID = 'sentence-transformers/all-MiniLM-L6-v2';
@@ -41,6 +47,7 @@ let embedderInitInFlight: Promise<FeatureExtractionPipeline> | null = null;
  * the race without papering over genuine corruption.
  */
 async function loadEmbedder(): Promise<FeatureExtractionPipeline> {
+  const { pipeline } = await import('@huggingface/transformers');
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   return (await (pipeline as any)('feature-extraction', MODEL_ID, {
     dtype: 'fp32',
