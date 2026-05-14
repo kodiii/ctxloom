@@ -5,6 +5,27 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
 ---
 
+## [1.2.2] — 2026-05-14
+
+### Added
+
+- **`ctxloom install-pr-bot`** — new CLI command that drops
+  `.github/workflows/ctxloom-review.yml` into the current repo so every
+  PR is reviewed by the ctxloom GitHub Action. Detects the repo's
+  default branch from git (handles any default, not just `main`/`master`),
+  refuses to install outside a git repo, refuses to overwrite an
+  existing workflow unless `--force` is passed, and accepts a `--ref`
+  to pin to a specific Action release tag (default: `v1`).
+- **`ctxloom setup` now offers to install the PR-bot workflow** as an
+  optional final step. Skipped in non-interactive mode and when the
+  user declines; the wizard's primary MCP-client configuration has
+  already succeeded by that point.
+- 7 new tests in `tests/InstallPrBot.test.ts` covering the
+  git-repo gate, file creation, default-branch detection (works on
+  unborn HEADs), `--force` semantics, and `--ref` pinning.
+
+---
+
 ## [1.2.1] — 2026-05-14
 
 ### Changed

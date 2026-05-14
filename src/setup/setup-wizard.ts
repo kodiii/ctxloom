@@ -16,6 +16,7 @@
  *   5. Report results
  */
 import { detectInstalledClients, addCtxloomToConfig, type DetectedClient } from './clients.js';
+import { installPrBotWorkflow } from './install-pr-bot.js';
 import { createInterface } from 'node:readline';
 
 // ─── ANSI Colors ───────────────────────────────────────────────
@@ -207,7 +208,57 @@ export async function runSetupWizard(options?: { nonInteractive?: boolean }): Pr
   }
 
   console.log('');
+
+  if (!options?.nonInteractive) {
+    await offerPrBotInstall();
+  }
+
   printNextSteps();
+}
+
+/**
+ * Optional step at the end of `ctxloom setup`: ask whether to drop the
+ * pr-bot workflow into the current repo. Pure no-op if the user says no
+ * or we're not inside a git repo — the wizard's primary job (MCP client
+ * config) has already succeeded by the time we reach here.
+ */
+async function offerPrBotInstall(): Promise<void> {
+  console.log(`  ${C.bold}GitHub PR review${C.reset}`);
+  console.log(
+    `  ${C.dim}Optionally drop .github/workflows/ctxloom-review.yml into${C.reset}`,
+  );
+  console.log(
+    `  ${C.dim}this repo so every PR gets an automated risk-scored review.${C.reset}`,
+  );
+  console.log('');
+
+  const answer = await ask(`  Install the PR-review workflow here? [y/N]: `);
+
+  if (answer.toLowerCase() !== 'y' && answer.toLowerCase() !== 'yes') {
+    console.log(`  ${ICON_SKIP} Skipped. Run ${C.cyan}ctxloom install-pr-bot${C.reset} later if you change your mind.`);
+    console.log('');
+    return;
+  }
+
+  const result = installPrBotWorkflow();
+  console.log('');
+
+  switch (result.status) {
+    case 'installed':
+      console.log(`  ${ICON_SUCCESS} Created ${C.cyan}${result.path}${C.reset}`);
+      console.log(`    ${C.dim}Default branch: ${result.defaultBranch}${C.reset}`);
+      console.log(`    ${C.dim}Commit + push it, then the next PR will trigger the bot.${C.reset}`);
+      break;
+    case 'skipped-exists':
+      console.log(`  ${ICON_SKIP} A workflow already exists at ${result.path}.`);
+      console.log(`    ${C.dim}Pass --force to ${C.cyan}ctxloom install-pr-bot${C.reset}${C.dim} to overwrite.${C.reset}`);
+      break;
+    case 'aborted-not-git':
+      console.log(`  ${ICON_FAIL} ${result.reason}`);
+      console.log(`    ${C.dim}Run ${C.cyan}git init${C.reset}${C.dim} (and connect a remote) first, then ${C.cyan}ctxloom install-pr-bot${C.reset}${C.dim}.${C.reset}`);
+      break;
+  }
+  console.log('');
 }
 
 function printNextSteps(): void {
