@@ -2,7 +2,7 @@
   "name": "ctxloom-vscode",
   "displayName": "ctxloom — Code Context for Code Review",
   "description": "AST + git + graph context, in your editor. Hover risk, blast radius, dead code, MCP bridge for AI assistants.",
-  "version": "1.3.2",
+  "version": "1.3.3",
   "ctxloomCliVersion": "1.0.5",
   "private": true,
   "publisher": "ctxloom",
