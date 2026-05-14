@@ -124,6 +124,25 @@ Inline comments fire only on files with risk ≥ `risk_threshold`. They referenc
 
 ---
 
+## Troubleshooting
+
+**The bot posts a summary but no inline comments.**
+The Action only posts inline comments on lines that exist in the PR's unified diff. Files in the PR with no content change in the new side (binary files, pure renames, deletions) are skipped — the summary table still lists them, but no inline anchors are possible. This is by design; inline at a line that's not in the diff makes GitHub reject the whole review with `422`.
+
+**The bot says risk scores are based on file count only.**
+Means the dependency graph couldn't be built from your checkout. Most common cause: `actions/checkout@v4` without `fetch-depth: 0`. The git overlay needs full history to compute co-change and ownership. Make sure your workflow has:
+
+```yaml
+- uses: actions/checkout@v4
+  with:
+    fetch-depth: 0
+```
+
+**The action exits with `fatal: detected dubious ownership`.**
+You're on an old image tag. Re-pin to `@v1` (or any tag ≥ `v1.2.4`) — the runtime container marks `/github/workspace` as a safe directory globally so this can't happen with the published image.
+
+---
+
 ## Self-host the bot as a long-running service (advanced)
 
 Not supported in v1. The Action is the only deployment surface — it's strictly better for distribution and cost, and there's no hosted version to maintain.
