@@ -9,6 +9,28 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
 ---
 
+## [1.3.1] — 2026-05-15
+
+### Added
+
+- **PR-review status bar** (C2 from the v1.3 feature plan). New
+  status bar item at priority 99 (left of the existing license/per-file
+  badge) shows the top-level risk of your current branch versus
+  `origin/HEAD` (or the standard fallback chain):
+  - 🟢 `ctxloom: low` — no above-low changes
+  - 🟠 `ctxloom: medium` — warning-tinted
+  - 🔴 `ctxloom: high` — error-tinted
+  - 🚨 `ctxloom: critical` — error-tinted
+  - `ctxloom: clean` — no files changed
+  - `$(question) ctxloom` — no usable base ref (sets a remote-tracking branch)
+  Hover for file count + blast radius. Click → opens the full
+  `ctxloom: Preview PR review` panel from v1.3.0.
+- Refreshes on first activation and on file save (debounced 5 s so a
+  format-on-save burst doesn't trigger N graph rebuilds).
+- New setting **`ctxloom.previewStatusBar.enabled`** (default `true`).
+
+---
+
 ## [1.3.0] — 2026-05-14
 
 ### Added
