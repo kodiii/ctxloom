@@ -83,8 +83,16 @@ export function renderSummary(payload: ReviewPayload): string {
     ? `\n\n<details>\n<summary>Risk breakdown</summary>\n\n${table}\n</details>`
     : '';
 
+  // The footer used to advertise `/ctxloom explain|ignore|refresh`
+  // slash commands. Those were Probot-handler features and were
+  // deleted when pr-bot pivoted to a fire-and-forget GitHub Action
+  // (PR #83) — Actions don't listen to issue_comment events. The
+  // footer now points users at the docs so they know what the bot
+  // does and where to file feedback.
   const footer =
-    '\n\n> Run `/ctxloom explain <file>` to expand | `/ctxloom ignore` to dismiss | `/ctxloom refresh` to re-run';
+    '\n\n> 🧵 [ctxloom pr-bot](https://github.com/kodiii/ctxloom/blob/main/apps/pr-bot/README.md) · ' +
+    '[Configure](https://github.com/kodiii/ctxloom/blob/main/apps/pr-bot/README.md#configure-ctxloomyml) · ' +
+    '[Report a problem](https://github.com/kodiii/ctxloom/issues/new?labels=pr-bot)';
   const marker = `\n<!-- ctxloom:review:${pr.headSha} -->`;
 
   let output =

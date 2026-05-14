@@ -132,6 +132,44 @@ describe('detectChanges', () => {
     expect(result.changedFiles[0].hasTestCoverage).toBe(true);
   });
 
+  it('scores non-source files (README.md) as low regardless of test coverage', () => {
+    // Regression: pre-fix the scorer treated "no test coverage" as a
+    // risk signal for every file, including README.md — bumping a
+    // doc-only PR to `medium`. Non-source files can't have tests
+    // and should never be penalized for the absence.
+    const graph = makeGraph();
+    const result = detectChanges({ graph, changedFiles: ['apps/pr-bot/README.md'] });
+    expect(result.changedFiles[0].riskLevel).toBe('low');
+  });
+
+  it('treats CHANGELOG, LICENSE, and lockfiles as low risk', () => {
+    const graph = makeGraph();
+    const files = ['CHANGELOG.md', 'LICENSE', 'package-lock.json', 'src/icon.svg'];
+    const result = detectChanges({ graph, changedFiles: files });
+    for (const f of result.changedFiles) {
+      expect(f.riskLevel, `${f.file} should be low`).toBe('low');
+    }
+  });
+
+  it('does NOT down-rank a hub non-source file (escalates to high)', () => {
+    // A CHANGELOG.md with 5+ importers (e.g. a shared file referenced
+    // by other docs) is unusual but a real signal worth flagging.
+    const graph = new DependencyGraph();
+    for (let i = 0; i < 6; i++) graph.addEdge(`docs/page${i}.md`, 'docs/CHANGELOG.md');
+    const result = detectChanges({ graph, changedFiles: ['docs/CHANGELOG.md'] });
+    expect(result.changedFiles[0].riskLevel).toBe('high');
+    expect(result.changedFiles[0].isHub).toBe(true);
+  });
+
+  it('still down-ranks source files (.json configs are NOT non-source)', () => {
+    // package.json / tsconfig.json affect runtime — they should stay
+    // on the normal risk track, not get the doc-file pass.
+    const graph = new DependencyGraph();
+    const result = detectChanges({ graph, changedFiles: ['package.json'] });
+    // No importers, no coverage, source-file track → medium.
+    expect(result.changedFiles[0].riskLevel).toBe('medium');
+  });
+
   it('exposes importerCount and isHub on each changed file', () => {
     const graph = makeGraph();
     const result = detectChanges({ graph, changedFiles: ['src/core.ts'] });

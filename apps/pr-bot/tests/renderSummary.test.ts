@@ -108,9 +108,22 @@ describe('renderSummary', () => {
     expect(output).not.toContain('Affected flows');
   });
 
-  it('footer contains /ctxloom slash command hint', () => {
+  it('footer no longer advertises Probot-era slash commands', () => {
+    // The pre-Action footer suggested /ctxloom explain|ignore|refresh.
+    // Those were issue_comment handlers (Probot-only) and were deleted
+    // when pr-bot pivoted to a fire-and-forget GitHub Action. The
+    // footer must not promise capabilities that no longer exist.
     const payload = makePayload();
     const output = renderSummary(payload);
-    expect(output).toContain('/ctxloom');
+    expect(output).not.toContain('/ctxloom explain');
+    expect(output).not.toContain('/ctxloom ignore');
+    expect(output).not.toContain('/ctxloom refresh');
+  });
+
+  it('footer links to the README and the issue-filing form', () => {
+    const payload = makePayload();
+    const output = renderSummary(payload);
+    expect(output).toContain('apps/pr-bot/README.md');
+    expect(output).toContain('issues/new?labels=pr-bot');
   });
 });
