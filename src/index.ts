@@ -16,6 +16,7 @@
 import { startServer } from './server.js';
 import { runSetupWizard } from './setup/setup-wizard.js';
 import { runInit } from './setup/init.js';
+import { installPrBotWorkflow } from './setup/install-pr-bot.js';
 import {
   success as fmtSuccess,
   error as fmtError,
@@ -534,6 +535,35 @@ async function main(): Promise<void> {
       break;
     }
 
+    case 'install-pr-bot': {
+      const force = hasFlag('--force') || hasFlag('-f');
+      const ref = getFlagValue('--ref') ?? 'v1';
+      const result = installPrBotWorkflow({ force, ref });
+
+      if (result.status === 'aborted-not-git') {
+        process.stdout.write(fmtError(result.reason));
+        process.exit(1);
+      }
+      if (result.status === 'skipped-exists') {
+        process.stdout.write(
+          fmtWarn(
+            `Workflow already present at ${result.path}. Pass --force to overwrite.`,
+          ),
+        );
+        break;
+      }
+      process.stdout.write(fmtSuccess(`Created ${result.path}`));
+      process.stdout.write(`  ${style.dim(`Default branch: ${result.defaultBranch}`)}\n`);
+      process.stdout.write(`  ${style.dim(`Pinned to:      kodiii/ctxloom/apps/pr-bot@${ref}`)}\n\n`);
+      process.stdout.write(
+        fmtNextStep(
+          'Commit and push the workflow',
+          'git add .github/workflows/ctxloom-review.yml && git commit -m "ci: enable ctxloom pr-bot" && git push',
+        ),
+      );
+      break;
+    }
+
     case 'init': {
       // Per-project bootstrap: writes .mcp.json with CTXLOOM_ROOT pinned
       // to cwd + appends .ctxloom/ to .gitignore. See src/setup/init.ts
@@ -965,6 +995,8 @@ Usage:
   ctxloom init                 Scaffold .mcp.json + .gitignore for this project
   ctxloom index                Index the current directory and build dependency graph
   ctxloom setup                Detect and configure MCP-compatible AI tools (global)
+  ctxloom install-pr-bot       Drop .github/workflows/ctxloom-review.yml into this repo
+                                (use --force to overwrite, --ref <tag> to pin a version)
   ctxloom grammars             Show grammar cache status
   ctxloom grammars --download  Pre-download all language grammars
   ctxloom register [path]      Register a repo for cross-repo search (defaults to cwd)

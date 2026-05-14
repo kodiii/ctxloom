@@ -12,7 +12,25 @@ Uses ctxloom's local dependency graph + git overlay to find:
 
 ## Quick start
 
-Add this workflow to any repo you want reviewed:
+### Option 1 — `ctxloom install-pr-bot` (one command)
+
+If you have ctxloom installed (`npm install -g ctxloom-pro`), the fastest path is:
+
+```bash
+cd /path/to/your/repo
+ctxloom install-pr-bot
+git add .github/workflows/ctxloom-review.yml
+git commit -m "ci: enable ctxloom pr-bot"
+git push
+```
+
+The command writes the workflow file shown below into your repo, with the right defaults (default branch detected from git, action pinned to `@v1`). Pass `--force` to overwrite an existing file or `--ref v1.2.1` to pin to a specific release.
+
+The interactive `ctxloom setup` wizard also offers to install the workflow at the end if you'd rather click through.
+
+### Option 2 — manual
+
+Or just paste this file yourself:
 
 ```yaml
 # .github/workflows/ctxloom-review.yml
