@@ -1,6 +1,6 @@
 import type { Context } from 'probot';
 import { parse as parseYaml } from 'yaml';
-import { DependencyGraph } from '@ctxloom/core';
+import { DependencyGraph, captureError } from '@ctxloom/core';
 import { buildReview } from '../review/buildReview.js';
 import { suggestReviewers } from '../review/reviewerSuggest.js';
 import { findBotComment, buildCommentBody } from '../review/idempotency.js';
@@ -263,6 +263,15 @@ export async function onPullRequest(context: Context<'pull_request'>): Promise<v
       );
     }
   } catch (err) {
+    // Surface to Sentry with installation context — these are the
+    // crashes that would otherwise vanish into pod logs no one reads.
+    captureError(err, {
+      component: 'pr-bot',
+      handler: 'pull_request',
+      owner,
+      repo,
+      pr_number: prNumber,
+    });
     await (context.octokit as unknown as {
       issues: {
         createComment: (params: {

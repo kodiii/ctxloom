@@ -12,21 +12,20 @@ A GitHub App that integrates ctxloom's code analysis engine directly into your p
 
 ---
 
-## Install (GitHub Marketplace)
+## Install
 
-> Marketplace listing coming soon.
+The pr-bot is currently **self-hosted only** — there is no public GitHub Marketplace listing yet. To run it on your own infrastructure, follow the **Self-host** section below.
 
-In the meantime, install the public app at:
-**https://github.com/apps/ctxloom-pr-bot** _(placeholder — replace with your App slug)_
+If you register a private GitHub App against your own organization, grant it these permissions:
 
-Required permissions when installing:
+| Permission       | Level |
+| ---------------- | ----- |
+| Contents         | Read  |
+| Pull requests    | Write |
+| Checks           | Write |
+| Metadata         | Read  |
 
-| Permission | Level |
-|---|---|
-| Contents | Read |
-| Pull requests | Write |
-| Checks | Write |
-| Metadata | Read |
+…and subscribe to **Pull request** and **Issue comment** events.
 
 ---
 
@@ -57,8 +56,20 @@ Three environment variables are required at runtime:
 | Variable | Description |
 |---|---|
 | `APP_ID` | Numeric App ID from the GitHub App settings page |
-| `PRIVATE_KEY` | PEM private key (can be base64-encoded for convenience) |
+| `PRIVATE_KEY` | PEM private key. Must start with `-----BEGIN [RSA ]PRIVATE KEY-----`. |
 | `WEBHOOK_SECRET` | Webhook secret configured in the GitHub App |
+
+For deployments where multi-line PEM is awkward (some CI systems, GitHub Actions secrets), base64-encode the key and **also** set `PRIVATE_KEY_BASE64=1`:
+
+```bash
+# Encode once
+base64 -w0 < github-app.pem    # macOS: base64 -i github-app.pem
+
+# Then deploy with both
+PRIVATE_KEY="<base64-blob>" PRIVATE_KEY_BASE64=1
+```
+
+The bot rejects ambiguous input loudly — see [`src/auth/installation.ts`](src/auth/installation.ts) for the exact rules.
 
 Optional:
 
@@ -111,7 +122,12 @@ A 10 GB persistent volume (`ctxloom_data`) is created automatically on first dep
 
 ## Configure (`.ctxloom.yml`)
 
-Place a `.ctxloom.yml` file in the root of any repository where the bot is installed to override defaults:
+Place a `.ctxloom.yml` file in the root of any repository where the bot is installed to override defaults. A JSON Schema is published at [`apps/pr-bot/schema/ctxloom.schema.json`](schema/ctxloom.schema.json) — editors with YAML language services (VS Code's YAML extension, JetBrains IDEs) will autocomplete keys and flag typos when you reference it:
+
+```yaml
+# yaml-language-server: $schema=https://raw.githubusercontent.com/kodiii/ctxloom/main/apps/pr-bot/schema/ctxloom.schema.json
+```
+
 
 ```yaml
 # .ctxloom.yml — ctxloom pr-bot configuration

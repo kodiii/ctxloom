@@ -40,4 +40,11 @@ COPY --from=builder /app/apps/pr-bot/node_modules/ ./node_modules/
 VOLUME /var/lib/ctxloom-bot
 EXPOSE 3000
 
+# Local health probe — matches the http_service check in fly.toml so
+# `docker run` users (and any non-Fly orchestrator) get the same signal
+# Fly already has. Uses `node --eval` to avoid needing curl/wget in the
+# slim image.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+  CMD node --eval "fetch('http://127.0.0.1:3000/').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"
+
 CMD ["node", "dist/index.js"]
