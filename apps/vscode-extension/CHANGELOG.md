@@ -9,6 +9,19 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
 ---
 
+## [1.3.3] — 2026-05-15
+
+### Changed
+
+- **Settings panel now surfaces the v1.3 PR-review toggles.** New
+  "PR review preview" section between Display and Telemetry exposes
+  `previewStatusBar.enabled` and `previewGutter.enabled` as branded
+  toggles with a short explanation linking back to the
+  `ctxloom: Preview PR review` command. Previously these settings
+  were only reachable via Cmd+, → search.
+
+---
+
 ## [1.3.2] — 2026-05-15
 
 ### Added

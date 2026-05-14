@@ -76,6 +76,18 @@ function render(): void {
       ${renderToggle('Show dead-code marker', 'gutter.showDeadCodeMarker', s.settings)}
       ${renderText('Dashboard URL', 'dashboardUrl', s.settings)}
     </section>
+    <section class="section${disabled}" data-section="pr-review">
+      <h2>PR review preview</h2>
+      ${renderToggle('Status-bar risk badge', 'previewStatusBar.enabled', s.settings)}
+      ${renderToggle('Gutter risk highlights', 'previewGutter.enabled', s.settings)}
+      <div class="hint">
+        Runs the same analysis the ctxloom GitHub Action runs in CI, against your
+        local working tree vs <code>origin/HEAD</code>. The status bar shows the
+        top-level risk; the gutter highlights changed lines on medium/high/critical
+        files. Open the full preview anytime with
+        <code>ctxloom: Preview PR review</code> from the command palette.
+      </div>
+    </section>
     <section class="section${disabled}" data-section="telemetry">
       <h2>Telemetry</h2>
       ${renderTelemetrySection(s)}

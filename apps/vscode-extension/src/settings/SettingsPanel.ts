@@ -21,7 +21,7 @@ export class SettingsPanel {
   constructor(private readonly deps: SettingsPanelDeps) {}
 
   /** Open or reveal the panel. Idempotent — clicking the status bar twice does not spawn two panels. */
-  reveal(focusSection?: 'license' | 'features' | 'performance' | 'display' | 'telemetry' | 'advanced'): void {
+  reveal(focusSection?: 'license' | 'features' | 'performance' | 'display' | 'pr-review' | 'telemetry' | 'advanced'): void {
     if (this.panel !== null) {
       this.panel.reveal(vscode.ViewColumn.Active);
       if (focusSection) this.send({ kind: 'state', state: { ...this.deps.computeState(), banner: undefined } });
