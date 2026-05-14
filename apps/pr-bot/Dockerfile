@@ -32,6 +32,16 @@ RUN npm run build -w @ctxloom/pr-bot
 # ─── Runtime stage ────────────────────────────────────────────────────────────
 FROM node:22-slim
 
+# Install git + ca-certificates. node:22-slim ships without git, but
+# `simple-git` (used by @ctxloom/core's GitOverlayStore for co-change
+# history) spawns `git` as a subprocess. Without this the action
+# crashes on every invocation with `spawn git ENOENT`.
+# ca-certificates is needed for any future https traffic the action
+# might do directly (Sentry, etc.) since slim trims the CA bundle.
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends git ca-certificates \
+ && rm -rf /var/lib/apt/lists/*
+
 WORKDIR /action
 
 ENV NODE_ENV=production
