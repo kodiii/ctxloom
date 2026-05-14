@@ -141,3 +141,9 @@ npm run build -w @ctxloom/pr-bot     # tsup bundle to dist/index.js
 ```
 
 The Docker image is built and tested in CI ([`pr-bot-ci.yml`](../../.github/workflows/pr-bot-ci.yml)). Releases bake the version of `ctxloom-pro` from the root `package.json` into the bundle as `__CTXLOOM_VERSION__`, so Sentry events from the Action are correlated with the corresponding release tag.
+
+### How the image gets to users
+
+[`pr-bot-publish-image.yml`](../../.github/workflows/pr-bot-publish-image.yml) builds the Dockerfile **with the monorepo root as the Docker build context** (so `COPY packages/core/ ...` resolves) and pushes the resulting image to `ghcr.io/kodiii/ctxloom-pr-bot` on every `v*` tag. The image is tagged with the version (`1.2.2`), the floating major (`v1`), and `latest`.
+
+`action.yml` references `image: 'docker://ghcr.io/kodiii/ctxloom-pr-bot:v1'`, **not** `image: 'Dockerfile'`. That's the standard pattern for Docker actions in a monorepo: GitHub Actions' built-in Dockerfile resolution uses the action's directory as the build context, which can't see into other workspace packages. Pre-building in our own workflow sidesteps that limitation and is also faster for consumers — the runner pulls a finished image (~3s) instead of rebuilding from scratch (~30s).
