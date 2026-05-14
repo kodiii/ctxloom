@@ -6,6 +6,7 @@ import { SettingsPanel } from './settings/SettingsPanel.js';
 import type { PanelState, WebviewToHost } from './settings/messageProtocol.js';
 import { createOutputLogger, type Logger } from './shared/logger.js';
 import { PreviewStatusBar } from './review/PreviewStatusBar.js';
+import { GutterRiskDecorations } from './review/GutterRiskDecorations.js';
 import { CtxloomHoverProvider } from './providers/HoverProvider.js';
 import { CtxloomDiagnosticsProvider } from './providers/DiagnosticsProvider.js';
 import { BlastRadiusView } from './providers/BlastRadiusView.js';
@@ -35,7 +36,7 @@ const SETTINGS_KEYS = [
   'features.hover', 'features.diagnostics', 'features.gutterDecorations', 'features.codeLens', 'features.quickFixes', 'features.mcpBridge',
   'gutter.churnThresholdHigh', 'gutter.churnThresholdMedium', 'gutter.showDeadCodeMarker',
   'dashboardUrl', 'telemetry.enabled', 'telemetry.level',
-  'previewStatusBar.enabled',
+  'previewStatusBar.enabled', 'previewGutter.enabled',
 ] as const;
 
 function readSettings(): Record<string, unknown> {
@@ -460,6 +461,35 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   );
   context.subscriptions.push(
     vscode.workspace.onDidChangeWorkspaceFolders(() => refreshPreviewStatusBar()),
+  );
+
+  // PR-review gutter decorations (C3): colorize changed lines per
+  // file risk band (medium/high/critical; low stays clean). Setting-
+  // gated like the status bar.
+  let previewGutter: GutterRiskDecorations | null = null;
+  function refreshPreviewGutter(): void {
+    previewGutter?.dispose();
+    previewGutter = null;
+    const enabled =
+      vscode.workspace
+        .getConfiguration('ctxloom')
+        .get<boolean>('previewGutter.enabled') ?? true;
+    const folder = vscode.workspace.workspaceFolders?.[0];
+    if (!enabled || !folder) return;
+    previewGutter = new GutterRiskDecorations({
+      workspace: folder.uri.fsPath,
+      log: logger!,
+    });
+    context.subscriptions.push({ dispose: () => previewGutter?.dispose() });
+  }
+  refreshPreviewGutter();
+  context.subscriptions.push(
+    vscode.workspace.onDidChangeConfiguration(e => {
+      if (e.affectsConfiguration('ctxloom.previewGutter.enabled')) refreshPreviewGutter();
+    }),
+  );
+  context.subscriptions.push(
+    vscode.workspace.onDidChangeWorkspaceFolders(() => refreshPreviewGutter()),
   );
 
   registerCommands(context, {
