@@ -5,6 +5,7 @@ import type { RiskInfo, BlastResult } from './client/tools.js';
 import { SettingsPanel } from './settings/SettingsPanel.js';
 import type { PanelState, WebviewToHost } from './settings/messageProtocol.js';
 import { createOutputLogger, type Logger } from './shared/logger.js';
+import { PreviewStatusBar } from './review/PreviewStatusBar.js';
 import { CtxloomHoverProvider } from './providers/HoverProvider.js';
 import { CtxloomDiagnosticsProvider } from './providers/DiagnosticsProvider.js';
 import { BlastRadiusView } from './providers/BlastRadiusView.js';
@@ -34,6 +35,7 @@ const SETTINGS_KEYS = [
   'features.hover', 'features.diagnostics', 'features.gutterDecorations', 'features.codeLens', 'features.quickFixes', 'features.mcpBridge',
   'gutter.churnThresholdHigh', 'gutter.churnThresholdMedium', 'gutter.showDeadCodeMarker',
   'dashboardUrl', 'telemetry.enabled', 'telemetry.level',
+  'previewStatusBar.enabled',
 ] as const;
 
 function readSettings(): Record<string, unknown> {
@@ -428,6 +430,37 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   }
   refreshMcpBridge();
   context.subscriptions.push(vscode.workspace.onDidChangeConfiguration(e => { if (e.affectsConfiguration('ctxloom.features.mcpBridge')) refreshMcpBridge(); }));
+
+  // PR-review preview status bar (C2): mirrors the GitHub Action's
+  // top-level risk for the current branch. Sits at priority 99, just
+  // left of the license/per-file indicator. Setting-gated so users
+  // can disable it without uninstalling the extension.
+  let previewStatusBar: PreviewStatusBar | null = null;
+  function refreshPreviewStatusBar(): void {
+    previewStatusBar?.dispose();
+    previewStatusBar = null;
+    const enabled =
+      vscode.workspace
+        .getConfiguration('ctxloom')
+        .get<boolean>('previewStatusBar.enabled') ?? true;
+    const folder = vscode.workspace.workspaceFolders?.[0];
+    if (!enabled || !folder) return;
+    previewStatusBar = new PreviewStatusBar({
+      workspace: folder.uri.fsPath,
+      log: logger!,
+      commandId: 'ctxloom.previewPrReview',
+    });
+    context.subscriptions.push({ dispose: () => previewStatusBar?.dispose() });
+  }
+  refreshPreviewStatusBar();
+  context.subscriptions.push(
+    vscode.workspace.onDidChangeConfiguration(e => {
+      if (e.affectsConfiguration('ctxloom.previewStatusBar.enabled')) refreshPreviewStatusBar();
+    }),
+  );
+  context.subscriptions.push(
+    vscode.workspace.onDidChangeWorkspaceFolders(() => refreshPreviewStatusBar()),
+  );
 
   registerCommands(context, {
     tools, logger: logger!,

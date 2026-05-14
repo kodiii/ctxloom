@@ -2,7 +2,7 @@
   "name": "ctxloom-vscode",
   "displayName": "ctxloom — Code Context for Code Review",
   "description": "AST + git + graph context, in your editor. Hover risk, blast radius, dead code, MCP bridge for AI assistants.",
-  "version": "1.3.0",
+  "version": "1.3.1",
   "ctxloomCliVersion": "1.0.5",
   "private": true,
   "publisher": "ctxloom",
@@ -206,6 +206,11 @@
           "enum": ["off", "error", "all"],
           "default": "off",
           "markdownDescription": "Scope of telemetry when `#ctxloom.telemetry.enabled#` is on. `off` sends nothing, `error` sends Sentry crash reports only, `all` reserved for future usage analytics. Mirrors the CLI's `CTXLOOM_TELEMETRY_LEVEL`. See [docs/TELEMETRY.md](https://github.com/kodiii/ctxloom/blob/main/docs/TELEMETRY.md)."
+        },
+        "ctxloom.previewStatusBar.enabled": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "Show the PR-review preview badge in the status bar. The badge shows the top-level risk of your current branch (vs `origin/HEAD` / `origin/main`) and clicks through to the full preview panel. Refreshes on file save (debounced)."
         },
         "ctxloom.cli.installPromptDismissed": {
           "type": "boolean",
