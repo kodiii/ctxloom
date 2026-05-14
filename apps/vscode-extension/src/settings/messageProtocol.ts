@@ -4,6 +4,13 @@ export interface PanelState {
   license: LicenseState;
   settings: Record<string, unknown>;
   banner?: { kind: 'info' | 'warn' | 'error'; text: string };
+  /**
+   * Set when a universal opt-out env var (CTXLOOM_NO_TELEMETRY=1 or
+   * DO_NOT_TRACK=1) is in effect on the host. The Settings panel uses
+   * this to grey out the telemetry controls and explain why they have
+   * no effect, instead of silently misleading the user.
+   */
+  telemetryDisabledByEnv?: { variable: 'CTXLOOM_NO_TELEMETRY' | 'DO_NOT_TRACK' };
 }
 
 export type HostToWebview =
