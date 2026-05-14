@@ -9,6 +9,42 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
 ---
 
+## [1.3.2] — 2026-05-15
+
+### Added
+
+- **PR-review gutter decorations** (C3 from the v1.3 feature plan).
+  Files in the preview's changed set above-low risk get their changed
+  line ranges (from `git diff --unified=0`) tinted in the editor and
+  flagged on the overview ruler:
+  - 🟠 medium: subtle orange wash
+  - 🔴 high: red wash
+  - 🚨 critical: deeper red wash
+  Low-risk files stay un-decorated so benign PRs don't fill the gutter
+  with noise.
+- Hover over a decorated line shows: risk band, caller count, hub
+  flag, test-coverage status, and the top historical co-change
+  siblings (confidence ≥ 50%).
+- New setting **`ctxloom.previewGutter.enabled`** (default `true`) —
+  setting-gated identically to the status bar so users can turn the
+  feature off without uninstalling.
+- Reuses the C1 `analyzeWorkingTree()` engine and a new pure helper
+  `parseUnifiedDiff()` for hunk extraction. 8 unit tests cover the
+  parser (single/multi-line hunks, multiple files, pure deletions,
+  renames, paths with spaces and unicode).
+
+### Notes
+
+- Decorations refresh on extension activation, on file save
+  (5-second debounce), and on visible-editor change. Stale runs are
+  cancelled via a generation counter so the gutter can't get stuck
+  on yesterday's analysis.
+- Co-exists with the existing churn-based gutter decorations — VS
+  Code lets multiple decoration types stack per editor without
+  interference.
+
+---
+
 ## [1.3.1] — 2026-05-15
 
 ### Added
