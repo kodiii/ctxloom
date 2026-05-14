@@ -12,10 +12,9 @@ branding:
 inputs:
   github-token:
     description: >-
-      GitHub token used to post comments. Defaults to the
-      ${{ secrets.GITHUB_TOKEN }} provided by the Actions runner. Your
-      workflow must declare `permissions: { pull-requests: write,
-      contents: read, checks: write }`.
+      GitHub token used to post comments. Defaults to the GITHUB_TOKEN
+      provided by the Actions runner. Your workflow must declare
+      `permissions: { pull-requests: write, contents: read, checks: write }`.
     required: false
     default: ${{ github.token }}
 

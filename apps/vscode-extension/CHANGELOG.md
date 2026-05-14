@@ -2,7 +2,7 @@
 
 All notable changes to the **ctxloom VS Code extension** are documented
 here. The extension versions independently from the ctxloom CLI
-(`ctxloom-pro` on npm); see the [root CHANGELOG](../../CHANGELOG.md)
+(`ctxloom-pro` on npm); see the [root CHANGELOG](https://github.com/kodiii/ctxloom/blob/main/CHANGELOG.md)
 for CLI release notes.
 
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
@@ -18,7 +18,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
   (shells out to the CLI's `install-pr-bot` command). Requires the
   ctxloom CLI to be installed and on PATH. Shows a VS Code notification
   with the result.
-- **README and Settings panel link to [`docs/TELEMETRY.md`](../../docs/TELEMETRY.md)** —
+- **README and Settings panel link to [`docs/TELEMETRY.md`](https://github.com/kodiii/ctxloom/blob/main/docs/TELEMETRY.md)** —
   the canonical public reference for what ctxloom collects, what's
   never collected, and how to opt out. The Settings UI's Telemetry
   section now points there explicitly.

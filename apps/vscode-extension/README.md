@@ -44,7 +44,7 @@ Universal opt-outs are honored regardless of this setting:
 - `CTXLOOM_NO_TELEMETRY=1`
 - `DO_NOT_TRACK=1` (cross-tool standard)
 
-The complete list of events, properties, what is never collected, and how project paths are anonymized via SHA-256 truncation is in **[docs/TELEMETRY.md](../../docs/TELEMETRY.md)**.
+The complete list of events, properties, what is never collected, and how project paths are anonymized via SHA-256 truncation is in **[docs/TELEMETRY.md](https://github.com/kodiii/ctxloom/blob/main/docs/TELEMETRY.md)**.
 
 ## Manual test plan (run before each release)
 
