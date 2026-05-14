@@ -5,6 +5,47 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
 ---
 
+## [1.2.1] — 2026-05-14
+
+### Changed
+
+- **`@ctxloom/core` heavy native deps now lazy-load.**
+  `@huggingface/transformers` (embedder), `@lancedb/lancedb`
+  (vector store), and `web-tree-sitter` (AST parser) used to be
+  imported eagerly at module load. They are now `await import(...)`'d
+  inside the functions that use them (`loadEmbedder`, `VectorStore.init`,
+  `ASTParser.init`). User-visible effect: identical — the actual
+  download / instantiation paths fire at the same moments. Internal
+  effect: consumers that don't index code (e.g. the new `apps/pr-bot`
+  Action) ship without ~450 MB of native bindings in their
+  distribution. CLI behaviour and timing are unchanged.
+
+### Added
+
+- **`apps/pr-bot` ships as a Docker GitHub Action** (replaces the
+  previous Probot/Fly hosted-app design that never deployed). Install
+  with `uses: kodiii/ctxloom/apps/pr-bot@v1` in any repo's workflow.
+  Posts risk-scored summary comments, inline review notes, and
+  optionally a check-run that can block merge. No LLM calls, no
+  hosted service, no per-PR cost — analysis runs entirely inside the
+  consumer's CI. Documented in [`apps/pr-bot/README.md`](apps/pr-bot/README.md).
+- **`scripts/clean-stale-src-artifacts.mjs` walks every workspace
+  package's src/**, not just the root. Removes stale `.js`/`.d.ts`
+  files left over from long-ago `tsc` runs that silently shadow
+  refactored `.ts` sources. Allowlists `tailwind.config.js` /
+  `postcss.config.js` to preserve legitimate JS configs.
+
+### Internal
+
+- pr-bot maturity sweep (PR #82): CI workflow, `captureError`
+  wiring, per-installation rate limiting, `PRIVATE_KEY` hardening,
+  cache eviction, Dockerfile HEALTHCHECK, JSON Schema for
+  `.ctxloom.yml`, 22 new tests. These shipped with the Probot
+  design and were superseded by the Action pivot in PR #83; the
+  observability + JSON Schema bits carried over.
+
+---
+
 ## [1.2.0] — 2026-05-14
 
 ### Added
