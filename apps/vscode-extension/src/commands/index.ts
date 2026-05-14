@@ -4,6 +4,7 @@ import { promisify } from 'node:util';
 import type { Tools } from '../client/tools.js';
 import type { Logger } from '../shared/logger.js';
 import type { LicenseGate } from '../license/LicenseGate.js';
+import { PreviewPanel } from '../review/PreviewPanel.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -151,6 +152,24 @@ export function registerCommands(context: vscode.ExtensionContext, deps: Command
           `ctxloom: install-pr-bot failed — ${msg.split('\n')[0]}`,
         );
       }
+    }),
+
+    // Opens a webview that mirrors the GitHub Action's PR review — same
+    // detectChanges + getImpactRadius engine, run against the working
+    // tree vs origin/main. Lets developers see their risk score before
+    // opening the PR.
+    vscode.commands.registerCommand('ctxloom.previewPrReview', () => {
+      const folder = vscode.workspace.workspaceFolders?.[0];
+      if (!folder) {
+        vscode.window.showErrorMessage(
+          'ctxloom: preview-pr-review requires an open workspace folder.',
+        );
+        return;
+      }
+      PreviewPanel.showOrReveal({
+        workspace: folder.uri.fsPath,
+        log: deps.logger,
+      });
     }),
   );
 }

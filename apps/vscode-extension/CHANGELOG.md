@@ -9,6 +9,30 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
 ---
 
+## [1.3.0] — 2026-05-14
+
+### Added
+
+- **`ctxloom: Preview PR review`** — new command palette entry that
+  runs the same analysis the ctxloom GitHub Action runs in CI
+  (`detectChanges` + `getImpactRadius` from `@ctxloom/core`), but
+  against the local working tree vs `origin/HEAD` (or `origin/main`,
+  `origin/master`, `main`, `master` — falls through in that order).
+  Result is rendered as Markdown in a side-by-side webview panel,
+  same shape as the bot's summary comment. Lets you see your risk
+  score before opening the PR.
+  - Reusable engine in `src/review/analyzeWorkingTree.ts` returns a
+    typed `PreviewResult` for future status-bar / decoration
+    features to consume.
+  - Webview uses VS Code's theme variables so it blends with the
+    editor; a Refresh button re-runs after edits without closing
+    the panel.
+  - When the graph can't be built (fresh checkout, missing
+    grammars), falls back to a stub renderer showing the changed
+    files with risk based on file count alone.
+
+---
+
 ## [1.2.0] — 2026-05-14
 
 ### Added
