@@ -30,6 +30,11 @@ function buildRiskTable(files: readonly ChangedFile[], maxRows: number): string 
       return order[a.riskLevel] - order[b.riskLevel];
     });
 
+  // No above-low files → no table at all. Returning '' lets the caller
+  // suppress the surrounding `<details>` block so we don't render an
+  // empty headers-only table on benign PRs (cosmetic gap seen on PR #94).
+  if (sorted.length === 0) return '';
+
   const rows = sorted.slice(0, maxRows);
   const extra = sorted.length - rows.length;
 
@@ -66,13 +71,20 @@ export function renderSummary(payload: ReviewPayload): string {
   const { riskLabel, riskScore, changedFiles, impact, pr } = payload;
   const emoji = RISK_EMOJI[riskLabel];
   const label = RISK_LABELS[riskLabel];
-  const score = formatPercent(riskScore);
 
   const changedCount = changedFiles.length;
   const functionCount = changedFiles.reduce((sum, f) => sum + f.importerCount, 0);
   const blastRadius = impact.totalImpacted;
 
-  const header = `## 🧵 ctxloom review\n\n${emoji} **${label}** (score: ${score})\n`;
+  // The score is only shown when it adds signal — i.e. above-low risk.
+  // For a `low` label, the band itself communicates everything; the
+  // hardcoded `low → 20%` was misleading (no, a clean PR isn't "20%
+  // risky"). For medium/high/critical the percentage helps reviewers
+  // distinguish "just barely high" from "deeply critical".
+  const scoreSuffix =
+    riskLabel === 'low' ? '' : ` (score: ${formatPercent(riskScore)})`;
+
+  const header = `## 🧵 ctxloom review\n\n${emoji} **${label}**${scoreSuffix}\n`;
   const oneLiner = `\n**Changed:** ${changedCount} file${changedCount !== 1 ? 's' : ''}, ${functionCount} caller${functionCount !== 1 ? 's' : ''} total`;
   const blastLine = `\n**Blast radius:** ${blastRadius} file${blastRadius !== 1 ? 's' : ''}`;
   const reviewerLine = buildReviewerLine(payload);

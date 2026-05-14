@@ -126,4 +126,57 @@ describe('renderSummary', () => {
     expect(output).toContain('apps/pr-bot/README.md');
     expect(output).toContain('issues/new?labels=pr-bot');
   });
+
+  // Cosmetic regression: PR #94 (a docs-only change) rendered with
+  // "Low risk (score: 20%)" — the score parenthetical felt arbitrary
+  // for a band that's already self-explanatory. Hide for `low`, keep
+  // for medium/high/critical where the magnitude matters.
+  it('hides the (score: N%) parenthetical for low-risk PRs', () => {
+    const payload = makePayload({ riskScore: 0.2, riskLabel: 'low' });
+    const output = renderSummary(payload);
+    expect(output).toContain('Low risk');
+    expect(output).not.toMatch(/Low risk[^\n]*\(score:/);
+  });
+
+  it('still shows (score: N%) for medium/high/critical', () => {
+    for (const [score, label] of [
+      [0.5, 'medium'] as const,
+      [0.8, 'high'] as const,
+      [1.0, 'critical'] as const,
+    ]) {
+      const payload = makePayload({ riskScore: score, riskLabel: label });
+      expect(renderSummary(payload)).toContain('(score:');
+    }
+  });
+
+  // Cosmetic regression: PR #94 (all-low changes) rendered a Risk
+  // breakdown <details> block whose body was just the markdown
+  // headers with no rows. Skip the block entirely when there's
+  // nothing above `low` to report.
+  it('omits the Risk breakdown <details> when all files are low', () => {
+    const payload = makePayload();  // default fixture is all low
+    const output = renderSummary(payload);
+    expect(output).not.toContain('Risk breakdown');
+    expect(output).not.toContain('<details>');
+  });
+
+  it('still includes the Risk breakdown when at least one file is above low', () => {
+    const payload = makePayload({
+      riskScore: 0.8,
+      riskLabel: 'high',
+      changedFiles: [
+        {
+          file: 'src/auth.ts',
+          riskLevel: 'high',
+          importerCount: 8,
+          isHub: true,
+          hasTestCoverage: false,
+          risk: null,
+        },
+      ],
+    });
+    const output = renderSummary(payload);
+    expect(output).toContain('Risk breakdown');
+    expect(output).toContain('src/auth.ts');
+  });
 });

@@ -5,6 +5,31 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
 ---
 
+## [1.2.5] — 2026-05-14
+
+### Changed
+
+- **pr-bot summary: hide `(score: 20%)` parenthetical on low-risk
+  PRs.** The hardcoded `low → 0.20` score made every benign change
+  read as "20% risky" when the label `Low risk` already said
+  everything. Now the parenthetical only renders for
+  `medium`/`high`/`critical`, where the magnitude actually helps a
+  reviewer distinguish "borderline" from "deeply broken".
+- **pr-bot summary: drop empty Risk breakdown `<details>` block.**
+  When every changed file is `low` there's nothing to put in the
+  table; the previous output rendered just the markdown headers
+  with no rows, which looked like a bug. The section is now skipped
+  entirely on benign PRs.
+
+### Notes
+
+- Both fixes are output-side only; the underlying risk scoring is
+  unchanged. The first dogfood run after v1.2.5 ships (and the v1
+  image is retagged) will produce a noticeably cleaner summary on
+  docs-only / trivial PRs.
+
+---
+
 ## [1.2.4] — 2026-05-14
 
 ### Fixed
