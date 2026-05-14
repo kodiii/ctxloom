@@ -5,6 +5,31 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
 ---
 
+## [1.2.3] — 2026-05-14
+
+### Fixed
+
+- **pr-bot Docker image now includes `git`.** The runtime image is
+  `node:22-slim`, which doesn't ship git. The action shells out to
+  git via `simple-git` (inside `@ctxloom/core`'s `GitOverlayStore`
+  for co-change history), so every invocation crashed with
+  `spawn git ENOENT`. Added `apt-get install -y git ca-certificates`
+  to the runtime stage. Image grows by ~30 MB; cold pull from GHCR
+  stays under 5 s.
+- **GHCR pre-built image pipeline** introduced in PR #89: the
+  Docker action references `docker://ghcr.io/kodiii/ctxloom-pr-bot:v1`
+  instead of `image: 'Dockerfile'`, because GitHub's built-in
+  Dockerfile resolution can't see across workspace packages in a
+  monorepo. New \`.github/workflows/pr-bot-publish-image.yml\` builds
+  with the monorepo root as Docker context on every `v*` tag push.
+
+### Notes
+
+- CLI behavior is unchanged. This release is strictly to ship the
+  fixed Docker image to the GHCR registry under the `v1` tag.
+
+---
+
 ## [1.2.2] — 2026-05-14
 
 ### Added
