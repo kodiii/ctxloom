@@ -1,0 +1,165 @@
+name: pr-bot mirror to public action repo
+
+# Mirrors apps/pr-bot/action.yml + README.md to the public companion repo
+# (kodiii/ctxloom-pr-bot) and cuts a GitHub Release there on every `v*` tag.
+#
+# Why this workflow exists
+# ─────────────────────────
+# The main monorepo is private, but GitHub Actions referenced via
+# `uses: <owner>/<repo>@<ref>` can only resolve against PUBLIC repos for
+# external consumers. Additionally, GitHub Marketplace requires action.yml
+# at the *root* of the source repo — ours lives at apps/pr-bot/action.yml.
+#
+# The standard fix for monorepos that want to ship a Marketplace action:
+# maintain a thin public "consumer-facing" repo that only contains
+# action.yml + README, kept in lockstep with the monorepo on every tag.
+# Internal users keep using the monorepo as the source of truth; external
+# users (and Marketplace) consume the mirror.
+#
+# One-time setup (see apps/pr-bot/MARKETPLACE.md)
+# ────────────────────────────────────────────────
+#   1. Create public empty repo  github.com/kodiii/ctxloom-pr-bot
+#   2. Generate a PAT (classic, scope: `repo`)
+#   3. Add secret PR_BOT_MIRROR_TOKEN to THIS repo's settings → Secrets
+#   4. Push a v* tag — this workflow does the rest
+#
+# Triggers:
+#   - push of any `v*` tag (release pipeline — runs alongside the GHCR
+#     image build)
+#   - workflow_dispatch with a `tag` input (manual re-issue / bootstrap)
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to mirror (e.g. v1.2.5). Release is also tagged with the floating major (v1).'
+        required: true
+        type: string
+
+env:
+  MIRROR_REPO: kodiii/ctxloom-pr-bot
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
+
+jobs:
+  mirror:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Resolve tag
+        id: resolve
+        run: |
+          raw="${{ inputs.tag || github.ref_name }}"
+          version="${raw#v}"
+          major=$(echo "$version" | cut -d. -f1)
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "tag=v$version" >> "$GITHUB_OUTPUT"
+          echo "major=v$major" >> "$GITHUB_OUTPUT"
+          echo "Mirroring v$version (floating major: v$major) to $MIRROR_REPO"
+
+      - name: Checkout monorepo at tag
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+          path: monorepo
+
+      - name: Verify mirror secret is present
+        env:
+          MIRROR_TOKEN: ${{ secrets.PR_BOT_MIRROR_TOKEN }}
+        run: |
+          if [ -z "$MIRROR_TOKEN" ]; then
+            echo "::error::PR_BOT_MIRROR_TOKEN secret is not set. See apps/pr-bot/MARKETPLACE.md for one-time setup."
+            exit 1
+          fi
+
+      - name: Checkout mirror repo
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ env.MIRROR_REPO }}
+          token: ${{ secrets.PR_BOT_MIRROR_TOKEN }}
+          path: mirror
+
+      - name: Stage mirror payload
+        run: |
+          set -eux
+          # Wipe the mirror's working tree (preserve .git so we can push)
+          find mirror -mindepth 1 -maxdepth 1 ! -name .git -exec rm -rf {} +
+
+          # Copy the public-facing files. action.yml at repo root is REQUIRED
+          # for Marketplace listing — that's the whole point of the mirror.
+          cp monorepo/apps/pr-bot/action.yml mirror/action.yml
+          cp monorepo/apps/pr-bot/README.md  mirror/README.md
+          cp monorepo/LICENSE                mirror/LICENSE
+          if [ -d monorepo/apps/pr-bot/schema ]; then
+            cp -R monorepo/apps/pr-bot/schema mirror/schema
+          fi
+
+          # Generated mirror notice so contributors who land here understand
+          # this isn't the source of truth.
+          cat > mirror/.MIRROR_NOTICE.md <<'EOF'
+          # This repo is a generated mirror
+
+          The source of truth for `ctxloom-pr-bot` lives in the
+          `kodiii/ctxloom` monorepo at `apps/pr-bot/`. This repo is
+          regenerated on every tag by
+          `.github/workflows/pr-bot-mirror-release.yml`.
+
+          **Do not open PRs against this repo.** They will be overwritten
+          on the next release. File issues and PRs at
+          https://github.com/kodiii/ctxloom/issues instead.
+          EOF
+
+      - name: Commit and push to mirror
+        working-directory: mirror
+        env:
+          TAG: ${{ steps.resolve.outputs.tag }}
+        run: |
+          set -eux
+          git config user.name  "ctxloom release bot"
+          git config user.email "bot@ctxloom.com"
+          git add -A
+          if git diff --cached --quiet; then
+            echo "Mirror already up to date for $TAG"
+          else
+            git commit -m "release: $TAG"
+            git push origin HEAD:main
+          fi
+
+      - name: Tag mirror repo
+        working-directory: mirror
+        env:
+          TAG: ${{ steps.resolve.outputs.tag }}
+          MAJOR: ${{ steps.resolve.outputs.major }}
+        run: |
+          set -eux
+          # Force-push both the version tag and the floating major tag so
+          # `uses: kodiii/ctxloom-pr-bot@v1` always resolves to latest v1.x.
+          git tag -f "$TAG"
+          git tag -f "$MAJOR"
+          git push origin -f "$TAG"
+          git push origin -f "$MAJOR"
+
+      - name: Cut GitHub Release on mirror
+        env:
+          GH_TOKEN: ${{ secrets.PR_BOT_MIRROR_TOKEN }}
+          TAG: ${{ steps.resolve.outputs.tag }}
+          VERSION: ${{ steps.resolve.outputs.version }}
+        run: |
+          set -eux
+          # Create or update the release. `gh release create` errors if the
+          # tag already has a release, so we try create-then-edit.
+          notes="Auto-generated release for ctxloom-pr-bot $TAG. Source: https://github.com/kodiii/ctxloom/releases/tag/$TAG"
+          if ! gh release create "$TAG" \
+              --repo "$MIRROR_REPO" \
+              --title "$TAG" \
+              --notes "$notes" \
+              --latest 2>/dev/null; then
+            gh release edit "$TAG" \
+              --repo "$MIRROR_REPO" \
+              --title "$TAG" \
+              --notes "$notes" \
+              --latest
+          fi

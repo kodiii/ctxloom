@@ -4,6 +4,7 @@ import { ApiClient } from './ApiClient.js';
 import { Fingerprint } from './Fingerprint.js';
 import { maybePrintExpiryWarning } from './ExpiryWarning.js';
 import { LicenseRequiredError, NetworkError, LicenseRevokedError } from './errors.js';
+import { track } from './telemetry.js';
 import type { LicenseFile } from './types.js';
 
 export * from './errors.js';
@@ -12,6 +13,7 @@ export { LicenseStore } from './LicenseStore.js';
 export { ApiClient } from './ApiClient.js';
 export { Fingerprint } from './Fingerprint.js';
 export { maybePrintExpiryWarning } from './ExpiryWarning.js';
+export { shouldEmitInstallCompleted, shouldEmitFirstReviewRun } from './FunnelMilestones.js';
 
 const REVALIDATION_DAYS = 7;
 const GRACE_HOURS = 72;
@@ -61,6 +63,16 @@ export async function isActive(opts: LicenseOptions = {}): Promise<boolean> {
       expiresAt: result.expiresAt || license.expiresAt,
     };
     await store.write(refreshed);
+    // Fire renewal when the backend has extended the expiry (subscription
+    // auto-renewed, manual renewal, plan upgrade). Same-expiry validations
+    // are routine revalidations — not funnel events.
+    if (result.expiresAt && result.expiresAt !== license.expiresAt) {
+      track('renewal', {
+        tier: license.tier,
+        previousExpiresAt: license.expiresAt,
+        newExpiresAt: result.expiresAt,
+      });
+    }
     maybePrintExpiryWarning(refreshed.expiresAt);
     return true;
   } catch (err) {

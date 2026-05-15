@@ -190,6 +190,7 @@ export {
 export type { TelemetryEvent, TelemetryLevel } from './license/telemetry.js';
 export { track, captureError, getTelemetryLevel } from './license/telemetry.js';
 export { shouldShowTelemetryNotice } from './license/TelemetryNotice.js';
+export { shouldEmitInstallCompleted, shouldEmitFirstReviewRun } from './license/FunnelMilestones.js';
 export { getOrCreateDistinctId, markAliasSent } from './license/DistinctIdStore.js';
 export type { DistinctIdRecord } from './license/DistinctIdStore.js';
 
