@@ -58,6 +58,8 @@ import {
   captureError,
   recordTrendSnapshot,
   shouldShowTelemetryNotice,
+  shouldEmitInstallCompleted,
+  shouldEmitFirstReviewRun,
   getTelemetryLevel,
 } from '@ctxloom/core';
 import type { CandidateActivity } from '@ctxloom/core';
@@ -442,6 +444,15 @@ function maybePrintTelemetryNotice(): void {
 
 async function main(): Promise<void> {
   maybePrintTelemetryNotice();
+  // Fire the install_completed funnel milestone exactly once per machine.
+  // Order matters: this runs BEFORE checkLicense() so users who bounce off
+  // the license gate still register as installed — the trial→activate funnel
+  // would otherwise misattribute "users who hit the gate" as the install
+  // bucket. The marker write is best-effort and synchronous (~1ms); the
+  // PostHog event itself is fire-and-forget.
+  if (command !== undefined && shouldEmitInstallCompleted()) {
+    track('install_completed', { command });
+  }
   await checkLicense();
 
   switch (command) {
@@ -756,6 +767,13 @@ async function main(): Promise<void> {
       if (files.length === 0) {
         console.error('[ctxloom] No files specified and no staged changes found.');
         process.exit(1);
+      }
+
+      // Fire first_review_run once per project. We wait until past all arg
+      // validation and the staged-files check so aborted invocations don't
+      // burn the milestone — only real review attempts count.
+      if (shouldEmitFirstReviewRun(root)) {
+        track('first_review_run', { source: 'cli', fileCount: files.length });
       }
 
       const config = await loadReviewConfig(root);

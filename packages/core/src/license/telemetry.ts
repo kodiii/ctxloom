@@ -87,7 +87,12 @@ export type TelemetryEvent =
   | 'tool_dispatched'
   // v1.1.3 dashboard events
   | 'dashboard_loaded'
-  | 'dashboard_page_viewed';
+  | 'dashboard_page_viewed'
+  // v1.2.6 funnel milestones — together with trial_started + license_activated
+  // these compose the trial→paid conversion funnel in PostHog.
+  | 'install_completed'     // first CLI invocation on this machine
+  | 'first_review_run'      // first review-suggest per project
+  | 'renewal';              // license validation extended expiresAt
 
 // Module-level cache — populated on first track()/captureError() call.
 // Reset across test runs by vi.resetModules().
