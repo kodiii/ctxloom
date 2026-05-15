@@ -5,39 +5,75 @@ analysis** on every PR: blast radius, risk scores, reviewer
 suggestions, co-change overlay. Zero LLM calls, zero external
 services, $0/PR.
 
-This guide adds an **optional narrative layer** on top: Anthropic's
-official `claude-code-action` runs in your CI with the ctxloom MCP
-server attached, dispatches four specialist subagents (security,
-architecture, testing, performance) in **parallel**, and posts a single
-consolidated review comment.
+This guide adds an **optional narrative layer** on top: four
+specialist Claude subagents (security, architecture, testing,
+performance) that run **in parallel**, call ctxloom MCP tools to gather
+structural evidence, and post a single consolidated review comment.
 
-The narrative review is gated:
-- Only runs when the deterministic review flags **medium/high/critical** risk, OR
+You can run them three ways — pick whichever matches how you already
+use Claude:
+
+1. **Locally** in Claude Desktop / Codex / Claude Code CLI — uses your
+   existing logged-in session, **no API key**, no GitHub Action, no
+   secrets to manage. *Recommended for most users.*
+2. **In CI with your Claude subscription** — the official
+   `claude-code-action` with `CLAUDE_CODE_OAUTH_TOKEN` (from the
+   Claude Code GitHub App) draws from your Max/Pro/Team seat. **No API
+   key.**
+3. **In CI with `ANTHROPIC_API_KEY`** — pay-per-token, for teams
+   without a Claude subscription.
+
+In CI modes, the review is gated:
+- Auto-runs only when the deterministic ctxloom-review flagged
+  **medium/high/critical** risk, OR
 - Someone comments **`@claude review`** on the PR
 
-This keeps token spend proportional to actual risk.
+This keeps token / quota spend proportional to actual risk.
 
 ## Architecture
 
+The structural analysis runs the same way regardless of where Claude
+sits. The four specialist agents call ctxloom MCP tools, the
+orchestrator aggregates, and a single comment lands on the PR.
+
 ```
-PR opens
-  │
-  ├─► .github/workflows/ctxloom-review.yml    (always runs)
-  │        Docker action: ctxloom-pr-bot
-  │        ↳ structural analysis, $0
-  │        ↳ posts deterministic comment
-  │
-  └─► .github/workflows/claude-review.yml     (gated)
-           anthropics/claude-code-action
-           ↳ attaches ctxloom MCP (33 tools)
-           ↳ dispatches in parallel via Task tool:
-              • security-reviewer
-              • architecture-reviewer
-              • testing-reviewer
-              • performance-reviewer
-           ↳ orchestrator validates + calibrates + dedupes
-           ↳ posts a single updating comment
+                   ┌──────────────────────────────────────┐
+                   │  review-orchestrator                  │
+                   │  ↳ validates + calibrates + dedupes   │
+                   │  ↳ posts single self-updating comment │
+                   └──────────────┬───────────────────────┘
+                                  │ dispatches in parallel via Task
+       ┌────────────┬─────────────┼─────────────┬────────────┐
+       ▼            ▼             ▼             ▼            ▼
+  security    architecture     testing     performance      (your custom
+  reviewer       reviewer     reviewer       reviewer        specialist)
+       │            │             │             │
+       └────────────┴─────┬───────┴─────────────┘
+                          ▼
+                ┌─────────────────────┐
+                │ ctxloom MCP (33     │
+                │ tools — graph,      │
+                │ git overlay, risk)  │
+                └─────────────────────┘
+
+Run it in any of these three places:
+
+  Mode 1 (local)   Claude Desktop / Codex / Claude Code CLI
+                   ↳ uses your logged-in session — no key needed
+
+  Mode 2 (CI)      .github/workflows/claude-review.yml
+                   anthropics/claude-code-action + CLAUDE_CODE_OAUTH_TOKEN
+                   ↳ uses your subscription seat — no API key needed
+
+  Mode 3 (CI)      .github/workflows/claude-review.yml
+                   anthropics/claude-code-action + ANTHROPIC_API_KEY
+                   ↳ pay-per-token
 ```
+
+In CI modes, the deterministic `ctxloom-review.yml` Docker action also
+runs (free, $0/PR, always). The Claude review layers narrative on top —
+gated to medium+ risk PRs or `@claude review` mentions, so it never
+runs on trivial diffs.
 
 The specialists communicate with each other **only through the
 orchestrator** — they don't share state mid-run. This is exactly the
@@ -66,49 +102,114 @@ demands. Typical token usage drops by 60–80% vs. dump-the-diff
 reviewers, and findings cite specific MCP tool calls as evidence
 (making hallucinations easy to catch in review).
 
-## Installation
+## Three deployment modes
 
-### One-time setup
+Pick the one that matches how you already use Claude. **All three are
+first-class.** They differ only in *where* Claude runs and *how* it's
+authenticated.
+
+| Mode | Where Claude runs | Auth | Cost | Setup time |
+|---|---|---|---|---|
+| **1. Local — Claude Desktop / Codex / CLI** | Your machine | Your existing login session | ✅ Included in your subscription | 30 seconds |
+| **2. CI with subscription (OAuth)** | GitHub Actions | Claude Code GitHub App seat | ✅ Included in your subscription | ~5 min one-time |
+| **3. CI with API key** | GitHub Actions | `ANTHROPIC_API_KEY` | 💳 Pay-per-token (~$0.10/PR) | ~5 min one-time |
+
+If you have a **Claude Max / Pro / Team subscription**, use Mode 1 or
+Mode 2. **You don't need an API key for either.** Mode 3 only exists
+for teams without a Claude subscription who want to pay per token.
+
+---
+
+### Mode 1 — Local (Claude Desktop / Codex / Claude Code CLI)
+
+**Zero CI, zero secrets, uses your existing logged-in Claude session.**
+The agents live in your home directory; ask Claude to review any PR
+from any repo and it dispatches them.
+
+**Prereqs**
+- Claude Desktop / Codex / Claude Code CLI installed and logged in.
+- ctxloom MCP configured in that app (run `ctxloom setup` once).
+- `gh` CLI installed and authenticated (Claude uses it to post the
+  comment).
+
+**Install (one command)**
 
 ```bash
-# 1. Install the deterministic pr-bot if you haven't already
-ctxloom install-pr-bot
-
-# 2. Copy this directory's examples into your repo
-cp -R node_modules/ctxloom-pro/apps/pr-bot/examples/.claude .claude
-cp node_modules/ctxloom-pro/apps/pr-bot/examples/.github/workflows/claude-review.yml \
-   .github/workflows/
-
-# 3. Commit
-git add .claude .github/workflows/claude-review.yml
-git commit -m "ci: add ctxloom AI review pipeline"
+cd /path/to/cloned/ctxloom/apps/pr-bot/examples
+./setup-local.sh                  # copies agents to ~/.claude/agents/
 ```
 
-### Repository secrets
+Or for a single project only:
 
-Add the following to **Settings → Secrets and variables → Actions**:
-
-| Secret | Required | Where to get it |
-|---|---|---|
-| `CTXLOOM_LICENSE_KEY` | Yes | Your ctxloom key (or trial key) |
-| `ANTHROPIC_API_KEY` | One of these | https://console.anthropic.com/ |
-| `CLAUDE_CODE_OAUTH_TOKEN` | One of these | Connect via the Claude Code GitHub App |
-
-Use `ANTHROPIC_API_KEY` for pay-per-token billing. Use
-`CLAUDE_CODE_OAUTH_TOKEN` if you have a Claude Max/Pro subscription
-and want to draw from your seat quota instead.
-
-### Test it
-
-Open or update a PR and comment:
-
-```
-@claude review
+```bash
+./setup-local.sh --project        # copies to ./.claude/agents/
 ```
 
-The orchestrator will dispatch all four specialists in parallel and
-post a consolidated review within 1–3 minutes (depending on diff size
-and model choice).
+**Use it**
+
+Open Claude Desktop (or Codex / Claude Code CLI). With your repo open
+and the ctxloom MCP connected, ask:
+
+> Review PR #42 in this repo using the **review-orchestrator** agent.
+> Dispatch the four specialist subagents (security, architecture,
+> testing, performance) in parallel via the ctxloom MCP tools and post
+> a consolidated comment using gh CLI.
+
+Claude routes to the orchestrator agent, which fires off the four
+specialists in parallel, aggregates their findings, and posts the
+review on the PR.
+
+**This is the simplest path and recommended for most users.** No
+secrets to manage, no workflow file to commit, no GitHub App to
+install. You're paying for your Claude subscription anyway — make it
+do PR reviews too.
+
+---
+
+### Mode 2 — CI with subscription (OAuth, recommended for teams)
+
+If you want reviews **automatic on every risky PR** without anyone
+having to invoke Claude manually, run them in GitHub Actions but bill
+against your Claude seat instead of an API key.
+
+**Setup**
+
+1. Install the official **[Claude Code GitHub App](https://github.com/apps/claude)** on your repo.
+   It auto-creates a `CLAUDE_CODE_OAUTH_TOKEN` repo secret that draws
+   from your Max/Pro/Team seat — no API key, no per-token billing.
+2. Copy the workflow + agents into your repo:
+   ```bash
+   cp -R apps/pr-bot/examples/.claude .claude
+   cp apps/pr-bot/examples/.github/workflows/claude-review.yml \
+      .github/workflows/
+   ```
+3. Add **`CTXLOOM_LICENSE_KEY`** to your repo secrets (ctxloom MCP
+   needs this to start in CI).
+4. Commit and push.
+
+That's it. The workflow's `with:` block already points at
+`secrets.CLAUDE_CODE_OAUTH_TOKEN`. Open a PR, comment `@claude review`,
+or wait for the auto-trigger when ctxloom-review flags risk.
+
+---
+
+### Mode 3 — CI with API key (pay-per-token)
+
+Use this **only** if you don't have a Claude subscription and want to
+pay per token instead.
+
+**Setup**
+
+1. Same workflow + agents copy as Mode 2.
+2. Add **`ANTHROPIC_API_KEY`** to your repo secrets (from
+   https://console.anthropic.com/).
+3. Open `.github/workflows/claude-review.yml` and:
+   - Comment out the `claude_code_oauth_token:` line.
+   - Uncomment the `anthropic_api_key:` line.
+4. Add `CTXLOOM_LICENSE_KEY` to repo secrets.
+5. Commit, push, comment `@claude review` on any PR.
+
+Expected cost is documented below.
 
 ## The four specialists
 
@@ -194,6 +295,19 @@ Coordinates the above:
 
 ## Cost expectations
 
+### Modes 1 & 2 (subscription)
+
+**$0 marginal cost per PR.** Reviews count against your existing
+Claude Max / Pro / Team quota. Practical limits:
+- Max plan: 200+ reviews/day comfortably
+- Pro plan: 30–50 reviews/day
+- Team plan: scales per seat
+
+Exceeding the rolling 5-hour quota window pauses Claude until the
+window resets — no surprise charges.
+
+### Mode 3 (pay-per-token API)
+
 Per PR (Sonnet 4.6 pricing):
 
 | PR size | Specialists run | Approx cost |
@@ -234,11 +348,11 @@ effect on the next `@claude review` — no redeploy needed.
 
 | Aspect | ctxloom-pr-bot (Docker action) | ctxloom AI review (this) |
 |---|---|---|
-| Cost per PR | $0 | ~$0.10 typical |
+| Cost per PR | $0 | $0 (Modes 1 & 2 — subscription) / ~$0.10 typical (Mode 3 — API) |
 | Runs on | Every PR | Risk-gated or on-demand |
 | Output | Risk score, blast radius, reviewer suggestions | Multi-perspective narrative + specific findings with fixes |
-| Uses LLM | No | Yes (your key, your tokens) |
-| Sees code | Yes (in your runner, never leaves) | Yes (via MCP, in your runner, never leaves) |
+| Uses LLM | No | Yes (your session / your seat / your key) |
+| Sees code | Yes (in your runner, never leaves) | Yes (via MCP, in your runner or local machine, never leaves) |
 | Hallucination risk | None (deterministic) | Mitigated via MCP tool evidence requirements |
 | When to use | Always | When you want narrative + multi-specialist analysis |
 

@@ -13,27 +13,39 @@
 # ─────────────────
 # Keep them separate on purpose:
 #   - `ctxloom-review.yml`  → deterministic, free, $0/PR, always runs
-#   - `claude-review.yml`   → narrative, uses your Claude API tokens,
-#                              opt-in via @claude mention OR auto-runs
-#                              when the deterministic risk score is
-#                              medium or higher (see `if:` below)
-#
-# This split keeps cost predictable: trivial PRs get the free
-# structural review, only risky ones spend tokens on narration.
+#   - `claude-review.yml`   → narrative, uses your Claude SEAT (or API
+#                              tokens — see Setup), opt-in via @claude
+#                              mention OR auto-runs when the
+#                              deterministic risk score is medium or
+#                              higher (see `if:` below)
 #
 # Setup (one-time)
 # ────────────────
-# 1. Install ctxloom-pr-bot:
-#      ctxloom install-pr-bot
-# 2. Copy this file:
-#      cp examples/.github/workflows/claude-review.yml .github/workflows/
-# 3. Copy the agent definitions:
-#      cp -R examples/.claude .claude
-# 4. Add your Anthropic key to repo secrets as `ANTHROPIC_API_KEY`.
-#    (Or use `CLAUDE_CODE_OAUTH_TOKEN` if you've connected via the
-#    GitHub App — see https://github.com/anthropics/claude-code-action)
-# 5. Commit `.github/workflows/claude-review.yml` and `.claude/`,
-#    push, open a PR. Comment `@claude review` on it to trigger.
+# Pick ONE of the two auth paths:
+#
+# (Recommended) Path A — Use your existing Claude subscription
+#   No API key, no per-token billing. Draws from your Max/Pro seat.
+#     1. Install the Claude Code GitHub App on your repo:
+#        https://github.com/apps/claude
+#        It auto-creates the `CLAUDE_CODE_OAUTH_TOKEN` repo secret.
+#     2. Done — leave the `anthropic_api_key` line below commented out.
+#
+# Path B — Pay-per-token via API key
+#   Use if you don't have a Claude subscription or want budget control.
+#     1. Add `ANTHROPIC_API_KEY` to your repo secrets.
+#     2. Uncomment the `anthropic_api_key:` line below; comment out the
+#        `claude_code_oauth_token:` line.
+#
+# Then for either path:
+#   1. Install ctxloom-pr-bot:        ctxloom install-pr-bot
+#   2. Copy this file:                cp examples/.github/workflows/claude-review.yml .github/workflows/
+#   3. Copy the agent definitions:    cp -R examples/.claude .claude
+#   4. Add `CTXLOOM_LICENSE_KEY` as a repo secret.
+#   5. Commit, push, open a PR, comment `@claude review`.
+#
+# For LOCAL use (Claude Desktop / Codex / Claude Code CLI) you don't
+# need this workflow at all — see apps/pr-bot/AI-REVIEWS.md → "Local
+# mode" for the zero-CI path.
 
 name: ctxloom AI review
 
@@ -108,9 +120,15 @@ jobs:
           CTXLOOM_LICENSE_KEY: ${{ secrets.CTXLOOM_LICENSE_KEY }}
           CTXLOOM_ROOT: ${{ github.workspace }}
         with:
-          # Either ANTHROPIC_API_KEY (pay-per-token) or CLAUDE_CODE_OAUTH_TOKEN
-          # (uses your Claude Max/Pro subscription via the GitHub App).
-          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          # ── Auth (pick ONE — see header for setup details) ───────────
+          # Path A: Use your Claude subscription via the Claude Code
+          # GitHub App. The app creates this secret automatically.
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+
+          # Path B: Pay-per-token via Anthropic API key. Uncomment if
+          # you don't have a Claude subscription. Comment out the
+          # `claude_code_oauth_token` line above when using this.
+          # anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
 
           # Pin the model. Sonnet is the sweet spot for review tasks;
           # use Opus for high-stakes repos, Haiku to cut costs further.
