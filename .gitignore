@@ -1,6 +1,9 @@
 node_modules/
 dist/
 .claude/
+# but DO ship the example agent definitions that users copy into their repos
+!apps/pr-bot/examples/.claude/
+!apps/pr-bot/examples/.claude/**
 .planning/
 .contextmesh/
 .ctxloom/
