@@ -8,6 +8,8 @@ Uses ctxloom's local dependency graph + git overlay to find:
 - Who has historically owned the high-risk modules (reviewer suggestions)
 - Co-change patterns from git history that imports alone wouldn't surface
 
+> **Want LLM-narrated reviews on top?** See **[AI-REVIEWS.md](./AI-REVIEWS.md)** for the optional Claude integration — four specialist agents (security, architecture, testing, performance) running in parallel via Anthropic's official `claude-code-action`, with the ctxloom MCP server providing structural evidence so the LLM never hallucinates the graph. Risk-gated so you only spend tokens on PRs that actually need attention.
+
 ---
 
 ## Quick start

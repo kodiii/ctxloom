@@ -1,0 +1,175 @@
+# AI-narrated PR review — runs alongside the deterministic ctxloom-review.
+#
+# What this does
+# ──────────────
+# Triggers Anthropic's official claude-code-action with the ctxloom MCP
+# server attached, then asks Claude to dispatch four specialist
+# reviewer subagents (security, architecture, testing, performance) in
+# parallel. Each subagent uses ctxloom's 33 MCP tools to gather
+# structural evidence, produces severity-tagged findings, and the
+# orchestrator aggregates them into a single comment on the PR.
+#
+# Why two workflows
+# ─────────────────
+# Keep them separate on purpose:
+#   - `ctxloom-review.yml`  → deterministic, free, $0/PR, always runs
+#   - `claude-review.yml`   → narrative, uses your Claude SEAT (or API
+#                              tokens — see Setup), opt-in via @claude
+#                              mention OR auto-runs when the
+#                              deterministic risk score is medium or
+#                              higher (see `if:` below)
+#
+# Setup (one-time)
+# ────────────────
+# Pick ONE of the two auth paths:
+#
+# (Recommended) Path A — Use your existing Claude subscription
+#   No API key, no per-token billing. Draws from your Max/Pro seat.
+#     1. Install the Claude Code GitHub App on your repo:
+#        https://github.com/apps/claude
+#        It auto-creates the `CLAUDE_CODE_OAUTH_TOKEN` repo secret.
+#     2. Done — leave the `anthropic_api_key` line below commented out.
+#
+# Path B — Pay-per-token via API key
+#   Use if you don't have a Claude subscription or want budget control.
+#     1. Add `ANTHROPIC_API_KEY` to your repo secrets.
+#     2. Uncomment the `anthropic_api_key:` line below; comment out the
+#        `claude_code_oauth_token:` line.
+#
+# Then for either path:
+#   1. Install ctxloom-pr-bot:        ctxloom install-pr-bot
+#   2. Copy this file:                cp examples/.github/workflows/claude-review.yml .github/workflows/
+#   3. Copy the agent definitions:    cp -R examples/.claude .claude
+#   4. Add `CTXLOOM_LICENSE_KEY` as a repo secret.
+#   5. Commit, push, open a PR, comment `@claude review`.
+#
+# For LOCAL use (Claude Desktop / Codex / Claude Code CLI) you don't
+# need this workflow at all — see apps/pr-bot/AI-REVIEWS.md → "Local
+# mode" for the zero-CI path.
+
+name: ctxloom AI review
+
+on:
+  # On-demand: comment `@claude review` on any PR
+  issue_comment:
+    types: [created]
+  pull_request_review_comment:
+    types: [created]
+
+  # Auto-trigger: only when ctxloom-review posted a non-low risk score.
+  # Looks for the deterministic comment from ctxloom-pr-bot, parses its
+  # risk level, runs Claude narration only if medium/high/critical.
+  workflow_run:
+    workflows: ["ctxloom review"]
+    types: [completed]
+
+permissions:
+  contents: read
+  pull-requests: write   # post review comments
+  issues: write          # post PR comments (PR comments are issue comments)
+  id-token: write        # OIDC for claude-code-action
+
+jobs:
+  claude-review:
+    # Gate: only run when a human invoked it OR the deterministic
+    # review flagged something. Skips trivial PRs entirely to save
+    # tokens.
+    if: |
+      (github.event_name == 'issue_comment' &&
+       contains(github.event.comment.body, '@claude review') &&
+       github.event.issue.pull_request) ||
+      (github.event_name == 'pull_request_review_comment' &&
+       contains(github.event.comment.body, '@claude review')) ||
+      (github.event_name == 'workflow_run' &&
+       github.event.workflow_run.conclusion == 'success')
+
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          # Full history — ctxloom needs it for co-change overlay and
+          # for Claude to read the diff against origin/main.
+          fetch-depth: 0
+
+      - name: Install ctxloom CLI
+        # The MCP server runs locally inside the Action runner. Claude
+        # talks to it over stdio. No GHCR pull needed — npm is enough.
+        run: |
+          npm install -g ctxloom-pro@latest
+          ctxloom --version
+
+      - name: Activate ctxloom license (CI ephemeral)
+        env:
+          CTXLOOM_LICENSE_KEY: ${{ secrets.CTXLOOM_LICENSE_KEY }}
+        run: |
+          if [ -z "$CTXLOOM_LICENSE_KEY" ]; then
+            echo "::warning::CTXLOOM_LICENSE_KEY secret not set — ctxloom MCP server will refuse to start. Trial: ctxloom trial. Buy: https://ctxloom.com/pricing"
+            exit 1
+          fi
+          # Server validates the key on every invocation in CI mode;
+          # no `activate` needed.
+          echo "License key found ($(echo -n "$CTXLOOM_LICENSE_KEY" | wc -c) chars)"
+
+      - name: Run Claude review
+        uses: anthropics/claude-code-action@v1
+        env:
+          # ctxloom MCP picks this up on every CLI invocation
+          CTXLOOM_LICENSE_KEY: ${{ secrets.CTXLOOM_LICENSE_KEY }}
+          CTXLOOM_ROOT: ${{ github.workspace }}
+        with:
+          # ── Auth (pick ONE — see header for setup details) ───────────
+          # Path A: Use your Claude subscription via the Claude Code
+          # GitHub App. The app creates this secret automatically.
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+
+          # Path B: Pay-per-token via Anthropic API key. Uncomment if
+          # you don't have a Claude subscription. Comment out the
+          # `claude_code_oauth_token` line above when using this.
+          # anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+
+          # Pin the model. Sonnet is the sweet spot for review tasks;
+          # use Opus for high-stakes repos, Haiku to cut costs further.
+          model: claude-sonnet-4-6
+
+          # Attach ctxloom as an MCP server. Claude will see all 33
+          # tools as `mcp__ctxloom__ctx_*`.
+          mcp_config: |
+            {
+              "mcpServers": {
+                "ctxloom": {
+                  "command": "ctxloom",
+                  "args": [],
+                  "env": {
+                    "CTXLOOM_ROOT": "${{ github.workspace }}",
+                    "CTXLOOM_LICENSE_KEY": "${{ secrets.CTXLOOM_LICENSE_KEY }}"
+                  }
+                }
+              }
+            }
+
+          # Whitelist the ctxloom MCP tools and the GitHub tools Claude
+          # needs to post comments. Block everything else for safety.
+          allowed_tools: |
+            Bash(git diff:*)
+            Bash(git log:*)
+            Bash(git show:*)
+            mcp__ctxloom__ctx_*
+            Task
+
+          # The orchestrator prompt. Tells Claude to dispatch the four
+          # specialist subagents in parallel, then aggregate.
+          prompt: |
+            You are the **ctxloom Review Orchestrator** for this pull request.
+            See `.claude/agents/review-orchestrator.md` for your full
+            specification. Follow it exactly.
+
+            Context:
+              - PR number: ${{ github.event.pull_request.number || github.event.issue.number }}
+              - Base branch: ${{ github.event.pull_request.base.ref || 'main' }}
+              - Head SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+              - Repo: ${{ github.repository }}
+
+            Begin.
