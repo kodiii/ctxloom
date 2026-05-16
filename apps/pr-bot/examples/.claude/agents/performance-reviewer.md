@@ -6,7 +6,7 @@ description: |
   event loop, quadratic algorithms on potentially-large inputs, and
   resource leaks. Specialist in hot-path identification via
   ctxloom's call-graph and execution-flow tools.
-tools: mcp__ctxloom__ctx_detect_changes, mcp__ctxloom__ctx_get_file, mcp__ctxloom__ctx_get_definition, mcp__ctxloom__ctx_get_context_packet, mcp__ctxloom__ctx_search, mcp__ctxloom__ctx_full_text_search, mcp__ctxloom__ctx_find_callers, mcp__ctxloom__ctx_get_call_graph, mcp__ctxloom__ctx_get_affected_flows, mcp__ctxloom__ctx_execution_flow, mcp__ctxloom__ctx_blast_radius, mcp__ctxloom__ctx_hub_nodes, mcp__ctxloom__ctx_find_large_functions, mcp__ctxloom__ctx_risk_overlay, mcp__ctxloom__ctx_status, Bash, Read
+tools: mcp__ctxloom__ctx_detect_changes, mcp__ctxloom__ctx_get_file, mcp__ctxloom__ctx_get_definition, mcp__ctxloom__ctx_get_context_packet, mcp__ctxloom__ctx_search, mcp__ctxloom__ctx_full_text_search, mcp__ctxloom__ctx_get_call_graph, mcp__ctxloom__ctx_get_affected_flows, mcp__ctxloom__ctx_execution_flow, mcp__ctxloom__ctx_blast_radius, mcp__ctxloom__ctx_hub_nodes, mcp__ctxloom__ctx_find_large_functions, mcp__ctxloom__ctx_risk_overlay, mcp__ctxloom__ctx_status, Bash, Read
 ---
 
 # Performance Reviewer — hot-path & regression detection
@@ -45,7 +45,7 @@ Hubs are proxy for hot paths (high fan-in = called from many places). Record top
 For each modified or added function (use `ctx_get_context_packet` per changed file to enumerate exports):
 
 ```
-mcp__ctxloom__ctx_find_callers { symbol: <fn>, depth: 5, includeIndirect: true }
+mcp__ctxloom__ctx_get_call_graph { symbol: <fn>, direction: "callers", depth: 5 }
 mcp__ctxloom__ctx_get_affected_flows { symbol: <fn> }
 ```
 
@@ -106,7 +106,7 @@ Run these scoped `ctx_full_text_search` queries:
 
 **React / UI specific (when applicable):**
 - New component without `React.memo` that has expensive children — `low`
-- Object literals / arrow functions passed as props in render — `info` unless `find_callers` shows it's in a tight render loop
+- Object literals / arrow functions passed as props in render — `info` unless `ctx_get_call_graph` (direction: callers) shows it's in a tight render loop
 - `useEffect` without deps array — `low`
 - `useState` with default value being a function call (vs lazy initializer) — `info`
 
@@ -203,7 +203,7 @@ If the trace doesn't return a path from a HOT entry to the changed code, **downg
   "notes": [],
   "tools_used": {
     "ctx_hub_nodes": 1,
-    "ctx_find_callers": 5,
+    "ctx_get_call_graph": 5,
     "ctx_get_affected_flows": 3,
     "ctx_execution_flow": 2,
     "ctx_get_context_packet": 4,

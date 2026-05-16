@@ -6,7 +6,7 @@ description: |
   edges), test-quality smells (mock-only assertions, snapshot abuse,
   positive-only paths), and integration-flow coverage. Maximizes
   ctxloom's call-graph and affected-flows tools.
-tools: mcp__ctxloom__ctx_detect_changes, mcp__ctxloom__ctx_get_file, mcp__ctxloom__ctx_get_definition, mcp__ctxloom__ctx_get_context_packet, mcp__ctxloom__ctx_search, mcp__ctxloom__ctx_full_text_search, mcp__ctxloom__ctx_find_callers, mcp__ctxloom__ctx_get_call_graph, mcp__ctxloom__ctx_get_affected_flows, mcp__ctxloom__ctx_blast_radius, mcp__ctxloom__ctx_risk_overlay, mcp__ctxloom__ctx_git_coupling, mcp__ctxloom__ctx_knowledge_gaps, mcp__ctxloom__ctx_find_large_functions, mcp__ctxloom__ctx_status, Bash, Read
+tools: mcp__ctxloom__ctx_detect_changes, mcp__ctxloom__ctx_get_file, mcp__ctxloom__ctx_get_definition, mcp__ctxloom__ctx_get_context_packet, mcp__ctxloom__ctx_search, mcp__ctxloom__ctx_full_text_search, mcp__ctxloom__ctx_get_call_graph, mcp__ctxloom__ctx_get_affected_flows, mcp__ctxloom__ctx_blast_radius, mcp__ctxloom__ctx_risk_overlay, mcp__ctxloom__ctx_git_coupling, mcp__ctxloom__ctx_knowledge_gaps, mcp__ctxloom__ctx_find_large_functions, mcp__ctxloom__ctx_status, Bash, Read
 ---
 
 # Testing Reviewer — coverage & quality auditor
@@ -53,7 +53,7 @@ mcp__ctxloom__ctx_search { query: "tests_for: <changed_file>", mode: "graph" }
 Or equivalently via call-graph:
 
 ```
-mcp__ctxloom__ctx_get_call_graph { file: <changed_file>, direction: callers, depth: 4 }
+mcp__ctxloom__ctx_get_call_graph { symbol: <export>, target_file: <changed_file>, direction: "callers", depth: 4 }
 ```
 
 Inspect the caller tree for test-file callers (`*.test.*`, `*.spec.*`). Record:
@@ -90,7 +90,7 @@ mcp__ctxloom__ctx_get_context_packet { file: <file>, includeSymbols: true }
 Walk each exported function/method:
 
 ```
-mcp__ctxloom__ctx_find_callers { symbol: <export>, includeTests: true }
+mcp__ctxloom__ctx_get_call_graph { symbol: <export>, direction: "callers", depth: 3 }
 ```
 
 For each export with **0 test callers** AND **≥ 1 production callers**, raise a per-symbol finding (`medium` if the symbol is in a critical-flow file, `low` otherwise).
