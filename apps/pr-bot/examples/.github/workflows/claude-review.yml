@@ -105,7 +105,12 @@ jobs:
           path: |
             ~/.npm
             ${{ github.workspace }}/.ctxloom
-          key: ctxloom-${{ runner.os }}-${{ hashFiles('**/package-lock.json', '**/pnpm-lock.yaml', '**/yarn.lock') }}
+          # hashFiles spans every common ecosystem so non-JS consumer
+          # repos (Python, Go, Rust, Ruby, Java) also get clean cache
+          # invalidation on dependency changes — otherwise the key
+          # collapses to `ctxloom-<os>-` and all such repos share one
+          # cache slot that never busts.
+          key: ctxloom-${{ runner.os }}-${{ hashFiles('**/package-lock.json', '**/pnpm-lock.yaml', '**/yarn.lock', '**/pyproject.toml', '**/requirements*.txt', '**/Pipfile.lock', '**/poetry.lock', '**/Cargo.lock', '**/go.sum', '**/Gemfile.lock', '**/pom.xml', '**/build.gradle*') }}
           restore-keys: |
             ctxloom-${{ runner.os }}-
 
