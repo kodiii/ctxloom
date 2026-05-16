@@ -167,6 +167,20 @@ See `src/tools/blast-radius.ts` as a clean example.
 - All exported functions have explicit parameter and return types
 - No `console.log` in source — use `logger.info/warn/error`
 - XML output must escape all user-controlled strings via `escapeXML()`
+- **Discriminated unions use compile-time exhaustiveness checks.** When `switch`ing on a `kind` discriminant, always include a `default` arm that assigns to `never` so adding a new union member is a TypeScript error at the switch site, not a silent runtime fallthrough:
+
+  ```ts
+  switch (source.kind) {
+    case 'section':      return handleSection(source);
+    case 'section-from': return handleSectionFrom(source);
+    default: {
+      const _exhaustive: never = source;
+      throw new Error(`Unhandled kind: ${JSON.stringify(_exhaustive)}`);
+    }
+  }
+  ```
+
+  Example: `apps/pr-bot/tests/agents.test.ts:extractFromSpec` (the `SharedBlockSource` union). Convention established by [PR #111's dogfood review (ARCH-111-2)](https://github.com/kodiii/ctxloom/pull/111).
 
 ## Running a subset of tests
 
