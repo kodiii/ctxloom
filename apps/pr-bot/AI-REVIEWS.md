@@ -93,14 +93,21 @@ ctxloom flips this. The agents get the **structured graph** instead of
 raw source:
 
 - They call `ctx_blast_radius` to learn that `auth/controller.ts` has 14 importers.
-- They call `ctx_find_callers` with `depth: 6` to trace a SQL pattern back to `POST /api/users` (no auth middleware) — confirmed reachable.
+- They call `ctx_get_call_graph` with `direction: "callers", depth: 6` to trace a SQL pattern back to `POST /api/users` (no auth middleware) — confirmed reachable.
 - They call `ctx_graph_diff` to see exactly which new edges this PR introduces, including any that cross community boundaries.
-- They call `ctx_get_context_packet` to pull a precise, token-efficient slice of just the relevant code.
+- They call `ctx_get_context_packet` to pull a precise, signature-only slice of just the relevant code.
 
 The LLM never sees the diff blindly — it pulls only what its analysis
-demands. Typical token usage drops by 60–80% vs. dump-the-diff
-reviewers, and findings cite specific MCP tool calls as evidence
-(making hallucinations easy to catch in review).
+demands. Each agent follows a strict **token-discipline ladder**
+(Tier 0 structural → Tier 1 skeleton → Tier 2 definition → Tier 3
+full file) and the orchestrator pre-fetches the unified diff **once**
+and shares it across all four specialists. Architecture-class reviews
+that lean heavily on Tier 0 graph queries can run on a fraction of
+the tokens a "dump-the-diff" reviewer would consume; security and
+performance reviews that need to inspect function bodies cost more
+because they have to — that's the honest trade-off. Findings cite
+the specific MCP tool call (and its tier) as evidence, making
+hallucinations easy to catch in review.
 
 ## Three deployment modes
 
