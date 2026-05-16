@@ -155,6 +155,18 @@ describe('extractSpecialistTokensFromProse', () => {
     expect(result.security).toBe(67000);
     expect(result.architecture).toBe(92000);
   });
+
+  it('returns all-nulls for a body with no specialist mentions', () => {
+    // Symmetric with extractSpecialistTokensFromTable's no-rows test —
+    // pins the all-null contract so the fallback chain in
+    // extractRowFromComment correctly proceeds to the total-row path.
+    expect(extractSpecialistTokensFromProse('no specialist data here')).toEqual({
+      security: null,
+      architecture: null,
+      testing: null,
+      performance: null,
+    });
+  });
 });
 
 describe('extractVerdictAndSeverity', () => {
@@ -193,6 +205,20 @@ describe('extractVerdictAndSeverity', () => {
     const body = `**Verdict: 🟡 Approve with one architectural concern — 1 medium, 3 low, 7 info**`;
     expect(extractVerdictAndSeverity(body).verdict).toBe('approve_with_nits');
   });
+
+  it('parses "upgraded" phrasing as approve_with_nits', () => {
+    // Live branch in the implementation (line ~229 of extract-budget-telemetry.ts).
+    // Reachable from real review wording like "upgraded to approve_with_nits".
+    const body = `**Verdict: 🟡 Approve — upgraded from initial draft — 2 medium, 3 low**`;
+    expect(extractVerdictAndSeverity(body).verdict).toBe('approve_with_nits');
+  });
+
+  it('parses "with 2 medium" phrasing as approve_with_nits', () => {
+    // Live branch in the implementation. Without this fixture the
+    // 'with 2 medium' arm is reachable only via field observation.
+    const body = `**Verdict: 🟡 Approve with 2 medium findings — 2 medium, 1 low**`;
+    expect(extractVerdictAndSeverity(body).verdict).toBe('approve_with_nits');
+  });
 });
 
 describe('extractTierDistribution', () => {
@@ -213,6 +239,22 @@ describe('extractTierDistribution', () => {
     const result = extractTierDistribution('no tiers here');
     expect(result.dist).toBeNull();
     expect(result.full_file_reads).toBeNull();
+  });
+
+  it('extracts full_file_reads when both label and value are bolded', () => {
+    // The implementation comment at extract-budget-telemetry.ts:267
+    // documents this real-world format as supported. Pin the contract
+    // so a regex tightening can't silently regress it.
+    const body = `
+- T0 structural: 12 calls
+- T1 skeleton: 1 call
+- T2 definition: 0 calls
+- T3 full file: 6 calls
+- **Full-file reads:** **6**
+`;
+    const result = extractTierDistribution(body);
+    expect(result.dist).toEqual({ T0: 12, T1: 1, T2: 0, T3: 6 });
+    expect(result.full_file_reads).toBe(6);
   });
 });
 

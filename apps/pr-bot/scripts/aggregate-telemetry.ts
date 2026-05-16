@@ -30,9 +30,13 @@ import { fileURLToPath } from 'node:url';
 import {
   SpecialistNames,
   parseTelemetryRow,
-  type SpecialistName,
+  type AggregateSummary,
+  type DogfoodSummary,
+  type PerSpecialistSummary,
   type TelemetryRow,
 } from '../src/telemetry/schema.js';
+
+export type { DogfoodSummary, PerSpecialistSummary, AggregateSummary };
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = join(__dirname, '..', '..', '..');
@@ -78,42 +82,13 @@ function loadRows(): TelemetryRow[] {
     .map(parseTelemetryRow);
 }
 
-interface PerSpecialistSummary {
-  specialist: SpecialistName;
-  n: number;
-  min: number | null;
-  p50: number | null;
-  p75: number | null;
-  p95: number | null;
-  max: number | null;
-}
-
-interface AggregateSummary {
-  n: number;
-  min: number | null;
-  p50: number | null;
-  p75: number | null;
-  p95: number | null;
-  max: number | null;
-}
-
-export interface DogfoodSummary {
-  rowCount: number;
-  perSpecialist: PerSpecialistSummary[];
-  aggregate: AggregateSummary;
-  verdictCounts: Record<string, number>;
-  severitySums: { critical: number; high: number; medium: number; low: number; info: number };
-  tierTotals: { T0: number; T1: number; T2: number; T3: number };
-  tierTotal: number;
-}
-
 /**
  * Build the summary from a set of telemetry rows.
  *
  * @public Exported for unit testing.
  */
 export function summarize(rows: TelemetryRow[]): DogfoodSummary {
-  const perSpecialist = SpecialistNames.map((sp) => {
+  const perSpecialist: PerSpecialistSummary[] = SpecialistNames.map((sp) => {
     const samples = rows
       .map((r) => r.specialists[sp])
       .filter((v): v is number => v !== null);
