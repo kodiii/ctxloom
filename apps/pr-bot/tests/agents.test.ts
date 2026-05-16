@@ -360,22 +360,34 @@ const agentFiles = readdirSync(AGENTS_DIR).filter((f) => f.endsWith('.md')).sort
  * specialist's `name:` ends in `-reviewer`. Both have `tools:`
  * frontmatter (so we can't discriminate on that alone). Filtering on
  * the role-identifier embedded in the spec is self-healing if the
- * orchestrator file is ever renamed — the prior
- * `f !== 'review-orchestrator.md'` filter would silently include it
- * as a specialist and produce confusing "drifted" failure messages
- * instead of "misconfigured".
+ * orchestrator file is ever renamed.
  *
- * IMPORTANT (closes converged-high finding from PR #110 dogfood):
- * `parseFrontmatter` is allowed to throw here. A spec with malformed
- * frontmatter MUST fail the suite loudly — not silently disappear
- * from `SPECIALIST_FILES`, which would shrink the drift cohort to
- * 3 specs and quietly degrade coverage. The downstream
- * `agent spec: %s > has valid YAML frontmatter` test surfaces the
- * actual cause cleanly when this throws.
+ * Failure-mode design (closes ARCH-111-1 from PR #111 dogfood):
+ * `parseFrontmatter` is wrapped in try/catch returning `false` on
+ * error. The earlier "throw at module load" approach was correct in
+ * intent (fail loud on malformed frontmatter) but wrong in mechanism
+ * — vitest's collection phase aborts on a module-load throw, which
+ * means NO tests register and ALL siblings get masked by the import
+ * error. Per-spec isolation is strictly better.
+ *
+ * Instead we let the filter tolerate malformed frontmatter here, and
+ * THREE meta-tests below catch the malformed-spec class directly:
+ *   1. `agent spec: %s > has valid YAML frontmatter` (per-spec)
+ *   2. `every agent spec parses without throwing` (positive assertion)
+ *   3. `SPECIALIST_FILES cohort size matches expected` (cohort guard)
+ *
+ * Combination: per-spec failures isolate to the bad spec; the cohort
+ * guard catches the silent-shrinkage class (the original PR #110
+ * converged-high finding) even if the per-spec test were somehow
+ * disabled.
  */
 const SPECIALIST_FILES = agentFiles.filter((f) => {
-  const { fm } = parseFrontmatter(readFileSync(join(AGENTS_DIR, f), 'utf8'));
-  return fm.name !== 'review-orchestrator';
+  try {
+    const { fm } = parseFrontmatter(readFileSync(join(AGENTS_DIR, f), 'utf8'));
+    return fm.name !== 'review-orchestrator';
+  } catch {
+    return false;
+  }
 });
 
 /**
@@ -400,6 +412,75 @@ const REQUIRED_ORCHESTRATOR_PATTERNS = [
   /<pr_context>/,
   /Tier discipline:/,
 ];
+
+/**
+ * Cohort integrity meta-tests (closes ARCH-111-1 from PR #111 dogfood
+ * and TEST-111-3 by extension).
+ *
+ * The `SPECIALIST_FILES` filter above tolerates malformed frontmatter
+ * (returns false on parseFrontmatter throw) to avoid coupling all
+ * tests in this file to one bad spec's parse error. These two
+ * positive-content tests catch the bug classes a tolerant filter
+ * would otherwise allow:
+ *
+ *   1. `every agent spec has parseable frontmatter` — per-spec
+ *      isolation. If `security-reviewer.md` is malformed, only its
+ *      own test fails — sibling tests (drift detection on the other
+ *      three, AI-REVIEWS scan, helper unit tests) still run.
+ *
+ *   2. `SPECIALIST_FILES cohort size matches expected` — guards the
+ *      silent-shrinkage class that PR #110's converged-high finding
+ *      identified. If a malformed spec drops out of the cohort, this
+ *      test fails LOUDLY with a count mismatch even if (1) is
+ *      somehow disabled.
+ *
+ * Together these give per-spec failure isolation AND cohort-integrity
+ * protection — the architectural recommendation from PR #111's
+ * ARCH-111-1 finding.
+ */
+describe('agent spec cohort integrity', () => {
+  it.each(agentFiles)('every agent spec has parseable frontmatter: %s', (file) => {
+    const src = readFileSync(join(AGENTS_DIR, file), 'utf8');
+    expect(
+      () => parseFrontmatter(src),
+      `${file}: parseFrontmatter threw — fix the YAML frontmatter (check '---' delimiters and field syntax)`,
+    ).not.toThrow();
+  });
+
+  it('SPECIALIST_FILES cohort size matches expected (specialists = total agents − 1 orchestrator)', () => {
+    // If any spec drops out of SPECIALIST_FILES due to malformed
+    // frontmatter or a name collision, the cohort shrinks silently.
+    // Asserting the expected size here catches the bug class even if
+    // the per-spec parseable-frontmatter test above is disabled.
+    expect(
+      SPECIALIST_FILES.length,
+      `Expected ${agentFiles.length - 1} specialist files in SPECIALIST_FILES ` +
+        `(${agentFiles.length} total agent files minus 1 orchestrator), ` +
+        `got ${SPECIALIST_FILES.length}. ` +
+        `A spec was probably dropped due to malformed frontmatter or a duplicate ` +
+        `\`name: review-orchestrator\` — drift detection silently ran on the wrong cohort.`,
+    ).toBe(agentFiles.length - 1);
+  });
+
+  it('exactly one agent spec has name === "review-orchestrator"', () => {
+    // Defense against the SEC-110-3 socially-bypassable concern: a
+    // contributor could not skip drift checks by adding a second
+    // spec named `review-orchestrator` without failing this test.
+    const orchestrators = agentFiles.filter((f) => {
+      try {
+        const { fm } = parseFrontmatter(readFileSync(join(AGENTS_DIR, f), 'utf8'));
+        return fm.name === 'review-orchestrator';
+      } catch {
+        return false;
+      }
+    });
+    expect(
+      orchestrators.length,
+      `Expected exactly 1 agent spec with name === "review-orchestrator", ` +
+        `got ${orchestrators.length}: ${JSON.stringify(orchestrators)}.`,
+    ).toBe(1);
+  });
+});
 
 describe.each(agentFiles)('agent spec: %s', (file) => {
   const src = readFileSync(join(AGENTS_DIR, file), 'utf8');
