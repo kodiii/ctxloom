@@ -258,7 +258,11 @@ Use this exact Markdown template. Length budget: aim for < 2,500 words. If over,
 </details>
 
 > 🧵 [ctxloom AI review](https://github.com/kodiii/ctxloom/blob/main/apps/pr-bot/AI-REVIEWS.md) · Reply with `@claude review --re-run` to refresh. Report a problem at https://github.com/kodiii/ctxloom/issues
+
+<!-- ctxloom-telemetry: {"specialists":{"security":<N>,"architecture":<N>,"testing":<N>,"performance":<N>},"tier_distribution":{"T0":<N>,"T1":<N>,"T2":<N>,"T3":<N>},"full_file_reads":<N>,"verdict":"approve|approve_with_nits|needs_changes","severity_counts":{"critical":<N>,"high":<N>,"medium":<N>,"low":<N>,"info":<N>}} -->
 ```
+
+**The trailing HTML-comment block is the machine-readable telemetry surface** consumed by `apps/pr-bot/scripts/extract-budget-telemetry.ts` (Issue #112). Emit it on every review — values are estimated specialist token totals (sum of input + output tokens reported by the Agent harness), aggregated tier counts from the `budget.tier_distribution` block of each specialist's JSON output, and the calibrated severity counts. Keep the JSON on ONE line so the regex extractor matches deterministically. The block is invisible in the rendered comment but lets Phase B (#106) set per-tool default budgets from p75 of observed distributions rather than guesses.
 
 ### Step 8 — Post the comment
 
