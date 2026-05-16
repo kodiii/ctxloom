@@ -68,7 +68,10 @@ const MIN_SECTION_BODY_CHARS = 50;
 
 /** Parse the canonical MCP tool list from packages/core source. */
 function loadCanonicalTools(): Set<string> {
-  const files = readdirSync(CORE_TOOLS_DIR).filter((f) => f.endsWith('.ts'));
+  // .sort() for deterministic iteration order across filesystems
+  // (ext4 returns insertion order, APFS returns sorted — closes
+  // TEST-110-6 from PR #110 dogfood).
+  const files = readdirSync(CORE_TOOLS_DIR).filter((f) => f.endsWith('.ts')).sort();
   const names = new Set<string>();
   const re = /name:\s*['"](ctx_[a-z_]+)['"]/g;
   for (const f of files) {
@@ -129,6 +132,14 @@ function extractSectionBody(src: string, headerPattern: RegExp): string {
  *     regex (must be `^...` /m) within the section body. Anchoring on
  *     bullet-line start prevents prose-quoted marker text from
  *     shifting the extraction (per SEC-109-1 / TEST-109-2).
+ *
+ * REGEX HYGIENE (SEC-110-2 reminder): both `header` and `startMarker`
+ * should be ANCHORED (start with `^.../m`) and free of catastrophic
+ * backtracking patterns (no nested quantifiers like `(a+)+`, no
+ * unbounded `.*` followed by required characters that may be absent).
+ * The current literals are linear and bounded; future entries should
+ * stay that way to keep the test suite ReDoS-safe even as
+ * `SHARED_BLOCKS` grows.
  */
 type SharedBlockSource =
   | { kind: 'section'; header: RegExp }
@@ -138,14 +149,29 @@ type SharedBlockSource =
  * Generic extractor — consumes a `SharedBlockSource` descriptor.
  * Replaces the bespoke per-block extractor functions used in PR #108
  * (closes ARCH-109-1).
+ *
+ * The `switch` + `default: never` arm guarantees compile-time
+ * exhaustiveness (closes converged-medium finding from PR #110
+ * dogfood): adding a third union member to `SharedBlockSource`
+ * without handling it here is now a TypeScript error, not a silent
+ * runtime fall-through to `undefined.match`.
  */
 function extractFromSpec(src: string, source: SharedBlockSource): string {
   const sectionBody = extractSectionBody(src, source.header);
   if (!sectionBody) return '';
-  if (source.kind === 'section') return sectionBody;
-  const m = sectionBody.match(source.startMarker);
-  if (!m || m.index === undefined) return '';
-  return sectionBody.slice(m.index).trim();
+  switch (source.kind) {
+    case 'section':
+      return sectionBody;
+    case 'section-from': {
+      const m = sectionBody.match(source.startMarker);
+      if (!m || m.index === undefined) return '';
+      return sectionBody.slice(m.index).trim();
+    }
+    default: {
+      const _exhaustive: never = source;
+      throw new Error(`Unhandled SharedBlockSource kind: ${JSON.stringify(_exhaustive)}`);
+    }
+  }
 }
 
 const CANONICAL = loadCanonicalTools();
@@ -319,7 +345,11 @@ describe('canonical MCP tool surface', () => {
   });
 });
 
-const agentFiles = readdirSync(AGENTS_DIR).filter((f) => f.endsWith('.md'));
+// .sort() ensures vitest emits per-spec test results in a stable
+// order regardless of filesystem (closes TEST-110-6 from PR #110
+// dogfood — ext4 returns insertion order, APFS returns sorted, which
+// produced flaky-looking diffs in CI logs across runners).
+const agentFiles = readdirSync(AGENTS_DIR).filter((f) => f.endsWith('.md')).sort();
 
 /**
  * Specialist spec files, derived from the auto-discovered agent set
@@ -334,14 +364,18 @@ const agentFiles = readdirSync(AGENTS_DIR).filter((f) => f.endsWith('.md'));
  * `f !== 'review-orchestrator.md'` filter would silently include it
  * as a specialist and produce confusing "drifted" failure messages
  * instead of "misconfigured".
+ *
+ * IMPORTANT (closes converged-high finding from PR #110 dogfood):
+ * `parseFrontmatter` is allowed to throw here. A spec with malformed
+ * frontmatter MUST fail the suite loudly — not silently disappear
+ * from `SPECIALIST_FILES`, which would shrink the drift cohort to
+ * 3 specs and quietly degrade coverage. The downstream
+ * `agent spec: %s > has valid YAML frontmatter` test surfaces the
+ * actual cause cleanly when this throws.
  */
 const SPECIALIST_FILES = agentFiles.filter((f) => {
-  try {
-    const { fm } = parseFrontmatter(readFileSync(join(AGENTS_DIR, f), 'utf8'));
-    return fm.name !== 'review-orchestrator';
-  } catch {
-    return false;
-  }
+  const { fm } = parseFrontmatter(readFileSync(join(AGENTS_DIR, f), 'utf8'));
+  return fm.name !== 'review-orchestrator';
 });
 
 /**
@@ -528,9 +562,18 @@ const SHARED_BLOCKS: SharedBlock[] = [
       // SEC-109-1 / TEST-109-2).
       startMarker: /^❌ Calling `gh pr diff`/m,
     },
-    // Each of the four trailing bullets has its own load-bearing
-    // policy token. If any one is removed, the corresponding
-    // invariant fails with a clear message naming the missing pattern.
+    // Three trailing bullets, each with its own load-bearing policy
+    // token. The Anti-patterns section actually has FOUR bullets in
+    // total, but the first one ("❌ Calling `Read` or `ctx_get_file`
+    // (Tier 3)...") is intentionally specialist-specific (security &
+    // testing & performance say "before trying T0/T1/T2 — every
+    // evidence item must declare its `tier`", architecture says "for
+    // an architectural question — almost always wrong tier for this
+    // specialist"). The `startMarker` above excludes that first
+    // bullet from extraction; only the three SHARED bullets are
+    // pinned here. Closes TEST-110-2 from PR #110 dogfood
+    // (the previous comment said "four trailing bullets" while
+    // listing three invariants — confusing future maintainers).
     semanticInvariants: [
       /❌ Calling `gh pr diff`/,
       /❌ Using `Bash\(grep\|rg\|find\)`/,
