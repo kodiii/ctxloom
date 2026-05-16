@@ -11,11 +11,14 @@ Empirical data harvested from the Phase A multi-agent AI review comments — use
 
 ## Schema — `dogfood-telemetry.jsonl`
 
-Each line is one review of one PR:
+**Source of truth:** [`apps/pr-bot/src/telemetry/schema.ts`](../src/telemetry/schema.ts) (Zod schema + inferred TypeScript types). Both scripts import from there; both tests validate against it; this section is a human-readable summary.
+
+Each line is one review of one PR. The schema is enforced at read-time by `parseTelemetryRow()` — invalid rows fail with a clear `ZodError` naming the offending field, instead of silently casting garbage that produces `NaN` p75 downstream.
 
 ```ts
-interface TelemetryRow {
-  pr: number;                           // GitHub PR number
+// Inferred from apps/pr-bot/src/telemetry/schema.ts:
+type TelemetryRow = {
+  pr: number;                           // GitHub PR number (positive int)
   title: string;
   url: string;                          // Direct link to the AI review comment
   posted_at: string;                    // ISO-8601 timestamp
@@ -47,8 +50,21 @@ interface TelemetryRow {
   full_file_reads: number | null;
 
   source: 'machine-block' | 'markdown-table' | 'incomplete';
-}
+};
 ```
+
+### Validation
+
+`apps/pr-bot/tests/telemetry-data.test.ts` is the contract test that pins this schema against the committed JSONL data. It asserts every row parses, matches the Zod schema, and that `total_specialist_tokens` is consistent with the per-specialist sum when all four are present. Run it via:
+
+```bash
+npm test -w @ctxloom/pr-bot -- telemetry-data
+```
+
+## Prerequisites
+
+- **`gh` CLI** authenticated against `kodiii/ctxloom` — the extract script shells out to `gh pr view` to fetch comments. Without it, you'll get an `ENOENT` or auth error.
+- **Node + `tsx`** — both scripts are ESM TypeScript.
 
 ## Scripts
 
