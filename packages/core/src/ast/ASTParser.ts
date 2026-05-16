@@ -719,16 +719,19 @@ export class ASTParser {
           return;
         }
         case 'import_declaration': {
-          // Walk into import_spec_list or import_spec directly
+          // Walk into import_spec_list or import_spec directly to enumerate
+          // every import path for the dependency graph. Each per-spec node
+          // points at its inner string range (just `"encoding/json"`); on
+          // its own that would make the Skeletonizer drop the `import`
+          // keyword from the rendered skeleton.
+          const specs: { name: string; startLine: number; endLine: number }[] = [];
           const walkImport = (n: TreeSitter.Node): void => {
             if (n.type === 'import_spec') {
               const pathNode = n.childForFieldName?.('path');
               if (pathNode) {
                 const spec = pathNode.text.replace(/^"|"$/g, '');
-                nodes.push({
-                  type: 'import',
+                specs.push({
                   name: spec,
-                  source: spec,
                   startLine: n.startPosition.row + 1,
                   endLine: n.endPosition.row + 1,
                 });
@@ -739,6 +742,37 @@ export class ASTParser {
             }
           };
           walkImport(node);
+          // Emit ONE wrapping node first whose line range covers the entire
+          // `import (...)` block — Skeletonizer.skeletonize() reads
+          // node.startLine..endLine verbatim for `import` nodes, so this
+          // node carries the `import` keyword (and parens, for grouped
+          // imports) into the rendered skeleton. The per-spec nodes that
+          // follow are what the dependency graph uses to resolve edges,
+          // and they're harmless to the skeleton: Skeletonizer's import
+          // case re-reads from source for each, but the second+ reads
+          // produce strings already visible inside the wrapping block —
+          // visually redundant on grouped imports but not incorrect.
+          // (Future: dedupe by line range in Skeletonizer if duplication
+          // ever becomes a token-budget concern.)
+          if (specs.length > 0) {
+            const firstSpec = specs[0];
+            nodes.push({
+              type: 'import',
+              name: firstSpec.name,
+              source: firstSpec.name,
+              startLine: node.startPosition.row + 1,
+              endLine: node.endPosition.row + 1,
+            });
+          }
+          for (const spec of specs) {
+            nodes.push({
+              type: 'import',
+              name: spec.name,
+              source: spec.name,
+              startLine: spec.startLine,
+              endLine: spec.endLine,
+            });
+          }
           return;
         }
       }
@@ -1119,6 +1153,33 @@ export class ASTParser {
 
     const walk = (node: TreeSitter.Node): void => {
       switch (node.type) {
+        case 'call': {
+          // Ruby imports parse as method calls — `require 'json'`,
+          // `require_relative './foo'`, `load 'bar'`, `autoload :Foo, 'foo'`.
+          // tree-sitter-ruby does not have a dedicated import node type;
+          // we surface these as canonical `import` nodes so Skeletonizer
+          // preserves them in the skeleton output and the dependency graph
+          // can resolve the edges.
+          const methodNode =
+            node.childForFieldName?.('method') ?? node.children.find(c => c?.type === 'identifier');
+          const name = methodNode?.text ?? '';
+          if (name === 'require' || name === 'require_relative' || name === 'load' || name === 'autoload') {
+            const argsNode =
+              node.childForFieldName?.('arguments') ?? node.children.find(c => c?.type === 'argument_list');
+            const firstStringArg = argsNode?.children.find(c => c?.type === 'string' || c?.type === 'simple_symbol');
+            const spec = firstStringArg?.text.replace(/^['":]+|['"]+$/g, '') ?? '';
+            nodes.push({
+              type: 'import',
+              name: spec,
+              source: spec,
+              startLine: node.startPosition.row + 1,
+              endLine: node.endPosition.row + 1,
+            });
+            return;
+          }
+          // Non-require call — fall through to descend into children.
+          break;
+        }
         case 'method':
         case 'singleton_method': {
           const nameNode = node.childForFieldName?.('name') ?? node.children.find(c => c?.type === 'identifier');
@@ -1432,9 +1493,30 @@ export class ASTParser {
     const walk = (node: TreeSitter.Node): void => {
       switch (node.type) {
         case 'import_or_export': {
-          const uriNode = node.children.find(c => c?.type === 'uri');
+          // Emit every import (relative, `dart:`, `package:`) — Skeletonizer
+          // surfaces all of them and the dependency graph already tolerates
+          // unresolvable URIs the same way Python's stdlib imports work.
+          //
+          // The real tree shape from tree-sitter-dart is deeper than direct
+          // children:
+          //   import_or_export > library_import > import_specification
+          //     > configurable_uri > uri > string_literal
+          // The pre-fix `node.children.find(c => c?.type === 'uri')` only
+          // looked at direct children and silently returned undefined, which
+          // combined with the `uri.startsWith('.')` filter dropped every
+          // Dart import from the skeleton output.
+          const findUri = (n: TreeSitter.Node): TreeSitter.Node | undefined => {
+            if (n.type === 'uri') return n;
+            for (const c of n.children) {
+              if (!c) continue;
+              const hit = findUri(c);
+              if (hit) return hit;
+            }
+            return undefined;
+          };
+          const uriNode = findUri(node);
           const uri = uriNode?.text?.replace(/['"]/g, '') ?? '';
-          if (uri.startsWith('.')) {
+          if (uri) {
             nodes.push({ type: 'import', name: uri, source: uri,
               startLine: node.startPosition.row + 1, endLine: node.endPosition.row + 1 });
           }
