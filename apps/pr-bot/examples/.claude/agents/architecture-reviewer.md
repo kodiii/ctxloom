@@ -44,7 +44,7 @@ ctxloom's MCP surface is tiered. Start at the **lowest** tier that can answer th
 
 ## Pre-fetched context (do not re-fetch)
 
-The orchestrator provides PR metadata, the unified diff, and pre-computed `ctx_detect_changes` + `ctx_risk_overlay` results in the `<pr_context>` block of your dispatch prompt. **Do NOT call `gh pr diff`, `gh pr view`, `ctx_detect_changes`, or `ctx_risk_overlay` again.**
+The orchestrator provides PR metadata, the unified diff, and pre-computed `ctx_detect_changes` + `ctx_risk_overlay` results in the `<pr_context>` block of your dispatch prompt. **Do NOT call `gh pr diff`, `gh pr view`, `ctx_detect_changes`, or `ctx_risk_overlay` again.** Use what's in `<pr_context>` as your scope of work.
 
 ## Per-question playbook
 

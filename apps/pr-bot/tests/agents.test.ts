@@ -1,22 +1,35 @@
 /**
  * Agent-spec validation tests.
  *
- * These tests guard the example `.claude/agents/*.md` files that ship to
- * end users. They caught (and prevent regressions of) ARCH-001 from the
- * PR #101 dogfood review: agent specs were referencing
- * `mcp__ctxloom__ctx_find_callers`, a tool that does not exist in
- * ctxloom's MCP surface. The actual tool is `mcp__ctxloom__ctx_get_call_graph`
- * with `direction: "callers"`.
+ * These tests guard the example `.claude/agents/*.md` files (plus the
+ * user-facing AI-REVIEWS.md docs) that ship to end users. They caught
+ * and prevent regressions of:
+ *
+ *  - ARCH-001 (PR #101 dogfood): agent specs referenced
+ *    `ctx_find_callers`, a tool that does not exist in ctxloom's MCP
+ *    surface. The actual tool is `ctx_get_call_graph` with
+ *    `direction: "callers"`.
+ *
+ *  - ARCH-001 (PR #104 dogfood): same drift bug, but in the marketing
+ *    copy at `AI-REVIEWS.md:245`. The agent-spec scanner missed it
+ *    because it only walked the agents directory. Fixed here.
  *
  * Checks per agent file:
  *  1. Has valid YAML frontmatter
  *  2. Frontmatter `tools:` list references only real ctxloom MCP tools
  *  3. Body mentions of `mcp__ctxloom__ctx_*` resolve to real tools
  *  4. Body mentions of bare `ctx_*` tool names resolve to real tools
+ *  5. Required tier-discipline sections present AND non-empty
+ *  6. Required sections survive when code-block content is stripped
  *
- * Source of truth: parsed from `packages/core/src/tools/*.ts`. If the MCP
- * tool surface changes, this test fails loudly so we update agent specs
- * in lockstep.
+ * Additional checks:
+ *  - AI-REVIEWS.md references only real ctxloom MCP tools
+ *  - Shared "Pre-fetched context" block is byte-identical across all
+ *    four specialist specs (drift-detection per ARCH-003 in PR #104)
+ *
+ * Source of truth for the tool list: parsed from
+ * `packages/core/src/tools/*.ts`. If the MCP tool surface changes,
+ * this test fails loudly so we update agent specs in lockstep.
  */
 import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
@@ -25,6 +38,14 @@ import { describe, it, expect } from 'vitest';
 const REPO_ROOT = join(__dirname, '..', '..', '..');
 const AGENTS_DIR = join(__dirname, '..', 'examples', '.claude', 'agents');
 const CORE_TOOLS_DIR = join(REPO_ROOT, 'packages', 'core', 'src', 'tools');
+const AI_REVIEWS_DOC = join(__dirname, '..', 'AI-REVIEWS.md');
+
+const SPECIALIST_FILES = [
+  'security-reviewer.md',
+  'architecture-reviewer.md',
+  'testing-reviewer.md',
+  'performance-reviewer.md',
+];
 
 /** Parse the canonical MCP tool list from packages/core source. */
 function loadCanonicalTools(): Set<string> {
@@ -49,6 +70,33 @@ function parseFrontmatter(src: string): { fm: Record<string, string>; body: stri
     if (mm) fm[mm[1]] = mm[2];
   }
   return { fm, body: m[2] };
+}
+
+/**
+ * Strip fenced code blocks so a literal `## Foo` heading inside an
+ * example code fence doesn't satisfy a section-presence assertion.
+ * Per TEST-002 (PR #104 dogfood): the bare-ctx_* check already does
+ * this; the section-presence check did not, creating a false-positive
+ * vector. This unifies the two paths.
+ */
+function stripFencedCodeBlocks(src: string): string {
+  return src.replace(/```[\s\S]*?```/g, '');
+}
+
+/**
+ * Extract the body content between a section header and the next `##`
+ * heading (or EOF). Used to assert that required sections are not just
+ * present but non-empty — per TEST-001 (PR #104 dogfood).
+ */
+function extractSectionBody(src: string, headerPattern: RegExp): string {
+  const stripped = stripFencedCodeBlocks(src);
+  const headerMatch = stripped.match(headerPattern);
+  if (!headerMatch || headerMatch.index === undefined) return '';
+  const afterHeader = stripped.slice(headerMatch.index + headerMatch[0].length);
+  const nextSectionIdx = afterHeader.search(/^## /m);
+  const body = nextSectionIdx === -1 ? afterHeader : afterHeader.slice(0, nextSectionIdx);
+  // Skip the trailing newline of the header line itself.
+  return body.replace(/^\n/, '').trim();
 }
 
 const CANONICAL = loadCanonicalTools();
@@ -84,11 +132,10 @@ describe('canonical MCP tool surface', () => {
 const agentFiles = readdirSync(AGENTS_DIR).filter((f) => f.endsWith('.md'));
 
 /**
- * Sections every specialist spec (NOT the orchestrator) must contain.
- * These exist to enforce the skeleton-first token-discipline policy
- * added in PR #104 — see `docs/skeleton-first.md` once it ships. If
- * any of these are missing, the agent will skip the ladder and revert
- * to expensive full-file reads.
+ * Sections every specialist spec (NOT the orchestrator) must contain
+ * AND must have a non-empty body. These exist to enforce the
+ * skeleton-first token-discipline policy added in PR #104 — see
+ * `docs/skeleton-first.md` once it ships.
  */
 const REQUIRED_SPECIALIST_SECTIONS = [
   /^## Token discipline — tool tier ladder/m,
@@ -106,7 +153,6 @@ const REQUIRED_ORCHESTRATOR_PATTERNS = [
   /<pr_context>/,
   /Tier discipline:/,
 ];
-
 
 describe.each(agentFiles)('agent spec: %s', (file) => {
   const src = readFileSync(join(AGENTS_DIR, file), 'utf8');
@@ -140,16 +186,32 @@ describe.each(agentFiles)('agent spec: %s', (file) => {
 
   if (file !== 'review-orchestrator.md') {
     it.each(REQUIRED_SPECIALIST_SECTIONS)(
-      'specialist spec contains required section: %s',
+      'specialist spec contains required section header (outside code fences): %s',
       (pattern) => {
-        expect(src, `${file}: missing required section matching ${pattern}`).toMatch(pattern);
+        const stripped = stripFencedCodeBlocks(src);
+        expect(stripped, `${file}: missing required section matching ${pattern}`).toMatch(pattern);
+      },
+    );
+
+    it.each(REQUIRED_SPECIALIST_SECTIONS)(
+      'specialist spec section has non-empty body: %s',
+      (pattern) => {
+        const body = extractSectionBody(src, pattern);
+        // A meaningful section body is more than a single line of prose
+        // (we set the threshold low to avoid bikeshedding length, but
+        // 50 chars rules out blank-section regressions).
+        expect(
+          body.length,
+          `${file}: section ${pattern} has too-short body (${body.length} chars): "${body.slice(0, 80)}…"`,
+        ).toBeGreaterThan(50);
       },
     );
   } else {
     it.each(REQUIRED_ORCHESTRATOR_PATTERNS)(
       'orchestrator spec contains required directive: %s',
       (pattern) => {
-        expect(src, `${file}: missing required directive matching ${pattern}`).toMatch(pattern);
+        const stripped = stripFencedCodeBlocks(src);
+        expect(stripped, `${file}: missing required directive matching ${pattern}`).toMatch(pattern);
       },
     );
   }
@@ -159,12 +221,63 @@ describe.each(agentFiles)('agent spec: %s', (file) => {
     // Strip code blocks first to avoid matching e.g. JSON keys that intentionally
     // reference removed/renamed tools in comments. We still want to catch
     // prose like "use `ctx_foo`".
-    const stripped = body.replace(/```[\s\S]*?```/g, '');
+    const stripped = stripFencedCodeBlocks(body);
     const matches = stripped.matchAll(/`(ctx_[a-z_]+)`/g);
     for (const m of matches) {
-      // Skip the literal token "ctx_find_callers" appearing only inside this
-      // explanatory test — if it appears anywhere in an agent spec, fail.
       expect(CANONICAL.has(m[1]), `${file}: unknown tool "${m[1]}" in prose`).toBe(true);
+    }
+  });
+});
+
+/**
+ * ARCH-001 (PR #104 dogfood): the public AI-REVIEWS.md is the
+ * marketing surface and must reference only real MCP tools. Walking
+ * agent specs alone missed a stale `ctx_find_callers` reference here.
+ */
+describe('user-facing docs: AI-REVIEWS.md', () => {
+  const src = readFileSync(AI_REVIEWS_DOC, 'utf8');
+
+  it('references only real ctxloom MCP tools (bare ctx_* form)', () => {
+    const stripped = stripFencedCodeBlocks(src);
+    const matches = stripped.matchAll(/`(ctx_[a-z_]+)`/g);
+    for (const m of matches) {
+      expect(CANONICAL.has(m[1]), `AI-REVIEWS.md: unknown tool "${m[1]}" in prose`).toBe(true);
+    }
+  });
+
+  it('references only real ctxloom MCP tools (mcp__ctxloom__* form)', () => {
+    const matches = src.matchAll(/mcp__ctxloom__(ctx_[a-z_]+)/g);
+    for (const m of matches) {
+      expect(CANONICAL.has(m[1]), `AI-REVIEWS.md: unknown tool "${m[1]}"`).toBe(true);
+    }
+  });
+});
+
+/**
+ * ARCH-003 (PR #104 dogfood): the "Pre-fetched context (do not
+ * re-fetch)" block is copy-pasted across all four specialist specs.
+ * Future edits must touch four files; drift is a matter of when, not
+ * if. This test detects drift the moment one spec diverges.
+ *
+ * The tier ladders and per-question playbooks legitimately differ by
+ * specialist domain, so we don't byte-equality-check those. The
+ * "Pre-fetched context" block is the only one that should be
+ * literally identical.
+ */
+describe('shared block drift detection', () => {
+  it('Pre-fetched context body is byte-identical across all 4 specialist specs', () => {
+    const headerPattern = /^## Pre-fetched context \(do not re-fetch\)/m;
+    const bodies = SPECIALIST_FILES.map((f) => {
+      const src = readFileSync(join(AGENTS_DIR, f), 'utf8');
+      return { file: f, body: extractSectionBody(src, headerPattern) };
+    });
+
+    const reference = bodies[0];
+    for (let i = 1; i < bodies.length; i++) {
+      expect(
+        bodies[i].body,
+        `Pre-fetched context block in ${bodies[i].file} has drifted from ${reference.file}. Re-sync verbatim.`,
+      ).toBe(reference.body);
     }
   });
 });

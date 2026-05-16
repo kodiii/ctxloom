@@ -242,9 +242,9 @@ Audits for OWASP-class vulnerabilities introduced or made newly
 reachable by the diff. Maximizes:
 
 - `ctx_full_text_search` for injection / secret / crypto patterns
-- `ctx_find_callers` with depth 6 to confirm **reachability** from
-  unauthenticated entry points (this is what makes findings actionable
-  vs. noise)
+- `ctx_get_call_graph` with `direction: "callers", depth: 6` to
+  confirm **reachability** from unauthenticated entry points (this is
+  what makes findings actionable vs. noise)
 - `ctx_get_context_packet` to assess whether input validation
   middleware neutralizes the pattern
 - `ctx_git_coupling` to flag when security-sensitive files
