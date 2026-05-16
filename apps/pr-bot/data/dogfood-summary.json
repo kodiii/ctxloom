@@ -1,0 +1,67 @@
+{
+  "perSpecialist": [
+    {
+      "specialist": "security",
+      "n": 5,
+      "min": 43000,
+      "p50": 49000,
+      "p75": 51000,
+      "p95": 51000,
+      "max": 67000
+    },
+    {
+      "specialist": "architecture",
+      "n": 5,
+      "min": 47000,
+      "p50": 58000,
+      "p75": 66000,
+      "p95": 66000,
+      "max": 92000
+    },
+    {
+      "specialist": "testing",
+      "n": 5,
+      "min": 43000,
+      "p50": 48000,
+      "p75": 50000,
+      "p95": 50000,
+      "max": 56000
+    },
+    {
+      "specialist": "performance",
+      "n": 5,
+      "min": 40000,
+      "p50": 46000,
+      "p75": 49000,
+      "p95": 49000,
+      "max": 60000
+    }
+  ],
+  "aggregate": {
+    "n": 6,
+    "min": 175000,
+    "p50": 197000,
+    "p75": 202000,
+    "p95": 214000,
+    "max": 267000
+  },
+  "verdictCounts": {
+    "approve": 2,
+    "approve_with_nits": 5
+  },
+  "severitySums": {
+    "critical": 0,
+    "high": 1,
+    "medium": 8,
+    "low": 21,
+    "info": 29
+  },
+  "tierTotals": {
+    "T0": 23,
+    "T1": 2,
+    "T2": 2,
+    "T3": 7
+  },
+  "tierTotal": 34,
+  "rowCount": 7
+}
