@@ -17,6 +17,12 @@ permissions:
 jobs:
   review:
     runs-on: ubuntu-latest
+    # TEMPORARY: the pinned image ghcr.io/kodiii/ctxloom-pr-bot:v1 was built
+    # before the GrammarLoader fix in this PR and crashes on any repo that
+    # indexes a .cs file. The image will be republished on the next v* tag
+    # after this merges. REVERT THIS LINE in the same PR that tags the new
+    # release (or in an immediate follow-up). Tracked in commit body.
+    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
         with:
