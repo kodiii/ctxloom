@@ -300,18 +300,21 @@ export function extractRowFromComment(pr: number, comment: PrComment, title: str
   const machine = extractMachineBlock(body);
   if (machine) {
     const merged = {
-      pr,
-      title,
-      url: comment.url,
-      posted_at: comment.createdAt,
+      // Metric defaults (overridable by the machine block)
       specialists: { security: null, architecture: null, testing: null, performance: null },
       total_specialist_tokens: 0,
       verdict: 'unknown' as Verdict,
       severity_counts: { critical: 0, high: 0, medium: 0, low: 0, info: 0 },
       tier_distribution: null,
       full_file_reads: null,
-      source: 'machine-block' as const,
       ...machine,
+      // Identity fields are caller-supplied and must not be overridden by
+      // the untrusted machine block embedded in the PR comment body.
+      pr,
+      title,
+      url: comment.url,
+      posted_at: comment.createdAt,
+      source: 'machine-block' as const,
     };
     return TelemetryRowSchema.parse(merged);
   }
