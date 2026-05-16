@@ -228,50 +228,44 @@ const LANGUAGE_FIXTURES: LanguageFixture[] = [
   { language: 'Go',      file: 'sample.go',    expectedNames: ['UserService', 'FormatUser'],  importPreservedInSkeleton: false },
   { language: 'Rust',    file: 'sample.rs',    expectedNames: ['UserService', 'format_user'], importPreservedInSkeleton: true  },
   { language: 'Java',    file: 'sample.java',  expectedNames: ['UserService', 'formatUser'],  importPreservedInSkeleton: true  },
+  { language: 'C#',      file: 'sample.cs',    expectedNames: ['UserService', 'FormatUser'],  importPreservedInSkeleton: true  },
   { language: 'Ruby',    file: 'sample.rb',    expectedNames: ['UserService', 'format_user'], importPreservedInSkeleton: false },
   { language: 'PHP',     file: 'sample.php',   expectedNames: ['UserService', 'formatUser'],  importPreservedInSkeleton: true  },
   { language: 'Dart',    file: 'sample.dart',  expectedNames: ['UserService', 'formatUser'],  importPreservedInSkeleton: false },
 ];
 
 /**
- * Languages whose tree-sitter grammars currently fail to load.
- * Tracked here (as it.todo) but with NO committed fixture files yet —
- * adding a sample.cs / sample.kt / sample.swift to the repo causes the
- * graph builder (used by benchmarks and the pr-bot CI action) to crash
- * with an unhandled 'error' event when it tries to download the
- * unavailable grammar:
- *
- *   Error: ENOENT ... tree-sitter-c-sharp.wasm.tmp
- *
- * That's a real bug in the grammar loader (it should disable the
- * language and continue, not throw an unhandled error), but it lives
- * downstream of this PR's scope. Until the loader is fixed AND the
- * grammars themselves are loadable, fixtures must NOT be added.
+ * Languages whose tree-sitter grammars are unavailable on the CDN.
+ * Tracked here (as it.todo) with NO committed fixture files — adding
+ * sample.kt or sample.swift would cause the graph builder to attempt
+ * the doomed grammar download on every run; with the loader hardened
+ * (see PR fix/grammar-loader-no-crash-on-download-failure) the failure
+ * is now graceful, but there's still no upside to indexing files for
+ * languages we can't parse.
  *
  * Discovered during Phase B1 dogfood:
- *   - C#:     '.wasm.tmp' race on parallel grammar download → 30s timeout
  *   - Kotlin: CDN returns HTTP 404 for
  *             https://cdn.jsdelivr.net/npm/tree-sitter-kotlin@0.3.8/tree-sitter-kotlin.wasm
  *   - Swift:  CDN returns HTTP 404 for
  *             https://cdn.jsdelivr.net/npm/tree-sitter-swift@0.7.1/tree-sitter-swift.wasm
  *
- * Re-enabling, once grammars are reliably loadable:
- *   1. Fix the grammar loader so an unavailable grammar disables the
- *      language gracefully (catch error, return empty parser, do not
- *      crash the host process).
- *   2. Re-add tests/fixtures/skeleton/sample.cs / .kt / .swift with
- *      the same identifier convention as the other fixtures (see git
- *      log on this file for the originals).
- *   3. Move the language(s) from this list into LANGUAGE_FIXTURES.
+ * (C# was previously in this list — the original crash was the
+ * `.wasm.tmp` ENOENT bug fixed in the grammar loader hardening, not a
+ * CDN issue. The C# CDN serves the wasm at HTTP 200; C# is now in the
+ * main LANGUAGE_FIXTURES array.)
+ *
+ * Re-enabling, per language:
+ *   1. Pin a known-good grammar version + URL in grammar-manifest.ts
+ *      (or vendor the .wasm into the repo).
+ *   2. Re-add tests/fixtures/skeleton/sample.kt / .swift.
+ *   3. Move the language from this list into LANGUAGE_FIXTURES.
  *
  * Impact on Phase B2 (#106): when the budget surface auto-substitutes
- * a skeleton for an over-budget response, C#/Kotlin/Swift files
- * silently degrade to an empty skeleton — exactly the failure mode
- * Phase B1 was designed to surface. **Ship blocker for B2 on these
- * three languages.**
+ * a skeleton for an over-budget response, Kotlin/Swift files silently
+ * degrade to an empty skeleton — exactly the failure mode Phase B1
+ * was designed to surface. **Ship blocker for B2 on these languages.**
  */
 const LANGUAGE_FIXTURES_GRAMMAR_UNAVAILABLE = [
-  { language: 'C#',     file: 'sample.cs'    },
   { language: 'Kotlin', file: 'sample.kt'    },
   { language: 'Swift',  file: 'sample.swift' },
 ];
