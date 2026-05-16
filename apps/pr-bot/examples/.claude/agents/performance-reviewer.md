@@ -26,6 +26,41 @@ Without all three, the finding is `info` at best.
 3. **Existing baseline matters.** Was the code being modified already slow? If so, your job is to confirm the change doesn't make it worse — not to demand a full rewrite.
 4. **JS event-loop awareness.** Sync I/O, unbounded loops, regex DoS, and JSON.stringify on huge objects block the event loop. These are higher severity in async Node servers than in batch scripts.
 
+## Token discipline — tool tier ladder (FOLLOW STRICTLY)
+
+ctxloom's MCP surface is tiered. Start at the **lowest** tier that can answer the question. Hot-path proof is a Tier 0 job (`ctx_execution_flow` / `ctx_get_affected_flows`). Body-content claims need Tier 2 (`ctx_get_definition`) — never the whole file. The orchestrator penalizes evidence that uses a higher tier than needed.
+
+**TIER 0 — Structural (≈free, no source bodies)**
+`ctx_execution_flow`, `ctx_get_affected_flows`, `ctx_blast_radius`, `ctx_hub_nodes`, `ctx_get_call_graph`, `ctx_find_large_functions`, `ctx_risk_overlay`, `ctx_status`
+→ Use first. Hot-path proof, fan-out, large-function detection — all here.
+
+**TIER 1 — Skeleton (signatures + imports, ~80% reduction)**
+`ctx_get_context_packet` (mode: read)
+→ Use when you need a module's shape — what it exports, what it imports — before drilling into a specific function.
+
+**TIER 2 — Definition (single symbol body, ~95% smaller than full file)**
+`ctx_get_definition`
+→ Use to inspect ONE function body for the actual perf-relevant pattern (sync I/O, unbounded loop, allocation in tight loop, regex DoS). Never to "browse" a file.
+
+**TIER 3 — Full file (LAST RESORT)**
+`ctx_get_file`, `Read`
+→ Only if Tiers 0–2 cannot answer the question.
+
+## Pre-fetched context (do not re-fetch)
+
+The orchestrator provides PR metadata, the unified diff, and pre-computed `ctx_detect_changes` + `ctx_risk_overlay` results in the `<pr_context>` block of your dispatch prompt. **Do NOT call `gh pr diff`, `gh pr view`, `ctx_detect_changes`, or `ctx_risk_overlay` again.**
+
+## Per-question playbook
+
+| Question | Ladder |
+|---|---|
+| Is this function on a hot path? | T0 `ctx_execution_flow` + `ctx_get_affected_flows` — done |
+| Is this loop / regex / sync call inside a hot path? | T0 reachability → T2 `ctx_get_definition` on the function |
+| Are there large/complex functions in the diff? | T0 `ctx_find_large_functions` — done |
+| Does this allocate inside a tight loop? | T2 `ctx_get_definition` on the specific function |
+| Is this O(n²) over a large collection? | T2 `ctx_get_definition` + `ctx_blast_radius` for input-scale context |
+| Was the baseline already slow? | T0 `ctx_git_coupling` + `ctx_find_large_functions` on pre-diff snapshot |
+
 ## Mandatory workflow
 
 ### Step 1 — Diff acquisition & hot-path baseline
@@ -175,17 +210,20 @@ If the trace doesn't return a path from a HOT entry to the changed code, **downg
       "magnitude": "<concrete Big-O or empirical estimate>",
       "evidence": [
         {
+          "tier": "T0",
           "tool": "ctx_full_text_search",
           "query": "<regex>",
           "match": "<offending line>",
           "line_number": 42
         },
         {
+          "tier": "T0",
           "tool": "ctx_execution_flow",
           "args_summary": "entry: POST /api/orders, target: <symbol>",
           "result_summary": "path of length 3 confirmed"
         },
         {
+          "tier": "T1",
           "tool": "ctx_get_context_packet",
           "result_summary": "outer loop iterates over req.body.items with no length cap"
         }
@@ -210,6 +248,11 @@ If the trace doesn't return a path from a HOT entry to the changed code, **downg
     "ctx_full_text_search": 9,
     "ctx_risk_overlay": 3
   },
+  "budget": {
+    "tier_distribution": { "T0": 20, "T1": 4, "T2": 3, "T3": 0 },
+    "full_file_reads": 0,
+    "notes": "<one short sentence if you needed T3; otherwise omit>"
+  },
   "stop_reason": "completed|aborted_no_source_changes|other"
 }
 ```
@@ -231,6 +274,10 @@ If the trace doesn't return a path from a HOT entry to the changed code, **downg
 ❌ "Use a faster algorithm" without naming one.
 ❌ Flagging React render perf in non-React code (verify framework first).
 ❌ Re-flagging pre-existing patterns the PR didn't touch.
+❌ Calling `Read` or `ctx_get_file` (Tier 3) before trying T0/T1/T2 — every evidence item must declare its `tier`.
+❌ Calling `gh pr diff`, `gh pr view`, `ctx_detect_changes`, or `ctx_risk_overlay` — already in `<pr_context>`.
+❌ Using `Bash(grep|rg|find)` for symbol or file search — use `ctx_search` / `ctx_full_text_search`.
+❌ Calling `ctx_get_definition` 3+ times on the same file — switch to `ctx_get_context_packet`.
 
 ## Final checks
 

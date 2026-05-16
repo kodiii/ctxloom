@@ -26,6 +26,41 @@ Both questions require ctxloom graph evidence — coverage is a graph problem (t
 4. **Diff-scoped quality checks.** New tests are eligible for quality review. Pre-existing test files are out of scope unless the diff modifies them.
 5. **Coverage metrics lie when used alone.** % coverage isn't asked for. **Reachability from a real test entry point** is.
 
+## Token discipline — tool tier ladder (FOLLOW STRICTLY)
+
+ctxloom's MCP surface is tiered. Start at the **lowest** tier that can answer the question. Most coverage questions are pure graph queries (Tier 0). Test quality questions need the test body (Tier 2) but never the whole file. The orchestrator penalizes evidence that uses a higher tier than needed.
+
+**TIER 0 — Structural (≈free, no source bodies)**
+`ctx_get_call_graph`, `ctx_get_affected_flows`, `ctx_blast_radius`, `ctx_risk_overlay`, `ctx_knowledge_gaps`, `ctx_git_coupling`, `ctx_find_large_functions`, `ctx_status`
+→ Use first. Coverage = "does any caller match `*.test.*` / `*.spec.*`?" — pure call-graph filter.
+
+**TIER 1 — Skeleton (signatures + imports, ~80% reduction)**
+`ctx_get_context_packet` (mode: read)
+→ Use when you need to see what a test file imports/exports to judge its scope.
+
+**TIER 2 — Definition (single symbol body, ~95% smaller than full file)**
+`ctx_get_definition`
+→ Use to inspect ONE test body and judge whether the assertion is meaningful. Never to "browse" a test file.
+
+**TIER 3 — Full file (LAST RESORT)**
+`ctx_get_file`, `Read`
+→ Only if Tiers 0–2 cannot answer the question.
+
+## Pre-fetched context (do not re-fetch)
+
+The orchestrator provides PR metadata, the unified diff, and pre-computed `ctx_detect_changes` + `ctx_risk_overlay` results in the `<pr_context>` block of your dispatch prompt. **Do NOT call `gh pr diff`, `gh pr view`, `ctx_detect_changes`, or `ctx_risk_overlay` again.**
+
+## Per-question playbook
+
+| Question | Ladder |
+|---|---|
+| Does this changed symbol have any test caller? | T0 `ctx_get_call_graph` (callers, filter `*.test.*`/`*.spec.*`) — done |
+| Is this critical-flow code under test? | T0 `ctx_get_affected_flows` + `ctx_get_call_graph` — done |
+| Is the test assertion meaningful or shallow? | T2 `ctx_get_definition` on the test body |
+| Are there knowledge gaps from missing tests? | T0 `ctx_knowledge_gaps` — done |
+| Is test churn proportional to source churn? | T0 `ctx_git_coupling` — done |
+| Is this an oversized test function? | T0 `ctx_find_large_functions` — done |
+
 ## Mandatory workflow
 
 ### Step 1 — Diff acquisition
@@ -196,11 +231,13 @@ Filter the result to communities/files touched by this PR. If the PR adds code t
       "risk_score": 0.72,
       "evidence": [
         {
+          "tier": "T0",
           "tool": "ctx_get_call_graph",
           "args_summary": "callers of <file>, depth 4",
           "result_summary": "0 test callers found"
         },
         {
+          "tier": "T0",
           "tool": "ctx_get_affected_flows",
           "result_summary": "file appears in flow 'payment-webhook'"
         }
@@ -219,6 +256,7 @@ Filter the result to communities/files touched by this PR. If the PR adds code t
       "kind": "mock-only|snapshot-only|positive-only|skipped|only|isolation|non-deterministic|trivial-assertion|over-mocked",
       "evidence": [
         {
+          "tier": "T0",
           "tool": "ctx_full_text_search",
           "query": "<regex>",
           "match": "<line>",
@@ -246,12 +284,16 @@ Filter the result to communities/files touched by this PR. If the PR adds code t
   ],
   "notes": [],
   "tools_used": {
-    "ctx_detect_changes": 1,
     "ctx_get_call_graph": 8,
     "ctx_get_affected_flows": 1,
     "ctx_blast_radius": 3,
     "ctx_full_text_search": 6,
     "ctx_git_coupling": 4
+  },
+  "budget": {
+    "tier_distribution": { "T0": 22, "T1": 0, "T2": 2, "T3": 0 },
+    "full_file_reads": 0,
+    "notes": "<one short sentence if you needed T3; otherwise omit>"
   },
   "stop_reason": "completed|aborted_no_source_changes|other"
 }
@@ -272,6 +314,10 @@ Filter the result to communities/files touched by this PR. If the PR adds code t
 ❌ Flagging changes to existing tests as quality issues when the test file is being **deleted** or **rewritten** wholesale.
 ❌ Counting `expect.assertions(n)` calls as behavioral assertions.
 ❌ Flagging snapshot tests in pure-UI component libraries where snapshots are the standard pattern (look for adjacent snapshot directories — if the file has many sibling snapshots, downgrade).
+❌ Calling `Read` or `ctx_get_file` (Tier 3) before trying T0/T1/T2 — every evidence item must declare its `tier`.
+❌ Calling `gh pr diff`, `gh pr view`, `ctx_detect_changes`, or `ctx_risk_overlay` — already in `<pr_context>`.
+❌ Using `Bash(grep|rg|find)` for symbol or file search — use `ctx_search` / `ctx_full_text_search`.
+❌ Calling `ctx_get_definition` 3+ times on the same file — switch to `ctx_get_context_packet`.
 
 ## Final checks
 

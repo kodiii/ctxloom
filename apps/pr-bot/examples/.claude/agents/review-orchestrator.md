@@ -21,6 +21,7 @@ You are the **top-level orchestrator** for a ctxloom-powered AI PR review. Your 
 4. **Deduplicate.** The same file can show up in security + perf + arch findings. Group by `file:line` for the final comment.
 5. **Be loud about confidence.** Low-confidence findings are listed last, behind a `<details>` collapsible.
 6. **Posting the comment is part of the job.** Use `gh pr review` (or `gh pr comment` fallback) to actually post. Do not return prose.
+7. **Token discipline is a first-class concern.** Each specialist follows a Tier 0 → Tier 3 ladder (see their specs). The orchestrator pre-fetches PR metadata and diff **once** in Step 1, embeds the same `<pr_context>` block in all four specialist prompts (Step 3), and applies a tier-discipline downgrade in calibration (Step 5) if a high-severity finding cites only full-file evidence when a lower tier would have answered the question. The Diagnostics footer surfaces the aggregated tier distribution so token-waste is visible per review.
 
 ## Mandatory workflow
 
@@ -53,6 +54,15 @@ If 0 source files changed (docs-only / lockfile-only / CI-only), post a minimal 
 gh pr comment <PR_NUMBER> --body "🧵 ctxloom AI review: skipped (no source changes detected)."
 ```
 
+Then pre-fetch the **shared PR context** that all four specialists need. Doing it once here prevents 4× duplication of the same fetch downstream:
+
+```bash
+gh pr view <PR_NUMBER> --json number,title,baseRefName,headRefName,additions,deletions,changedFiles,files,author,labels,body
+gh pr diff <PR_NUMBER>
+```
+
+Hold the JSON metadata + unified diff in memory. They become the `<pr_context>` block embedded in each specialist's dispatch prompt (Step 3). **The specialist specs forbid them from re-fetching these.**
+
 ### Step 2 — Risk gate
 
 ```
@@ -69,7 +79,7 @@ This protects user token budget. The deterministic ctxloom-review still ran inde
 
 ### Step 3 — Parallel specialist dispatch
 
-Dispatch all four in a **single message containing four `Task` tool uses** (this is what makes them parallel):
+Dispatch all four in a **single message containing four `Task` tool uses** (this is what makes them parallel). Every prompt embeds the same `<pr_context>` block from Step 1 so specialists never re-fetch:
 
 ```
 Task(security-reviewer):
@@ -77,29 +87,52 @@ Task(security-reviewer):
     Review PR #<num> for security issues per your specification in
     .claude/agents/security-reviewer.md.
 
-    Base ref: <base_ref>
-    Head SHA: <head_sha>
-    Repo: <owner/name>
+    <pr_context>
+      Repo: <owner/name>
+      PR: #<num> — "<title>"
+      Base: <base_ref>   Head: <head_sha>
+      Changed: <additions>+ / <deletions>- across <changedFiles> files
+      Author: <author>   Labels: <labels>
+      Body: <PR description>
+
+      Files (from `gh pr view --json files`):
+        <one line per file: path, additions, deletions, changeType>
+
+      ctx_detect_changes (from Step 1):
+        <inlined XML/JSON of risk-scored files>
+
+      ctx_risk_overlay (from Step 2):
+        <inlined per-file risk scores>
+
+      Unified diff (from `gh pr diff`):
+        <full diff>
+    </pr_context>
+
+    Follow your spec's Token Discipline ladder. Do NOT call gh pr diff,
+    gh pr view, ctx_detect_changes, or ctx_risk_overlay — the
+    <pr_context> block above is authoritative.
 
     Return the exact JSON schema in your spec. Nothing else.
 
 Task(architecture-reviewer):
   prompt: |
     Review PR #<num> for architecture issues per .claude/agents/architecture-reviewer.md.
-    [...same context block...]
+    [...identical <pr_context> block + identical guardrails...]
 
 Task(testing-reviewer):
   prompt: |
     Review PR #<num> for test coverage and test quality per
     .claude/agents/testing-reviewer.md.
-    [...same context block...]
+    [...identical <pr_context> block + identical guardrails...]
 
 Task(performance-reviewer):
   prompt: |
     Review PR #<num> for performance regressions per
     .claude/agents/performance-reviewer.md.
-    [...same context block...]
+    [...identical <pr_context> block + identical guardrails...]
 ```
+
+The four `<pr_context>` blocks are **byte-identical** — the same diff is shared, not redrawn per specialist. This is the single biggest token-saving in the pipeline (eliminates 3× duplicate diff fetches = ~18-25k tokens on a medium PR).
 
 Wait for all four to complete.
 
@@ -127,6 +160,7 @@ Walk every finding and apply these rules (in order):
 - Performance `high` finding without `ctx_execution_flow` in evidence → downgrade to `medium`.
 - Architecture `critical|high` finding citing only pre-existing graph state (no `graph_delta` reference) → downgrade to `low`.
 - Testing `high` finding for a file with blast_radius < 5 → downgrade to `medium`.
+- **Tier discipline:** `critical|high` finding whose evidence is **only** Tier 3 (`ctx_get_file` / `Read`) when a Tier 0–2 tool could have answered the same question → downgrade by 1 tier. Examples of waste: security reachability "proved" via full-file read instead of `ctx_get_call_graph`; architecture hub claim "proved" via full-file read instead of `ctx_hub_nodes`. This rule activates only when the question is one the lower tier *demonstrably* answers — not as a blanket penalty.
 
 **Upgrades (rare, only when cross-specialist evidence converges):**
 - Same `file` flagged `medium+` by ≥ 2 specialists → bump severity of the highest-severity finding on that file by 1 tier (capped at `critical`).
@@ -211,6 +245,12 @@ Use this exact Markdown template. Length budget: aim for < 2,500 words. If over,
   - testing: <...>
   - performance: <...>
   - **Total ctxloom MCP calls:** <total>
+- **Tier distribution (aggregated from each specialist's `budget` block):**
+  - T0 structural: <count> (<%>)
+  - T1 skeleton: <count> (<%>)
+  - T2 definition: <count> (<%>)
+  - T3 full file: <count> (<%>)
+  - **Full-file reads:** <sum of `budget.full_file_reads` across specialists> — the lower the better
 - **Run time:** <orchestrator start → comment posted, in seconds>
 - **Stop reasons:** security=<>, arch=<>, test=<>, perf=<>
 - **Degraded mode:** <list any specialist that failed validation, or "none">

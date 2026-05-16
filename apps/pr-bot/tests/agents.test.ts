@@ -83,6 +83,31 @@ describe('canonical MCP tool surface', () => {
 
 const agentFiles = readdirSync(AGENTS_DIR).filter((f) => f.endsWith('.md'));
 
+/**
+ * Sections every specialist spec (NOT the orchestrator) must contain.
+ * These exist to enforce the skeleton-first token-discipline policy
+ * added in PR #104 — see `docs/skeleton-first.md` once it ships. If
+ * any of these are missing, the agent will skip the ladder and revert
+ * to expensive full-file reads.
+ */
+const REQUIRED_SPECIALIST_SECTIONS = [
+  /^## Token discipline — tool tier ladder/m,
+  /^## Pre-fetched context \(do not re-fetch\)/m,
+  /^## Per-question playbook/m,
+];
+
+/**
+ * The orchestrator spec has its own discipline requirements: it must
+ * tell us how it pre-fetches PR context once, and it must include the
+ * tier-aware calibration rule.
+ */
+const REQUIRED_ORCHESTRATOR_PATTERNS = [
+  /Token discipline is a first-class concern/,
+  /<pr_context>/,
+  /Tier discipline:/,
+];
+
+
 describe.each(agentFiles)('agent spec: %s', (file) => {
   const src = readFileSync(join(AGENTS_DIR, file), 'utf8');
 
@@ -112,6 +137,22 @@ describe.each(agentFiles)('agent spec: %s', (file) => {
       expect(CANONICAL.has(m[1]), `${file}: unknown tool "${m[1]}" in body`).toBe(true);
     }
   });
+
+  if (file !== 'review-orchestrator.md') {
+    it.each(REQUIRED_SPECIALIST_SECTIONS)(
+      'specialist spec contains required section: %s',
+      (pattern) => {
+        expect(src, `${file}: missing required section matching ${pattern}`).toMatch(pattern);
+      },
+    );
+  } else {
+    it.each(REQUIRED_ORCHESTRATOR_PATTERNS)(
+      'orchestrator spec contains required directive: %s',
+      (pattern) => {
+        expect(src, `${file}: missing required directive matching ${pattern}`).toMatch(pattern);
+      },
+    );
+  }
 
   it('body references only real ctxloom MCP tools (bare ctx_* form)', () => {
     const { body } = parseFrontmatter(src);
