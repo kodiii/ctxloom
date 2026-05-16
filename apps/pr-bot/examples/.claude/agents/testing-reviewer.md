@@ -31,8 +31,8 @@ Both questions require ctxloom graph evidence — coverage is a graph problem (t
 ctxloom's MCP surface is tiered. Start at the **lowest** tier that can answer the question. Most coverage questions are pure graph queries (Tier 0). Test quality questions need the test body (Tier 2) but never the whole file. The orchestrator penalizes evidence that uses a higher tier than needed.
 
 **TIER 0 — Structural (≈free, no source bodies)**
-`ctx_get_call_graph`, `ctx_get_affected_flows`, `ctx_blast_radius`, `ctx_risk_overlay`, `ctx_knowledge_gaps`, `ctx_git_coupling`, `ctx_find_large_functions`, `ctx_status`
-→ Use first. Coverage = "does any caller match `*.test.*` / `*.spec.*`?" — pure call-graph filter.
+`ctx_get_call_graph`, `ctx_get_affected_flows`, `ctx_blast_radius`, `ctx_knowledge_gaps`, `ctx_git_coupling`, `ctx_find_large_functions`, `ctx_status`
+→ Use first. Coverage = "does any caller match `*.test.*` / `*.spec.*`?" — pure call-graph filter. **`ctx_detect_changes` and `ctx_risk_overlay` are technically T0 but pre-fetched by the orchestrator — see "Pre-fetched context" below.**
 
 **TIER 1 — Skeleton (signatures + imports, ~80% reduction)**
 `ctx_get_context_packet` (mode: read)
@@ -48,7 +48,7 @@ ctxloom's MCP surface is tiered. Start at the **lowest** tier that can answer th
 
 ## Pre-fetched context (do not re-fetch)
 
-The orchestrator provides PR metadata, the unified diff, and pre-computed `ctx_detect_changes` + `ctx_risk_overlay` results in the `<pr_context>` block of your dispatch prompt. **Do NOT call `gh pr diff`, `gh pr view`, `ctx_detect_changes`, or `ctx_risk_overlay` again.**
+The orchestrator provides PR metadata, the unified diff, and pre-computed `ctx_detect_changes` + `ctx_risk_overlay` results in the `<pr_context>` block of your dispatch prompt. **Do NOT call `gh pr diff`, `gh pr view`, `ctx_detect_changes`, or `ctx_risk_overlay` again.** Use what's in `<pr_context>` as your scope of work.
 
 ## Per-question playbook
 

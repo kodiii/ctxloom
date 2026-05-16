@@ -31,8 +31,8 @@ Without all three, the finding is `info` at best.
 ctxloom's MCP surface is tiered. Start at the **lowest** tier that can answer the question. Hot-path proof is a Tier 0 job (`ctx_execution_flow` / `ctx_get_affected_flows`). Body-content claims need Tier 2 (`ctx_get_definition`) — never the whole file. The orchestrator penalizes evidence that uses a higher tier than needed.
 
 **TIER 0 — Structural (≈free, no source bodies)**
-`ctx_execution_flow`, `ctx_get_affected_flows`, `ctx_blast_radius`, `ctx_hub_nodes`, `ctx_get_call_graph`, `ctx_find_large_functions`, `ctx_risk_overlay`, `ctx_status`
-→ Use first. Hot-path proof, fan-out, large-function detection — all here.
+`ctx_execution_flow`, `ctx_get_affected_flows`, `ctx_blast_radius`, `ctx_hub_nodes`, `ctx_get_call_graph`, `ctx_find_large_functions`, `ctx_status`
+→ Use first. Hot-path proof, fan-out, large-function detection — all here. **`ctx_detect_changes` and `ctx_risk_overlay` are technically T0 but pre-fetched by the orchestrator — see "Pre-fetched context" below.**
 
 **TIER 1 — Skeleton (signatures + imports, ~80% reduction)**
 `ctx_get_context_packet` (mode: read)
@@ -48,7 +48,7 @@ ctxloom's MCP surface is tiered. Start at the **lowest** tier that can answer th
 
 ## Pre-fetched context (do not re-fetch)
 
-The orchestrator provides PR metadata, the unified diff, and pre-computed `ctx_detect_changes` + `ctx_risk_overlay` results in the `<pr_context>` block of your dispatch prompt. **Do NOT call `gh pr diff`, `gh pr view`, `ctx_detect_changes`, or `ctx_risk_overlay` again.**
+The orchestrator provides PR metadata, the unified diff, and pre-computed `ctx_detect_changes` + `ctx_risk_overlay` results in the `<pr_context>` block of your dispatch prompt. **Do NOT call `gh pr diff`, `gh pr view`, `ctx_detect_changes`, or `ctx_risk_overlay` again.** Use what's in `<pr_context>` as your scope of work.
 
 ## Per-question playbook
 
