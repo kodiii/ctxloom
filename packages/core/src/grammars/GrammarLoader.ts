@@ -81,7 +81,12 @@ export class GrammarLoader {
     const dest = path.join(this.cacheDir, entry.wasmFile);
 
     logger.info('Downloading grammar', { language, url, source: entry.downloadUrl?.trim() ? 'custom' : 'cdn' });
-    fs.mkdirSync(this.cacheDir, { recursive: true });
+    // Some manifest entries place the wasm in a subdir (e.g. `wasm/tree-sitter-c-sharp.wasm`).
+    // Create the destination's parent dir, not just `this.cacheDir`, otherwise the
+    // WriteStream open inside `download()` crashes with ENOENT before any error
+    // listener can attach — escaping as an unhandled 'error' event and killing the
+    // host process. See fix/grammar-loader-no-crash-on-download-failure for repro.
+    fs.mkdirSync(path.dirname(dest), { recursive: true });
 
     await this.download(url, dest);
 
@@ -99,6 +104,19 @@ export class GrammarLoader {
     return new Promise((resolve, reject) => {
       const tmp = dest + '.tmp';
       const file = fs.createWriteStream(tmp);
+
+      // Attach `'error'` SYNCHRONOUSLY. createWriteStream is lazy — the actual
+      // file open happens on the next tick, and if it fails (ENOENT on the parent
+      // dir, EACCES, etc.) and nothing is listening, Node throws on the
+      // 'uncaughtException' path and kills the process. The previous version
+      // attached this handler inside the https.get callback, which fires far too
+      // late.
+      const onFileError = (err: NodeJS.ErrnoException) => {
+        file.destroy();
+        fs.rmSync(tmp, { force: true });
+        reject(err);
+      };
+      file.on('error', onFileError);
 
       const request = https.get(url, (response) => {
         if (response.statusCode === 301 || response.statusCode === 302) {
@@ -119,11 +137,6 @@ export class GrammarLoader {
         }
         response.pipe(file);
         response.on('error', (err) => {
-          file.destroy();
-          fs.rmSync(tmp, { force: true });
-          reject(err);
-        });
-        file.on('error', (err) => {
           file.destroy();
           fs.rmSync(tmp, { force: true });
           reject(err);
