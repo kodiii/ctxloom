@@ -206,13 +206,14 @@ interface LanguageFixture {
    * `it.fails(...)` so a future parser fix flips the test red and
    * forces removal of the flag (tripwire on regression-fix).
    *
-   * Known-false languages discovered during Phase B1 dogfood:
-   *   - Go:   parser emits `import` nodes whose line range points at
-   *           the inner string literals, not the wrapping `import (...)`.
-   *           Result: import paths visible but `import` keyword stripped.
-   *   - Ruby: parser does not emit `require` as an import node.
-   *   - Dart: parser does not emit `import_or_export_declaration` as
-   *           an import node.
+   * All advertised languages currently pass. Three previously-known
+   * gaps closed in the Step C parser fixes:
+   *   - Go:   parseGo now emits a wrapping `import` node covering the
+   *           full `import (...)` block before the per-spec nodes.
+   *   - Ruby: parseRuby now emits `import` nodes for top-level
+   *           `require`/`require_relative`/`load`/`autoload` calls.
+   *   - Dart: parseDart now emits `import` for all URIs (was filtering
+   *           to relative-only, silently dropping `dart:`/`package:`).
    */
   importPreservedInSkeleton: boolean;
 }
@@ -224,14 +225,14 @@ interface LanguageFixture {
  * fix surface per language.
  */
 const LANGUAGE_FIXTURES: LanguageFixture[] = [
-  { language: 'Python',  file: 'sample.py',    expectedNames: ['UserService', 'format_user'], importPreservedInSkeleton: true  },
-  { language: 'Go',      file: 'sample.go',    expectedNames: ['UserService', 'FormatUser'],  importPreservedInSkeleton: false },
-  { language: 'Rust',    file: 'sample.rs',    expectedNames: ['UserService', 'format_user'], importPreservedInSkeleton: true  },
-  { language: 'Java',    file: 'sample.java',  expectedNames: ['UserService', 'formatUser'],  importPreservedInSkeleton: true  },
-  { language: 'C#',      file: 'sample.cs',    expectedNames: ['UserService', 'FormatUser'],  importPreservedInSkeleton: true  },
-  { language: 'Ruby',    file: 'sample.rb',    expectedNames: ['UserService', 'format_user'], importPreservedInSkeleton: false },
-  { language: 'PHP',     file: 'sample.php',   expectedNames: ['UserService', 'formatUser'],  importPreservedInSkeleton: true  },
-  { language: 'Dart',    file: 'sample.dart',  expectedNames: ['UserService', 'formatUser'],  importPreservedInSkeleton: false },
+  { language: 'Python',  file: 'sample.py',    expectedNames: ['UserService', 'format_user'], importPreservedInSkeleton: true },
+  { language: 'Go',      file: 'sample.go',    expectedNames: ['UserService', 'FormatUser'],  importPreservedInSkeleton: true },
+  { language: 'Rust',    file: 'sample.rs',    expectedNames: ['UserService', 'format_user'], importPreservedInSkeleton: true },
+  { language: 'Java',    file: 'sample.java',  expectedNames: ['UserService', 'formatUser'],  importPreservedInSkeleton: true },
+  { language: 'C#',      file: 'sample.cs',    expectedNames: ['UserService', 'FormatUser'],  importPreservedInSkeleton: true },
+  { language: 'Ruby',    file: 'sample.rb',    expectedNames: ['UserService', 'format_user'], importPreservedInSkeleton: true },
+  { language: 'PHP',     file: 'sample.php',   expectedNames: ['UserService', 'formatUser'],  importPreservedInSkeleton: true },
+  { language: 'Dart',    file: 'sample.dart',  expectedNames: ['UserService', 'formatUser'],  importPreservedInSkeleton: true },
 ];
 
 /**
