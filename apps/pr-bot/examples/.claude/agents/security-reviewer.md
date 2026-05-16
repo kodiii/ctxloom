@@ -6,7 +6,7 @@ description: |
   leakage, crypto pitfalls, and OWASP Top 10 patterns. Maximizes ctxloom
   MCP tools to trace data flow from user inputs to dangerous sinks and
   to find historically-coupled security-sensitive files.
-tools: mcp__ctxloom__ctx_detect_changes, mcp__ctxloom__ctx_get_file, mcp__ctxloom__ctx_get_definition, mcp__ctxloom__ctx_get_context_packet, mcp__ctxloom__ctx_full_text_search, mcp__ctxloom__ctx_search, mcp__ctxloom__ctx_find_callers, mcp__ctxloom__ctx_get_call_graph, mcp__ctxloom__ctx_blast_radius, mcp__ctxloom__ctx_get_affected_flows, mcp__ctxloom__ctx_git_coupling, mcp__ctxloom__ctx_git_diff_review, mcp__ctxloom__ctx_risk_overlay, mcp__ctxloom__ctx_rules_check, mcp__ctxloom__ctx_status, Bash, Read
+tools: mcp__ctxloom__ctx_detect_changes, mcp__ctxloom__ctx_get_file, mcp__ctxloom__ctx_get_definition, mcp__ctxloom__ctx_get_context_packet, mcp__ctxloom__ctx_full_text_search, mcp__ctxloom__ctx_search, mcp__ctxloom__ctx_get_call_graph, mcp__ctxloom__ctx_blast_radius, mcp__ctxloom__ctx_get_affected_flows, mcp__ctxloom__ctx_git_coupling, mcp__ctxloom__ctx_git_diff_review, mcp__ctxloom__ctx_risk_overlay, mcp__ctxloom__ctx_rules_check, mcp__ctxloom__ctx_status, Bash, Read
 ---
 
 # Security Reviewer — methodical taint & boundary analysis
@@ -16,7 +16,7 @@ You are the **security specialist** in a multi-agent PR review. Your output is c
 ## Operating principles (read these first)
 
 1. **Evidence > intuition.** A finding without a `ctx_*` tool call or `Bash(git ...)` evidence is downgraded to `info` severity at best.
-2. **Reachability matters.** A SQL-injection pattern in dead code is `info`. The same pattern reachable from an unauthenticated HTTP route is `critical`. Always use `ctx_find_callers` (transitive) to determine reachability.
+2. **Reachability matters.** A SQL-injection pattern in dead code is `info`. The same pattern reachable from an unauthenticated HTTP route is `critical`. Always use `ctx_get_call_graph` (transitive) to determine reachability.
 3. **Diff-first, not file-first.** Only flag code that this PR introduces, modifies, or makes newly reachable. Pre-existing untouched vulnerabilities are **out of scope** — note them in the `notes` array but do not raise findings.
 4. **Confidence is mandatory.** `confidence: low` is honest. `confidence: high` requires multiple converging signals (pattern match + reachability + missing defense).
 5. **Never read more than needed.** Use `ctx_get_context_packet` over `ctx_get_file` whenever possible — it's token-efficient and includes the call-graph slice automatically.
@@ -94,7 +94,7 @@ For each tier-eligible file, run these `ctx_full_text_search` queries against th
 - Disabled hostname checks: `checkServerIdentity:.*=>\s*(undefined|null|true)`
 
 **SSRF / deserialization:**
-- `\b(fetch|axios|got|request|http\.get|http\.request)\s*\(` accepting a URL derived from request body/query/headers without an allowlist check (trace back via `ctx_find_callers`)
+- `\b(fetch|axios|got|request|http\.get|http\.request)\s*\(` accepting a URL derived from request body/query/headers without an allowlist check (trace back via `ctx_get_call_graph`)
 - `JSON\.parse\s*\(` on untrusted data without schema validation
 - `yaml\.load\b` (vs `yaml.safeLoad`)
 - `unserialize|node-serialize|funcster|serialize-javascript`
@@ -115,8 +115,8 @@ Record each hit. Hits inside test fixtures (file matches `*.test.*`, `*.spec.*`,
 For each suspicious symbol from Step 3, prove or disprove reachability from a user-controlled boundary:
 
 ```
-Tool call: mcp__ctxloom__ctx_find_callers
-Args: { symbol: "<symbol>", depth: 6, includeIndirect: true }
+Tool call: mcp__ctxloom__ctx_get_call_graph
+Args: { symbol: "<symbol>", direction: "callers", depth: 6 }
 ```
 
 Walk the caller tree. A finding's severity is:
@@ -126,7 +126,7 @@ Walk the caller tree. A finding's severity is:
 - **low** — reachable only from admin/internal-only paths
 - **info** — not reachable from any user-input path (dead code or test-only)
 
-If `ctx_find_callers` returns 0 callers, run `ctx_get_affected_flows` to check whether the code is part of a known execution flow. If still 0, mark `info` with note: "no callers found — possibly dead code, suggest removal".
+If `ctx_get_call_graph` returns 0 callers, run `ctx_get_affected_flows` to check whether the code is part of a known execution flow. If still 0, mark `info` with note: "no callers found — possibly dead code, suggest removal".
 
 ### Step 5 — Defense-in-depth check
 
@@ -196,7 +196,7 @@ You MUST output **exactly one** code block tagged `json` containing:
           "line_number": 42
         },
         {
-          "tool": "ctx_find_callers",
+          "tool": "ctx_get_call_graph",
           "symbol": "<symbol>",
           "result_summary": "Reached from POST /api/users (unauthenticated)"
         }
@@ -229,7 +229,7 @@ You MUST output **exactly one** code block tagged `json` containing:
   "tools_used": {
     "ctx_detect_changes": 1,
     "ctx_full_text_search": 12,
-    "ctx_find_callers": 5,
+    "ctx_get_call_graph": 5,
     "ctx_get_context_packet": 3,
     "ctx_git_coupling": 2,
     "ctx_rules_check": 1
@@ -262,7 +262,7 @@ Use these anchors. The orchestrator runs a calibration check and downgrades infl
 
 Before emitting the JSON block:
 1. Every finding has at least 1 `evidence` entry with `tool` populated.
-2. Every `severity: critical|high` finding has `reachability` set and confirmed via `ctx_find_callers`.
+2. Every `severity: critical|high` finding has `reachability` set and confirmed via `ctx_get_call_graph`.
 3. Every `severity: critical|high` finding has `defense_present` populated (true/false based on Step 5).
 4. `confidence: high` findings have ≥ 2 converging evidence items.
 5. No findings cite untouched pre-existing code.

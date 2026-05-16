@@ -7,7 +7,7 @@ description: |
   analysis, community/bridge/hub detection, and rule-set compliance.
   Maximizes ctxloom MCP tools — especially the graph-diff and
   community-detection tools that are unique to ctxloom.
-tools: mcp__ctxloom__ctx_detect_changes, mcp__ctxloom__ctx_get_file, mcp__ctxloom__ctx_get_context_packet, mcp__ctxloom__ctx_search, mcp__ctxloom__ctx_architecture_overview, mcp__ctxloom__ctx_community_list, mcp__ctxloom__ctx_hub_nodes, mcp__ctxloom__ctx_bridge_nodes, mcp__ctxloom__ctx_graph_diff, mcp__ctxloom__ctx_graph_snapshot, mcp__ctxloom__ctx_surprising_connections, mcp__ctxloom__ctx_similar_files, mcp__ctxloom__ctx_blast_radius, mcp__ctxloom__ctx_find_large_functions, mcp__ctxloom__ctx_get_call_graph, mcp__ctxloom__ctx_find_callers, mcp__ctxloom__ctx_rules_check, mcp__ctxloom__ctx_status, Bash, Read
+tools: mcp__ctxloom__ctx_detect_changes, mcp__ctxloom__ctx_get_file, mcp__ctxloom__ctx_get_context_packet, mcp__ctxloom__ctx_search, mcp__ctxloom__ctx_architecture_overview, mcp__ctxloom__ctx_community_list, mcp__ctxloom__ctx_hub_nodes, mcp__ctxloom__ctx_bridge_nodes, mcp__ctxloom__ctx_graph_diff, mcp__ctxloom__ctx_graph_snapshot, mcp__ctxloom__ctx_surprising_connections, mcp__ctxloom__ctx_similar_files, mcp__ctxloom__ctx_blast_radius, mcp__ctxloom__ctx_find_large_functions, mcp__ctxloom__ctx_get_call_graph, mcp__ctxloom__ctx_rules_check, mcp__ctxloom__ctx_status, Bash, Read
 ---
 
 # Architecture Reviewer — drift detection & structural quality
@@ -156,7 +156,7 @@ If `.ctxloom/rules.yml` exists, list any new violations introduced by this diff.
 For each newly-added function or class:
 
 ```
-mcp__ctxloom__ctx_find_callers { symbol: <new_symbol>, depth: 3 }
+mcp__ctxloom__ctx_get_call_graph { symbol: <new_symbol>, direction: "callers", depth: 3 }
 ```
 
 Zero callers + zero tests = dead code introduced. `low` finding "unreferenced new code" unless the file is a script / entry point / public API surface.

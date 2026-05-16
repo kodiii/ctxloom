@@ -134,15 +134,21 @@ from any repo and it dispatches them.
 
 **Install (one command)**
 
+Clone the ctxloom repo somewhere (or `cd` into your existing clone), then
+run the installer from `apps/pr-bot/examples/`:
+
 ```bash
-cd /path/to/cloned/ctxloom/apps/pr-bot/examples
+git clone https://github.com/kodiii/ctxloom.git
+cd ctxloom/apps/pr-bot/examples
 ./setup-local.sh                  # copies agents to ~/.claude/agents/
 ```
 
-Or for a single project only:
+Or for a single project only — run from inside the project root:
 
 ```bash
-./setup-local.sh --project        # copies to ./.claude/agents/
+cd /path/to/your/project
+/path/to/ctxloom/apps/pr-bot/examples/setup-local.sh --project
+# copies to ./.claude/agents/
 ```
 
 **Use it**
@@ -177,10 +183,14 @@ against your Claude seat instead of an API key.
 1. Install the official **[Claude Code GitHub App](https://github.com/apps/claude)** on your repo.
    It auto-creates a `CLAUDE_CODE_OAUTH_TOKEN` repo secret that draws
    from your Max/Pro/Team seat — no API key, no per-token billing.
-2. Copy the workflow + agents into your repo:
+2. Copy the workflow + agents into your repo. Run these commands from
+   **your project's root** (clone ctxloom first if you haven't already):
    ```bash
-   cp -R apps/pr-bot/examples/.claude .claude
-   cp apps/pr-bot/examples/.github/workflows/claude-review.yml \
+   # From your project root, with ctxloom cloned somewhere accessible:
+   CTXLOOM_REPO=/path/to/cloned/ctxloom
+   mkdir -p .github/workflows
+   cp -R "$CTXLOOM_REPO/apps/pr-bot/examples/.claude" .claude
+   cp "$CTXLOOM_REPO/apps/pr-bot/examples/.github/workflows/claude-review.yml" \
       .github/workflows/
    ```
 3. Add **`CTXLOOM_LICENSE_KEY`** to your repo secrets (ctxloom MCP

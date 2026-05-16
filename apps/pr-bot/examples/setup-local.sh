@@ -25,7 +25,10 @@ case "${1:-}" in
   --project)   MODE="project" ;;
   --uninstall) MODE="uninstall" ;;
   -h|--help)
-    sed -n '2,/^set -e/p' "$0" | sed 's/^# \{0,1\}//' | head -n -1
+    # Portable equivalent of `head -n -1` (GNU-only): strip the final
+    # non-comment line ("set -euo pipefail") via awk so this works on
+    # both GNU coreutils and BSD/macOS `head`.
+    sed -n '2,/^set -e/p' "$0" | sed 's/^# \{0,1\}//' | awk 'NR>1{print prev} {prev=$0}'
     exit 0
     ;;
 esac
