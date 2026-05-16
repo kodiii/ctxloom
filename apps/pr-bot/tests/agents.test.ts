@@ -54,13 +54,30 @@ function parseFrontmatter(src: string): { fm: Record<string, string>; body: stri
 const CANONICAL = loadCanonicalTools();
 
 describe('canonical MCP tool surface', () => {
-  it('parses 33 ctx_* tools from packages/core', () => {
-    expect(CANONICAL.size).toBe(33);
+  // Floor instead of exact match: legitimate tool additions should not
+  // fail this test in an unrelated package. The real bug-catching signal
+  // lives in the must-have / must-not-have canaries below.
+  it('parses at least 30 ctx_* tools from packages/core', () => {
+    expect(CANONICAL.size).toBeGreaterThanOrEqual(30);
   });
 
   it('includes ctx_get_call_graph (not ctx_find_callers)', () => {
     expect(CANONICAL.has('ctx_get_call_graph')).toBe(true);
     expect(CANONICAL.has('ctx_find_callers')).toBe(false);
+  });
+
+  // Known-good canaries: if the regex ever breaks (e.g. core switches to
+  // template literals or imports tool names from a constants module),
+  // these fail loudly instead of silently shrinking the canonical set.
+  it.each([
+    'ctx_status',
+    'ctx_detect_changes',
+    'ctx_get_call_graph',
+    'ctx_get_context_packet',
+    'ctx_blast_radius',
+    'ctx_risk_overlay',
+  ])('canary: %s is present', (name) => {
+    expect(CANONICAL.has(name)).toBe(true);
   });
 });
 
