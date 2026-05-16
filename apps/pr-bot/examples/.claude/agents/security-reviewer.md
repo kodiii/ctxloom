@@ -300,7 +300,7 @@ Use these anchors. The orchestrator runs a calibration check and downgrades infl
 ❌ Re-flagging pre-existing untouched code.
 ❌ Findings without `evidence[].tool` populated.
 ❌ Calling `Read` or `ctx_get_file` (Tier 3) before trying T0/T1/T2 — every evidence item must declare its `tier`.
-❌ Calling `gh pr diff`, `gh pr view`, `ctx_detect_changes`, or `ctx_risk_overlay` — the orchestrator already ran these; use `<pr_context>`.
+❌ Calling `gh pr diff`, `gh pr view`, `ctx_detect_changes`, or `ctx_risk_overlay` — already in `<pr_context>`.
 ❌ Using `Bash(grep|rg|find)` for symbol or file search — use `ctx_search` / `ctx_full_text_search`.
 ❌ Calling `ctx_get_definition` 3+ times on the same file — switch to `ctx_get_context_packet`.
 
