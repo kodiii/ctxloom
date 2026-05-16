@@ -12,20 +12,37 @@
  *
  *  - ARCH-001 (PR #104 dogfood): same drift bug, but in the marketing
  *    copy at `AI-REVIEWS.md:245`. The agent-spec scanner missed it
- *    because it only walked the agents directory. Fixed here.
+ *    because it only walked the agents directory.
  *
- * Checks per agent file:
- *  1. Has valid YAML frontmatter
- *  2. Frontmatter `tools:` list references only real ctxloom MCP tools
- *  3. Body mentions of `mcp__ctxloom__ctx_*` resolve to real tools
- *  4. Body mentions of bare `ctx_*` tool names resolve to real tools
- *  5. Required tier-discipline sections present AND non-empty
- *  6. Required sections survive when code-block content is stripped
+ *  - ARCH-003 / TEST-004 (PR #104 + #108 dogfood): shared blocks
+ *    across the four specialist specs could drift independently
+ *    (silently or coordinated-but-broken). Now caught by the
+ *    SHARED_BLOCKS table with byte-equality + per-invariant checks.
  *
- * Additional checks:
- *  - AI-REVIEWS.md references only real ctxloom MCP tools
- *  - Shared "Pre-fetched context" block is byte-identical across all
- *    four specialist specs (drift-detection per ARCH-003 in PR #104)
+ *  - TEST-109-1 (PR #109 dogfood): semantic invariants previously
+ *    pinned one specific sentence ("flavor text") rather than the
+ *    load-bearing policy tokens. Now each block declares an ARRAY of
+ *    invariants targeting the actual policy content.
+ *
+ *  - SEC-109-1 / TEST-109-2 (PR #109 dogfood): the marker-substring
+ *    extractor used unanchored `indexOf`, so a future bullet quoting
+ *    the marker in prose could shift extraction silently. Now uses an
+ *    anchored regex (`/^❌ Calling .../m`).
+ *
+ *  - ARCH-109-1 (PR #109 dogfood): adding a new shared block
+ *    previously required a bespoke extractor function. The
+ *    `SharedBlock` interface is now data-only (declarative `source`),
+ *    dispatched through a single generic `extractFromSpec`.
+ *
+ *  - ARCH-109-2 (PR #109 dogfood): orchestrator exclusion was
+ *    string-coupled to the filename. Now derived from frontmatter
+ *    shape (specialists have `tools:`, orchestrator doesn't) and
+ *    self-heals if the orchestrator file is renamed.
+ *
+ *  - TEST-109-3 (PR #109 dogfood): helper unit tests appeared LAST,
+ *    so a helper regression cascaded as confusing integration-test
+ *    failures. Helper describes now run BEFORE integration tests so
+ *    root cause surfaces first.
  *
  * Source of truth for the tool list: parsed from
  * `packages/core/src/tools/*.ts`. If the MCP tool surface changes,
@@ -102,26 +119,177 @@ function extractSectionBody(src: string, headerPattern: RegExp): string {
 }
 
 /**
- * Extract the trailing anti-pattern bullets that are supposed to be
- * byte-identical across all four specialist specs. The first anti-
- * pattern bullet is intentionally specialist-specific (security
- * mentions tier declaration, architecture says "wrong tier for this
- * specialist"); the bullets starting with the `gh pr diff` ban
- * downward are the truly shared policy.
+ * Declarative source descriptor for a shared spec block. Two kinds:
  *
- * Per ARCH-108-3 + TEST-003 (PR #108 dogfood, the converged
- * medium-severity drift-scope finding): without this enforcement, the
- * shared trailing bullets can drift independently of the Pre-fetched
- * context block and the test suite has no signal.
+ *   { kind: 'section', header }
+ *     Extract everything between the header and the next `## ` heading.
+ *
+ *   { kind: 'section-from', header, startMarker }
+ *     Extract from the first occurrence of an ANCHORED `startMarker`
+ *     regex (must be `^...` /m) within the section body. Anchoring on
+ *     bullet-line start prevents prose-quoted marker text from
+ *     shifting the extraction (per SEC-109-1 / TEST-109-2).
  */
-function extractAntiPatternsTrailingShared(src: string): string {
-  const body = extractSectionBody(src, /^## Anti-patterns/m);
-  const sharedStart = body.indexOf('❌ Calling `gh pr diff`');
-  if (sharedStart === -1) return '';
-  return body.slice(sharedStart).trim();
+type SharedBlockSource =
+  | { kind: 'section'; header: RegExp }
+  | { kind: 'section-from'; header: RegExp; startMarker: RegExp };
+
+/**
+ * Generic extractor — consumes a `SharedBlockSource` descriptor.
+ * Replaces the bespoke per-block extractor functions used in PR #108
+ * (closes ARCH-109-1).
+ */
+function extractFromSpec(src: string, source: SharedBlockSource): string {
+  const sectionBody = extractSectionBody(src, source.header);
+  if (!sectionBody) return '';
+  if (source.kind === 'section') return sectionBody;
+  const m = sectionBody.match(source.startMarker);
+  if (!m || m.index === undefined) return '';
+  return sectionBody.slice(m.index).trim();
 }
 
 const CANONICAL = loadCanonicalTools();
+
+// ────────────────────────────────────────────────────────────────────
+// Helper unit tests run FIRST (per TEST-109-3): a regression in the
+// helpers below should surface as a focused helper failure, not as a
+// misleading cascade of integration-test failures downstream.
+// ────────────────────────────────────────────────────────────────────
+
+describe('helper: stripFencedCodeBlocks', () => {
+  it('removes a single fenced code block', () => {
+    const src = 'before\n```\ncode\n```\nafter';
+    expect(stripFencedCodeBlocks(src)).toBe('before\n\nafter');
+  });
+
+  it('removes multiple fenced code blocks', () => {
+    const src = 'a\n```\nx\n```\nb\n```ts\ny\n```\nc';
+    expect(stripFencedCodeBlocks(src)).toBe('a\n\nb\n\nc');
+  });
+
+  it('leaves an unclosed fence as-is (consumes to EOF — no infinite loop)', () => {
+    const src = 'before\n```\nunclosed';
+    // Non-greedy regex with no closing fence does NOT match — passes through.
+    expect(stripFencedCodeBlocks(src)).toBe(src);
+  });
+
+  it('does not strip inline backticks', () => {
+    const src = 'use `foo` and `bar`';
+    expect(stripFencedCodeBlocks(src)).toBe(src);
+  });
+
+  it('handles empty input', () => {
+    expect(stripFencedCodeBlocks('')).toBe('');
+  });
+});
+
+describe('helper: extractSectionBody', () => {
+  it('extracts body between header and next section', () => {
+    const src = '## A\nbody A\nmore A\n## B\nbody B';
+    expect(extractSectionBody(src, /^## A/m)).toBe('body A\nmore A');
+  });
+
+  it('extracts to EOF when section is the last one', () => {
+    const src = '## A\nbody A\n## B\nbody B\nlast line';
+    expect(extractSectionBody(src, /^## B/m)).toBe('body B\nlast line');
+  });
+
+  it('returns empty string when section header is immediately followed by next header (zero body)', () => {
+    const src = '## A\n## B\nbody B';
+    expect(extractSectionBody(src, /^## A/m)).toBe('');
+  });
+
+  it('returns empty string when header is missing', () => {
+    const src = '## A\nbody A';
+    expect(extractSectionBody(src, /^## NotPresent/m)).toBe('');
+  });
+
+  it('strips fenced code blocks before extraction (so a `## X` inside a fence is not treated as a section)', () => {
+    const src = '## A\nbody\n```\n## NotARealHeader\n```\nmore body\n## B\nbody B';
+    expect(extractSectionBody(src, /^## A/m)).toBe('body\n\nmore body');
+  });
+
+  it('handles header at the very end of file with no body', () => {
+    const src = '## A\nbody\n## B';
+    expect(extractSectionBody(src, /^## B/m)).toBe('');
+  });
+});
+
+describe('helper: extractFromSpec', () => {
+  describe("source kind: 'section'", () => {
+    it('returns the full body between header and next section', () => {
+      const src = '## A\nbody line 1\nbody line 2\n## B\nother';
+      const out = extractFromSpec(src, { kind: 'section', header: /^## A/m });
+      expect(out).toBe('body line 1\nbody line 2');
+    });
+
+    it('returns empty string when the section is missing', () => {
+      const src = '## B\nbody';
+      const out = extractFromSpec(src, { kind: 'section', header: /^## NotPresent/m });
+      expect(out).toBe('');
+    });
+  });
+
+  describe("source kind: 'section-from'", () => {
+    const source = {
+      kind: 'section-from' as const,
+      header: /^## Anti-patterns/m,
+      startMarker: /^❌ Calling `gh pr diff`/m,
+    };
+
+    it('returns substring starting at anchored startMarker', () => {
+      const src = `## Anti-patterns
+
+❌ Specialist-specific bullet here.
+❌ Calling \`gh pr diff\`, etc.
+❌ Trailing bullet 2.
+
+## Final checks
+`;
+      const out = extractFromSpec(src, source);
+      expect(out).toMatch(/^❌ Calling `gh pr diff`/);
+      expect(out).toMatch(/Trailing bullet 2/);
+      expect(out).not.toMatch(/Specialist-specific bullet/);
+    });
+
+    it('IGNORES marker text appearing in prose before the real bullet (TEST-109-2 regression guard)', () => {
+      // Realistic adversarial fixture: a specialist-specific bullet
+      // legitimately quotes the shared marker in prose. Old indexOf-
+      // based extractor would start at the prose mention and slice
+      // the wrong region; anchored regex requires bullet-line start.
+      const src = `## Anti-patterns
+
+❌ Re-flagging warnings about \`❌ Calling \`gh pr diff\`\` issues.
+❌ Specialist-specific bullet 2.
+❌ Calling \`gh pr diff\`, etc.
+❌ Trailing bullet 2.
+
+## Final checks
+`;
+      const out = extractFromSpec(src, source);
+      // Must start at the REAL bullet, not the prose mention
+      const lines = out.split('\n');
+      expect(lines[0]).toBe('❌ Calling `gh pr diff`, etc.');
+      expect(out).not.toMatch(/Re-flagging warnings/);
+      expect(out).not.toMatch(/Specialist-specific bullet 2/);
+    });
+
+    it('returns empty string when startMarker is missing', () => {
+      const src = '## Anti-patterns\n\n❌ Some other bullet.\n\n## Final checks';
+      expect(extractFromSpec(src, source)).toBe('');
+    });
+
+    it('returns empty string when the section itself is missing', () => {
+      const src = '## Other section\nbody';
+      expect(extractFromSpec(src, source)).toBe('');
+    });
+  });
+});
+
+// ────────────────────────────────────────────────────────────────────
+// Integration tests (canonical surface, agent specs, AI-REVIEWS.md,
+// shared-block drift) — start after helper unit tests.
+// ────────────────────────────────────────────────────────────────────
 
 describe('canonical MCP tool surface', () => {
   // Floor instead of exact match: legitimate tool additions should not
@@ -154,14 +322,27 @@ describe('canonical MCP tool surface', () => {
 const agentFiles = readdirSync(AGENTS_DIR).filter((f) => f.endsWith('.md'));
 
 /**
- * Specialist spec files, derived from the auto-discovered agent set.
- * Closes ARCH-108-1 from PR #108's dogfood: previously this was a static
- * array, so adding a new specialist (e.g. `database-reviewer.md`) would
- * silently skip it from drift detection. Now anything added to
- * `examples/.claude/agents/` that isn't the orchestrator is checked
- * automatically.
+ * Specialist spec files, derived from the auto-discovered agent set
+ * via FRONTMATTER `name:` rather than filename equality (closes
+ * ARCH-109-2).
+ *
+ * The orchestrator's `name:` is `review-orchestrator`; every
+ * specialist's `name:` ends in `-reviewer`. Both have `tools:`
+ * frontmatter (so we can't discriminate on that alone). Filtering on
+ * the role-identifier embedded in the spec is self-healing if the
+ * orchestrator file is ever renamed — the prior
+ * `f !== 'review-orchestrator.md'` filter would silently include it
+ * as a specialist and produce confusing "drifted" failure messages
+ * instead of "misconfigured".
  */
-const SPECIALIST_FILES = agentFiles.filter((f) => f !== 'review-orchestrator.md');
+const SPECIALIST_FILES = agentFiles.filter((f) => {
+  try {
+    const { fm } = parseFrontmatter(readFileSync(join(AGENTS_DIR, f), 'utf8'));
+    return fm.name !== 'review-orchestrator';
+  } catch {
+    return false;
+  }
+});
 
 /**
  * Sections every specialist spec (NOT the orchestrator) must contain
@@ -188,6 +369,7 @@ const REQUIRED_ORCHESTRATOR_PATTERNS = [
 
 describe.each(agentFiles)('agent spec: %s', (file) => {
   const src = readFileSync(join(AGENTS_DIR, file), 'utf8');
+  const isSpecialist = SPECIALIST_FILES.includes(file);
 
   it('has valid YAML frontmatter with name + description', () => {
     const { fm } = parseFrontmatter(src);
@@ -216,7 +398,7 @@ describe.each(agentFiles)('agent spec: %s', (file) => {
     }
   });
 
-  if (file !== 'review-orchestrator.md') {
+  if (isSpecialist) {
     it.each(REQUIRED_SPECIALIST_SECTIONS)(
       'specialist spec contains required section header (outside code fences): %s',
       (pattern) => {
@@ -283,44 +465,77 @@ describe('user-facing docs: AI-REVIEWS.md', () => {
 });
 
 /**
- * Shared blocks across the four specialist specs. Each entry must be
- * byte-identical across all specs AND must satisfy a positive
- * `semanticInvariant` regex.
+ * Shared blocks across the four specialist specs.
  *
- * The byte-equality check (per ARCH-003 in PR #104) catches drift —
- * one spec edited and the others not.
+ * Each entry declares:
+ *   - `name`: human-readable label
+ *   - `source`: declarative descriptor (closes ARCH-109-1 — no
+ *     bespoke per-block extractor functions)
+ *   - `semanticInvariants`: ARRAY of regexes targeting the LOAD-BEARING
+ *     policy tokens (closes TEST-109-1 — replaces single-sentence
+ *     "flavor text" pinning)
  *
- * The semantic invariant check (per TEST-004 in PR #108) closes the
- * "equal-but-broken" gap: if a contributor `sed`s the same text out
- * of all four specs in one commit, byte-equality still passes but the
- * invariant fails. This guarantees the shared block has both
- * structural consistency AND minimum semantic content.
+ * Two checks run per block per spec:
+ *   1. Byte-equality across all four specialists (catches drift —
+ *      one spec edited and the others not, per ARCH-003 in PR #104)
+ *   2. Each invariant regex matches the extracted body in EVERY spec
+ *      independently (catches "equal-but-broken" coordinated
+ *      regression where all four specs converge on a value that
+ *      satisfies neither the policy nor the invariant, per TEST-004
+ *      in PR #108 + TEST-109-1 in PR #109)
  *
- * The set of shared blocks (per ARCH-108-3 + TEST-003 in PR #108
- * dogfood — the converged medium-severity drift-scope finding) covers
- * everything that's supposed to be identical across specialists. The
- * tier ladders and per-question playbooks legitimately differ by
- * specialist domain, so they're NOT in this set.
+ * The tier ladders and per-question playbooks legitimately differ
+ * by specialist domain, so they're NOT in this set.
  */
 interface SharedBlock {
   /** Human-readable label for failure messages. */
   name: string;
-  /** Extract the canonical block body from a spec source. Empty string = absent. */
-  extract: (src: string) => string;
-  /** Positive content assertion. The block must contain this regex match. */
-  semanticInvariant: RegExp;
+  /** Declarative source descriptor — see SharedBlockSource above. */
+  source: SharedBlockSource;
+  /**
+   * All regexes must match the extracted body. Each pins one
+   * load-bearing policy token (a tool name, a directive verb, a
+   * structural marker), NOT a specific sentence.
+   */
+  semanticInvariants: RegExp[];
 }
 
 const SHARED_BLOCKS: SharedBlock[] = [
   {
     name: 'Pre-fetched context body',
-    extract: (src) => extractSectionBody(src, /^## Pre-fetched context \(do not re-fetch\)/m),
-    semanticInvariant: /Use what's in `<pr_context>` as your scope of work/,
+    source: {
+      kind: 'section',
+      header: /^## Pre-fetched context \(do not re-fetch\)/m,
+    },
+    // The policy: orchestrator pre-fetches PR meta + diff +
+    // ctx_detect_changes + ctx_risk_overlay; specialists must NOT
+    // re-fetch any of them. Each invariant pins one load-bearing
+    // token; no flavor-text pinning (closes TEST-109-1).
+    semanticInvariants: [
+      /Do NOT call/i,
+      /ctx_detect_changes/,
+      /ctx_risk_overlay/,
+      /`<pr_context>`/,
+    ],
   },
   {
     name: 'Anti-patterns shared trailing bullets',
-    extract: extractAntiPatternsTrailingShared,
-    semanticInvariant: /❌ Calling `gh pr diff`.*already in `<pr_context>`/s,
+    source: {
+      kind: 'section-from',
+      header: /^## Anti-patterns/m,
+      // Anchored on bullet-line start — prose-quoted marker text
+      // earlier in the section cannot shift the extraction (closes
+      // SEC-109-1 / TEST-109-2).
+      startMarker: /^❌ Calling `gh pr diff`/m,
+    },
+    // Each of the four trailing bullets has its own load-bearing
+    // policy token. If any one is removed, the corresponding
+    // invariant fails with a clear message naming the missing pattern.
+    semanticInvariants: [
+      /❌ Calling `gh pr diff`/,
+      /❌ Using `Bash\(grep\|rg\|find\)`/,
+      /❌ Calling `ctx_get_definition` 3\+ times/,
+    ],
   },
 ];
 
@@ -328,12 +543,15 @@ describe('shared block drift detection', () => {
   describe.each(SHARED_BLOCKS)('$name', (block) => {
     const bodies = SPECIALIST_FILES.map((f) => {
       const src = readFileSync(join(AGENTS_DIR, f), 'utf8');
-      return { file: f, body: block.extract(src) };
+      return { file: f, body: extractFromSpec(src, block.source) };
     });
 
     it('is byte-identical across all 4 specialist specs', () => {
       const reference = bodies[0];
-      expect(reference.body.length, `${reference.file}: ${block.name} is empty — extractor returned ''`).toBeGreaterThan(0);
+      expect(
+        reference.body.length,
+        `${reference.file}: ${block.name} is empty — extractor returned ''`,
+      ).toBeGreaterThan(0);
       for (let i = 1; i < bodies.length; i++) {
         expect(
           bodies[i].body,
@@ -342,111 +560,20 @@ describe('shared block drift detection', () => {
       }
     });
 
-    it('satisfies semantic invariant (no equal-but-broken regression)', () => {
-      // Walk every spec independently — equal-but-broken means all 4
-      // converge on a value that nonetheless fails the invariant.
+    // One sub-test per (spec × invariant) combination so failure
+    // messages name BOTH which spec and which load-bearing token is
+    // missing. Beats a single combined check that bails on first
+    // failure.
+    describe('semantic invariants (no equal-but-broken regression)', () => {
       for (const { file, body } of bodies) {
-        expect(
-          body,
-          `${block.name} in ${file} is missing required content matching ${block.semanticInvariant}. ` +
-            `Even if all 4 specs agree, the agreed wording must still satisfy the policy.`,
-        ).toMatch(block.semanticInvariant);
+        it.each(block.semanticInvariants)(`${file} matches %s`, (invariant) => {
+          expect(
+            body,
+            `${block.name} in ${file} is missing required policy content matching ${invariant}. ` +
+              `Even if all 4 specs agree, the agreed wording must still satisfy this invariant.`,
+          ).toMatch(invariant);
+        });
       }
     });
-  });
-});
-
-/**
- * TEST-006 (PR #108 dogfood): the helper functions are load-bearing
- * for every section-presence + drift assertion above, but they were
- * only exercised indirectly via the four real specs. A regression in
- * an edge case (zero-body section, last-section-no-trailing-newline,
- * unclosed code fence) would silently pass. These unit tests pin
- * each helper's contract directly with synthetic markdown fixtures.
- */
-describe('helper: stripFencedCodeBlocks', () => {
-  it('removes a single fenced code block', () => {
-    const src = 'before\n```\ncode\n```\nafter';
-    expect(stripFencedCodeBlocks(src)).toBe('before\n\nafter');
-  });
-
-  it('removes multiple fenced code blocks', () => {
-    const src = 'a\n```\nx\n```\nb\n```ts\ny\n```\nc';
-    expect(stripFencedCodeBlocks(src)).toBe('a\n\nb\n\nc');
-  });
-
-  it('leaves an unclosed fence as-is (consumes to EOF — no infinite loop)', () => {
-    const src = 'before\n```\nunclosed';
-    // Non-greedy regex with no closing fence does NOT match — passes through.
-    expect(stripFencedCodeBlocks(src)).toBe(src);
-  });
-
-  it('does not strip inline backticks', () => {
-    const src = 'use `foo` and `bar`';
-    expect(stripFencedCodeBlocks(src)).toBe(src);
-  });
-
-  it('handles empty input', () => {
-    expect(stripFencedCodeBlocks('')).toBe('');
-  });
-});
-
-describe('helper: extractSectionBody', () => {
-  it('extracts body between header and next section', () => {
-    const src = '## A\nbody A\nmore A\n## B\nbody B';
-    expect(extractSectionBody(src, /^## A/m)).toBe('body A\nmore A');
-  });
-
-  it('extracts to EOF when section is the last one', () => {
-    const src = '## A\nbody A\n## B\nbody B\nlast line';
-    expect(extractSectionBody(src, /^## B/m)).toBe('body B\nlast line');
-  });
-
-  it('returns empty string when section header is immediately followed by next header (zero body)', () => {
-    const src = '## A\n## B\nbody B';
-    expect(extractSectionBody(src, /^## A/m)).toBe('');
-  });
-
-  it('returns empty string when header is missing', () => {
-    const src = '## A\nbody A';
-    expect(extractSectionBody(src, /^## NotPresent/m)).toBe('');
-  });
-
-  it('strips fenced code blocks before extraction (so a `## X` inside a fence is not treated as a section)', () => {
-    const src = '## A\nbody\n```\n## NotARealHeader\n```\nmore body\n## B\nbody B';
-    expect(extractSectionBody(src, /^## A/m)).toBe('body\n\nmore body');
-  });
-
-  it('handles header at the very end of file with no body', () => {
-    const src = '## A\nbody\n## B';
-    expect(extractSectionBody(src, /^## B/m)).toBe('');
-  });
-});
-
-describe('helper: extractAntiPatternsTrailingShared', () => {
-  it('returns the substring starting at the gh-pr-diff bullet', () => {
-    const src = `## Anti-patterns
-
-❌ Specialist-specific bullet here.
-❌ Calling \`gh pr diff\`, \`gh pr view\`, \`ctx_detect_changes\`, or \`ctx_risk_overlay\` — already in \`<pr_context>\`.
-❌ Using \`Bash(grep|rg|find)\` for symbol or file search — use \`ctx_search\` / \`ctx_full_text_search\`.
-❌ Calling \`ctx_get_definition\` 3+ times on the same file — switch to \`ctx_get_context_packet\`.
-
-## Final checks
-`;
-    const result = extractAntiPatternsTrailingShared(src);
-    expect(result).toMatch(/^❌ Calling `gh pr diff`/);
-    expect(result).toMatch(/ctx_get_definition/);
-    expect(result).not.toMatch(/Specialist-specific bullet/);
-  });
-
-  it('returns empty string when the gh-pr-diff bullet is missing', () => {
-    const src = '## Anti-patterns\n\n❌ Some other bullet.\n\n## Final checks';
-    expect(extractAntiPatternsTrailingShared(src)).toBe('');
-  });
-
-  it('returns empty string when Anti-patterns section is missing', () => {
-    const src = '## Other section\nbody';
-    expect(extractAntiPatternsTrailingShared(src)).toBe('');
   });
 });
