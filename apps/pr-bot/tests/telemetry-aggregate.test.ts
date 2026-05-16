@@ -81,7 +81,12 @@ describe('percentile', () => {
 });
 
 describe('summarize', () => {
-  function makeRow(pr: number, specialists: Partial<TelemetryRow['specialists']>, total = 0): TelemetryRow {
+  function makeRow(
+    pr: number,
+    specialists: Partial<TelemetryRow['specialists']>,
+    total = 0,
+    tier_distribution: TelemetryRow['tier_distribution'] = null,
+  ): TelemetryRow {
     return {
       pr,
       title: `PR #${pr}`,
@@ -97,7 +102,7 @@ describe('summarize', () => {
       total_specialist_tokens: total,
       verdict: 'approve',
       severity_counts: { critical: 0, high: 0, medium: 0, low: 0, info: 0 },
-      tier_distribution: null,
+      tier_distribution,
       full_file_reads: null,
       source: 'markdown-table',
     };
@@ -127,6 +132,17 @@ describe('summarize', () => {
     expect(testing.n).toBe(0);
     expect(testing.min).toBeNull();
     expect(testing.p75).toBeNull();
+  });
+
+  it('aggregates tierTotals across rows, skipping null tier_distribution', () => {
+    const rows = [
+      makeRow(1, {}, 0, { T0: 5, T1: 2, T2: 0, T3: 1 }),
+      makeRow(2, {}, 0, { T0: 1, T1: 0, T2: 3, T3: 0 }),
+      makeRow(3, {}, 0, null),  // null excluded from totals
+    ];
+    const summary = summarize(rows);
+    expect(summary.tierTotals).toEqual({ T0: 6, T1: 2, T2: 3, T3: 1 });
+    expect(summary.tierTotal).toBe(12);
   });
 
   it('counts verdicts and severity sums correctly', () => {
