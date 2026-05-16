@@ -10,6 +10,12 @@
  *
  * Closes Issue #112 (Part 3 — aggregation script).
  *
+ * Test coverage:
+ *   apps/pr-bot/tests/telemetry-aggregate.test.ts (percentile() unit
+ *   tests with edge cases — closes TEST-114-2 from PR #114 dogfood,
+ *   since this function produces the p75 budgets Phase B wires into
+ *   every per-tool default).
+ *
  * Usage:
  *   tsx apps/pr-bot/scripts/aggregate-telemetry.ts
  *
@@ -21,30 +27,39 @@ import { readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import {
+  SpecialistNames,
+  parseTelemetryRow,
+  type SpecialistName,
+  type TelemetryRow,
+} from '../src/telemetry/schema.js';
+
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = join(__dirname, '..', '..', '..');
 const DATA_DIR = join(REPO_ROOT, 'apps', 'pr-bot', 'data');
 const IN_FILE = join(DATA_DIR, 'dogfood-telemetry.jsonl');
 const OUT_FILE = join(DATA_DIR, 'dogfood-summary.json');
 
-type SpecialistName = 'security' | 'architecture' | 'testing' | 'performance';
-const SPECIALISTS: SpecialistName[] = ['security', 'architecture', 'testing', 'performance'];
-
-interface TelemetryRow {
-  pr: number;
-  title: string;
-  posted_at: string;
-  specialists: Record<SpecialistName, number | null>;
-  total_specialist_tokens: number;
-  verdict: string;
-  severity_counts: { critical: number; high: number; medium: number; low: number; info: number };
-  tier_distribution: { T0: number; T1: number; T2: number; T3: number } | null;
-  full_file_reads: number | null;
-  source: string;
-}
-
-/** Sample N values with at least M present → return percentile p ∈ [0, 1]. */
-function percentile(values: number[], p: number): number | null {
+/**
+ * Compute the p-th percentile of a number array using nearest-rank
+ * (no interpolation — the value returned is always a real element of
+ * the input). `p` is in [0, 1].
+ *
+ * Contract:
+ *   - Empty input → null
+ *   - Single element → that element
+ *   - Does NOT mutate the input array (uses sorted copy)
+ *   - p = 0 → minimum
+ *   - p = 1 → maximum
+ *
+ * This is the load-bearing math for Phase B (#106) per-tool default
+ * budgets. Test coverage in tests/telemetry-aggregate.test.ts is
+ * mandatory; an off-by-one or sort-mutation bug here silently
+ * corrupts every downstream budget.
+ *
+ * @public Exported for unit testing.
+ */
+export function percentile(values: number[], p: number): number | null {
   if (values.length === 0) return null;
   const sorted = [...values].sort((a, b) => a - b);
   const idx = Math.floor((sorted.length - 1) * p);
@@ -53,14 +68,52 @@ function percentile(values: number[], p: number): number | null {
 
 function loadRows(): TelemetryRow[] {
   const text = readFileSync(IN_FILE, 'utf8');
+  // parseTelemetryRow validates against the Zod schema — a malformed
+  // row (renamed field, wrong shape, etc.) throws with a clear
+  // ZodError naming the failing field, instead of silently casting
+  // garbage that produces NaN p75 downstream.
   return text
     .split('\n')
     .filter((line) => line.trim().length > 0)
-    .map((line) => JSON.parse(line) as TelemetryRow);
+    .map(parseTelemetryRow);
 }
 
-function summarize(rows: TelemetryRow[]) {
-  const perSpecialist = SPECIALISTS.map((sp) => {
+interface PerSpecialistSummary {
+  specialist: SpecialistName;
+  n: number;
+  min: number | null;
+  p50: number | null;
+  p75: number | null;
+  p95: number | null;
+  max: number | null;
+}
+
+interface AggregateSummary {
+  n: number;
+  min: number | null;
+  p50: number | null;
+  p75: number | null;
+  p95: number | null;
+  max: number | null;
+}
+
+export interface DogfoodSummary {
+  rowCount: number;
+  perSpecialist: PerSpecialistSummary[];
+  aggregate: AggregateSummary;
+  verdictCounts: Record<string, number>;
+  severitySums: { critical: number; high: number; medium: number; low: number; info: number };
+  tierTotals: { T0: number; T1: number; T2: number; T3: number };
+  tierTotal: number;
+}
+
+/**
+ * Build the summary from a set of telemetry rows.
+ *
+ * @public Exported for unit testing.
+ */
+export function summarize(rows: TelemetryRow[]): DogfoodSummary {
+  const perSpecialist = SpecialistNames.map((sp) => {
     const samples = rows
       .map((r) => r.specialists[sp])
       .filter((v): v is number => v !== null);
@@ -76,7 +129,7 @@ function summarize(rows: TelemetryRow[]) {
   });
 
   const totals = rows.map((r) => r.total_specialist_tokens).filter((v) => v > 0);
-  const aggregate = {
+  const aggregate: AggregateSummary = {
     n: totals.length,
     min: totals.length ? Math.min(...totals) : null,
     p50: percentile(totals, 0.5),
@@ -110,7 +163,11 @@ function summarize(rows: TelemetryRow[]) {
   return { perSpecialist, aggregate, verdictCounts, severitySums, tierTotals, tierTotal, rowCount: rows.length };
 }
 
-function renderReport(s: ReturnType<typeof summarize>): string {
+function fmtK(v: number | null): string {
+  return v === null ? '—' : `${(v / 1000).toFixed(1)}k`;
+}
+
+function renderReport(s: DogfoodSummary): string {
   const lines: string[] = [];
   lines.push('# Dogfood Telemetry Summary');
   lines.push('');
@@ -121,8 +178,7 @@ function renderReport(s: ReturnType<typeof summarize>): string {
   lines.push('| Specialist | n | min | p50 | **p75** | p95 | max |');
   lines.push('|---|---|---|---|---|---|---|');
   for (const r of s.perSpecialist) {
-    const fmt = (v: number | null) => (v === null ? '—' : `${(v / 1000).toFixed(1)}k`);
-    lines.push(`| ${r.specialist} | ${r.n} | ${fmt(r.min)} | ${fmt(r.p50)} | **${fmt(r.p75)}** | ${fmt(r.p95)} | ${fmt(r.max)} |`);
+    lines.push(`| ${r.specialist} | ${r.n} | ${fmtK(r.min)} | ${fmtK(r.p50)} | **${fmtK(r.p75)}** | ${fmtK(r.p95)} | ${fmtK(r.max)} |`);
   }
   lines.push('');
   lines.push(`**Aggregate total (all 4 specialists combined):**`);
@@ -152,10 +208,6 @@ function renderReport(s: ReturnType<typeof summarize>): string {
   return lines.join('\n');
 }
 
-function fmtK(v: number | null): string {
-  return v === null ? '—' : `${(v / 1000).toFixed(1)}k`;
-}
-
 function main(): void {
   const rows = loadRows();
   const summary = summarize(rows);
@@ -165,4 +217,8 @@ function main(): void {
   console.error(`\nMachine-readable summary written to ${OUT_FILE}`);
 }
 
-main();
+// Only run main() when invoked as a script, not when imported by tests.
+const isMain = process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1];
+if (isMain) {
+  main();
+}

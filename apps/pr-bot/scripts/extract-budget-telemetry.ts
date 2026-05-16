@@ -6,7 +6,7 @@
  * Phase A (PRs #102, #104, #108, #109, #110, #111, #113) accumulated
  * 9 rounds of multi-agent AI review comments. Each comment contains
  * a token-budget table (per-specialist token counts), a verdict +
- * severity profile, and sometimes a tier distribution. That data is
+ * severity profile, and sometimes a tier distribution. That data was
  * markdown-locked — never parsed, never aggregated, never fed back
  * into Phase B's per-tool default budgets.
  *
@@ -24,18 +24,36 @@
  * `<!-- ctxloom-telemetry: {...} -->` HTML-comment block that this
  * script reads in preference to the human-readable table when present.
  *
+ * Closes Issue #112 (Part 1 — backfill from existing comments).
+ *
+ * Test coverage:
+ *   apps/pr-bot/tests/telemetry-parsers.test.ts
+ *
+ * Every parser below is `export`ed so the tests can pin them with
+ * synthetic fixtures (closes TEST-114-1 + TEST-114-3 from PR #114
+ * dogfood — pure functions deserve unit tests, and the 3 bugs caught
+ * during the original implementation now have permanent regression
+ * coverage).
+ *
  * Usage:
  *   tsx apps/pr-bot/scripts/extract-budget-telemetry.ts
  *
  * Output:
  *   apps/pr-bot/data/dogfood-telemetry.jsonl  (one row per PR)
- *
- * Closes Issue #112 (Part 1 — backfill from existing comments).
  */
 import { execSync } from 'node:child_process';
 import { writeFileSync, mkdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+
+import {
+  SpecialistNames,
+  TelemetryRowSchema,
+  type SpecialistName,
+  type SpecialistTokens,
+  type TelemetryRow,
+  type Verdict,
+} from '../src/telemetry/schema.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = join(__dirname, '..', '..', '..');
@@ -45,32 +63,10 @@ const OUT_FILE = join(DATA_DIR, 'dogfood-telemetry.jsonl');
 /**
  * Phase A dogfood PRs. Pinned because the backfill is a historical
  * record — adding new PRs to this list rewrites historical data
- * which is not the intent.
+ * which is not the intent. New reviews flow through the
+ * orchestrator's HTML-comment block, not this list.
  */
-const PHASE_A_PRS = [102, 104, 108, 109, 110, 111, 113] as const;
-
-type SpecialistName = 'security' | 'architecture' | 'testing' | 'performance';
-const SPECIALISTS: SpecialistName[] = ['security', 'architecture', 'testing', 'performance'];
-
-interface TelemetryRow {
-  pr: number;
-  title: string;
-  url: string;
-  posted_at: string;
-  /** Per-specialist token count from the "Token-budget reality check" table. Null if not present. */
-  specialists: Record<SpecialistName, number | null>;
-  /** Sum of non-null specialist tokens. */
-  total_specialist_tokens: number;
-  /** Severity profile parsed from the Verdict line. */
-  verdict: 'approve' | 'approve_with_nits' | 'needs_changes' | 'unknown';
-  severity_counts: { critical: number; high: number; medium: number; low: number; info: number };
-  /** Per-tier call distribution, if surfaced. Null = not reported. */
-  tier_distribution: { T0: number; T1: number; T2: number; T3: number } | null;
-  /** Total full-file (Tier 3) reads, if surfaced. */
-  full_file_reads: number | null;
-  /** Source of structured data: 'machine-block' (preferred) | 'markdown-table' (backfill fallback). */
-  source: 'machine-block' | 'markdown-table' | 'incomplete';
-}
+export const PHASE_A_PRS = [102, 104, 108, 109, 110, 111, 113] as const;
 
 interface PrComment {
   id: string;
@@ -105,8 +101,10 @@ function fetchAiReviewComment(pr: number): { comment: PrComment; title: string }
 /**
  * Parse a token value like "63k" or "~218k" or "**43k**" into a number.
  * Returns null if the cell is blank, n/a, or unrecognized.
+ *
+ * @public Exported for unit testing.
  */
-function parseTokenCell(raw: string): number | null {
+export function parseTokenCell(raw: string): number | null {
   const cleaned = raw.replace(/[*~`\s|]/g, '');
   if (!cleaned || cleaned.toLowerCase() === 'n/a' || cleaned.toLowerCase() === 'tbd') return null;
   const m = cleaned.match(/^(\d+(?:\.\d+)?)k$/i);
@@ -119,10 +117,14 @@ function parseTokenCell(raw: string): number | null {
  * Extract per-specialist token counts from the markdown table.
  * Each row looks like:
  *   | 🔒 security | 63k | 67k | 49k | 46k | 51k | **43k** |
- * The LAST cell (most recent column) is the current PR's value.
+ * Some tables (PR #108-style) have a trailing "Δ vs ..." percentage
+ * column. We scan right-to-left for the first cell that parses as a
+ * token value, so the delta column is correctly skipped.
+ *
+ * @public Exported for unit testing.
  */
-function extractSpecialistTokensFromTable(body: string): Record<SpecialistName, number | null> {
-  const tokens: Record<SpecialistName, number | null> = {
+export function extractSpecialistTokensFromTable(body: string): SpecialistTokens {
+  const tokens: SpecialistTokens = {
     security: null,
     architecture: null,
     testing: null,
@@ -134,15 +136,13 @@ function extractSpecialistTokensFromTable(body: string): Record<SpecialistName, 
     testing:     /^\|\s*🧪\s*testing\s*\|(.+)\|\s*$/m,
     performance: /^\|\s*⚡\s*performance\s*\|(.+)\|\s*$/m,
   };
-  for (const sp of SPECIALISTS) {
+  for (const sp of SpecialistNames) {
     const m = body.match(rowPatterns[sp]);
     if (!m) continue;
     const cells = m[1].split('|').map((c) => c.trim()).filter((c) => c.length > 0);
-    // Some tables (PR #108-style) have a trailing "Δ vs ..." percentage
-    // column — we want the token value, not the delta. Scan right-to-left
-    // for the first cell that parses as a token number; emoji-bolded
-    // current-PR cells (`**49k**`) parse fine because parseTokenCell
-    // already strips `*` characters.
+    // Scan right-to-left for the first cell that parses as a token.
+    // Regression guard from PR #114 dogfood: a naïve `cells[length-1]`
+    // takes the trailing "Δ vs ..." column on PR #108-era tables.
     for (let i = cells.length - 1; i >= 0; i--) {
       const v = parseTokenCell(cells[i]);
       if (v !== null) {
@@ -158,16 +158,22 @@ function extractSpecialistTokensFromTable(body: string): Record<SpecialistName, 
  * Fallback for compact reviews that only print a `**Total**` (or
  * `**Specialists total**`) row without per-specialist breakdown.
  * Used when extractSpecialistTokensFromTable returns all-nulls but
- * the aggregate is still parseable — gives Phase B partial signal
- * (total without per-specialist split).
+ * the aggregate is still parseable — gives Phase B partial signal.
+ *
+ * @public Exported for unit testing.
  */
-function extractTotalFromTable(body: string): number | null {
+export function extractTotalFromTable(body: string): number | null {
   const re = /^\|\s*\*\*(?:Specialists\s*total|Total)\*\*\s*\|(.+)\|\s*$/m;
   const m = body.match(re);
   if (!m) return null;
   const cells = m[1].split('|').map((c) => c.trim()).filter((c) => c.length > 0);
   if (cells.length === 0) return null;
-  return parseTokenCell(cells[cells.length - 1]);
+  // Right-to-left scan, same regression guard as the specialist rows.
+  for (let i = cells.length - 1; i >= 0; i--) {
+    const v = parseTokenCell(cells[i]);
+    if (v !== null) return v;
+  }
+  return null;
 }
 
 /**
@@ -176,15 +182,17 @@ function extractTotalFromTable(body: string): number | null {
  *   - security: 63k
  *   - architecture: 54k
  * rather than a markdown table.
+ *
+ * @public Exported for unit testing.
  */
-function extractSpecialistTokensFromProse(body: string): Record<SpecialistName, number | null> {
-  const tokens: Record<SpecialistName, number | null> = {
+export function extractSpecialistTokensFromProse(body: string): SpecialistTokens {
+  const tokens: SpecialistTokens = {
     security: null,
     architecture: null,
     testing: null,
     performance: null,
   };
-  for (const sp of SPECIALISTS) {
+  for (const sp of SpecialistNames) {
     const re = new RegExp(`^[-*\\s]*(?:🔒|🏛|🧪|⚡)?\\s*${sp}\\s*:\\s*([0-9.]+k)\\b`, 'im');
     const m = body.match(re);
     if (m) tokens[sp] = parseTokenCell(m[1]);
@@ -197,9 +205,16 @@ function extractSpecialistTokensFromProse(body: string): Record<SpecialistName, 
  *   **Verdict: 🟡 Approve with nits — 1 medium, 4 low, 6 info**
  *   **Verdict: 🔴 Needs changes — 1 critical / 3 high / 7 medium / 7 low**
  *   **Verdict: 🟢 Approve — no blockers**
+ *
+ * Regression guard from PR #114 dogfood: "no blockers" is a POSITIVE
+ * signal but contains substring "block". The original implementation
+ * false-matched it as `needs_changes`. The current implementation
+ * uses `\b` word boundaries and an explicit "no blockers" override.
+ *
+ * @public Exported for unit testing.
  */
-function extractVerdictAndSeverity(body: string): {
-  verdict: TelemetryRow['verdict'];
+export function extractVerdictAndSeverity(body: string): {
+  verdict: Verdict;
   severity_counts: TelemetryRow['severity_counts'];
 } {
   const counts = { critical: 0, high: 0, medium: 0, low: 0, info: 0 };
@@ -207,12 +222,9 @@ function extractVerdictAndSeverity(body: string): {
   if (!verdictMatch) return { verdict: 'unknown', severity_counts: counts };
   const line = verdictMatch[0].toLowerCase();
 
-  // Match in priority order. Note: 'no blockers' is a POSITIVE
-  // signal — we explicitly exclude it from the needs_changes branch
-  // rather than relying on substring matching on 'block'.
-  let verdict: TelemetryRow['verdict'] = 'unknown';
+  let verdict: Verdict = 'unknown';
   const isNegative = line.includes('needs changes') ||
-    /\b(?:reject|block(?:er|ing)?)\b/.test(line) && !line.includes('no blocker');
+    (/\b(?:reject|block(?:er|ing)?)\b/.test(line) && !line.includes('no blocker'));
   if (isNegative) verdict = 'needs_changes';
   else if (line.includes('approve') && (line.includes('nit') || line.includes('upgraded') || line.includes('with one') || line.includes('with 2 medium'))) verdict = 'approve_with_nits';
   else if (line.includes('approve')) verdict = 'approve';
@@ -231,8 +243,10 @@ function extractVerdictAndSeverity(body: string): {
  *   - T1 skeleton: 0 calls
  *   - T2 definition: 0 calls
  *   - T3 full file: 1 call
+ *
+ * @public Exported for unit testing.
  */
-function extractTierDistribution(
+export function extractTierDistribution(
   body: string,
 ): { dist: TelemetryRow['tier_distribution']; full_file_reads: number | null } {
   const dist = { T0: 0, T1: 0, T2: 0, T3: 0 };
@@ -246,46 +260,60 @@ function extractTierDistribution(
     }
   }
   let full_file_reads: number | null = null;
-  const ffr = body.match(/full[- ]file reads?:\s*\*?\*?(\d+)/i);
+  // Allow markdown bold on either the label OR the value, with optional
+  // whitespace anywhere. Real-world formats:
+  //   "Full-file reads: 1"
+  //   "**Full-file reads:** 1"          ← caught by tests, was previously broken
+  //   "- **Full-file reads:** **6**"
+  const ffr = body.match(/full[- ]file reads?:\*{0,2}\s*\*{0,2}(\d+)/i);
   if (ffr) full_file_reads = parseInt(ffr[1], 10);
   return { dist: found ? dist : null, full_file_reads };
 }
 
 /**
- * Preferred path: parse a `<!-- ctxloom-telemetry: { ... } -->` block
- * if the orchestrator emitted one. Falls back to markdown-table
- * scraping if not present.
+ * Preferred path: parse the LAST `<!-- ctxloom-telemetry: { ... } -->`
+ * block in the comment. Falls back to markdown-table scraping if no
+ * block is present.
+ *
+ * Closes ARCH-114-2 from PR #114 dogfood: the original implementation
+ * used `body.match(...)` which returns the FIRST match — if the
+ * orchestrator emits a second block on re-runs, stale earlier values
+ * would win. `matchAll().at(-1)` correctly returns the most recent.
+ *
+ * @public Exported for unit testing.
  */
-function extractMachineBlock(body: string): Partial<TelemetryRow> | null {
-  const m = body.match(/<!--\s*ctxloom-telemetry:\s*(\{[\s\S]*?\})\s*-->/);
-  if (!m) return null;
+export function extractMachineBlock(body: string): Partial<TelemetryRow> | null {
+  const matches = [...body.matchAll(/<!--\s*ctxloom-telemetry:\s*(\{[\s\S]*?\})\s*-->/g)];
+  const last = matches.at(-1);
+  if (!last) return null;
   try {
-    return JSON.parse(m[1]);
+    return JSON.parse(last[1]);
   } catch {
     return null;
   }
 }
 
-function extractRowFromComment(pr: number, comment: PrComment, title: string): TelemetryRow {
+export function extractRowFromComment(pr: number, comment: PrComment, title: string): TelemetryRow {
   const body = comment.body;
 
   // Preferred: machine block (forward-compatible)
   const machine = extractMachineBlock(body);
   if (machine) {
-    return {
+    const merged = {
       pr,
       title,
       url: comment.url,
       posted_at: comment.createdAt,
       specialists: { security: null, architecture: null, testing: null, performance: null },
       total_specialist_tokens: 0,
-      verdict: 'unknown',
+      verdict: 'unknown' as Verdict,
       severity_counts: { critical: 0, high: 0, medium: 0, low: 0, info: 0 },
       tier_distribution: null,
       full_file_reads: null,
-      source: 'machine-block',
+      source: 'machine-block' as const,
       ...machine,
-    } as TelemetryRow;
+    };
+    return TelemetryRowSchema.parse(merged);
   }
 
   // Fallback chain:
@@ -293,22 +321,19 @@ function extractRowFromComment(pr: number, comment: PrComment, title: string): T
   //   2. Per-specialist prose ("security: 63k") in early reviews
   //   3. Total row only (compact reviews like PR #113)
   let specialists = extractSpecialistTokensFromTable(body);
-  let allMissing = SPECIALISTS.every((sp) => specialists[sp] === null);
+  let allMissing = SpecialistNames.every((sp) => specialists[sp] === null);
   if (allMissing) {
     specialists = extractSpecialistTokensFromProse(body);
-    allMissing = SPECIALISTS.every((sp) => specialists[sp] === null);
+    allMissing = SpecialistNames.every((sp) => specialists[sp] === null);
   }
-  const fromSpecialists = SPECIALISTS.reduce((sum, sp) => sum + (specialists[sp] ?? 0), 0);
+  const fromSpecialists = SpecialistNames.reduce((sum, sp) => sum + (specialists[sp] ?? 0), 0);
   const fromTotalRow = extractTotalFromTable(body);
   const total = fromSpecialists > 0 ? fromSpecialists : (fromTotalRow ?? 0);
 
   const { verdict, severity_counts } = extractVerdictAndSeverity(body);
   const { dist, full_file_reads } = extractTierDistribution(body);
 
-  // Source quality: 'markdown-table' = full per-specialist data;
-  // 'incomplete' = at least one specialist missing OR only the
-  // total-row aggregate available.
-  const someSpecialistMissing = SPECIALISTS.some((sp) => specialists[sp] === null);
+  const someSpecialistMissing = SpecialistNames.some((sp) => specialists[sp] === null);
 
   return {
     pr,
@@ -343,13 +368,16 @@ async function main(): Promise<void> {
     );
   }
 
-  // JSONL: one row per line, stable key order.
   const jsonl = rows.map((r) => JSON.stringify(r)).join('\n') + '\n';
   writeFileSync(OUT_FILE, jsonl);
   console.log(`\nWrote ${rows.length} rows → ${OUT_FILE}`);
 }
 
-main().catch((err) => {
-  console.error(err);
-  process.exit(1);
-});
+// Only run main() when invoked as a script, not when imported by tests.
+const isMain = process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1];
+if (isMain) {
+  main().catch((err) => {
+    console.error(err);
+    process.exit(1);
+  });
+}
