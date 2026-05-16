@@ -16,8 +16,7 @@ import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { TelemetryRowSchema, parseTelemetryRow } from '../src/telemetry/schema.js';
-import { PHASE_A_PRS } from '../scripts/extract-budget-telemetry.js';
+import { PHASE_A_PRS, TelemetryRowSchema, parseTelemetryRow } from '../src/telemetry/schema.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const JSONL_FILE = join(__dirname, '..', 'data', 'dogfood-telemetry.jsonl');

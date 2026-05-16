@@ -47,6 +47,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import {
+  PHASE_A_PRS,
   SpecialistNames,
   TelemetryRowSchema,
   type SpecialistName,
@@ -55,18 +56,12 @@ import {
   type Verdict,
 } from '../src/telemetry/schema.js';
 
+export { PHASE_A_PRS };
+
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = join(__dirname, '..', '..', '..');
 const DATA_DIR = join(REPO_ROOT, 'apps', 'pr-bot', 'data');
 const OUT_FILE = join(DATA_DIR, 'dogfood-telemetry.jsonl');
-
-/**
- * Phase A dogfood PRs. Pinned because the backfill is a historical
- * record — adding new PRs to this list rewrites historical data
- * which is not the intent. New reviews flow through the
- * orchestrator's HTML-comment block, not this list.
- */
-export const PHASE_A_PRS = [102, 104, 108, 109, 110, 111, 113] as const;
 
 interface PrComment {
   id: string;

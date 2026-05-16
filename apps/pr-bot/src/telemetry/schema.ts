@@ -64,8 +64,8 @@ export const TelemetryRowSchema = z.object({
   title: z.string(),
   /** Direct link to the AI review comment */
   url: z.string().url(),
-  /** ISO-8601 timestamp the comment was posted */
-  posted_at: z.string(),
+  /** ISO-8601 timestamp the comment was posted (matches GitHub's createdAt) */
+  posted_at: z.string().datetime({ offset: true }),
 
   specialists: SpecialistTokensSchema,
   /** Sum of non-null specialist values, OR the `**Total**` row when per-specialist absent. */
@@ -91,4 +91,57 @@ export type TelemetryRow = z.infer<typeof TelemetryRowSchema>;
 export function parseTelemetryRow(line: string): TelemetryRow {
   const parsed: unknown = JSON.parse(line);
   return TelemetryRowSchema.parse(parsed);
+}
+
+/**
+ * Phase A dogfood PRs — the historical record the extractor walks.
+ *
+ * Pinned because the backfill is a frozen historical artifact: re-running
+ * the extractor on a closed PR's comment must produce the same output.
+ * New reviews flow through the orchestrator's HTML-comment block, not
+ * this list. Lives here (not in `scripts/`) so that contract tests and
+ * future Phase B consumers can import it without pulling in `child_process`
+ * or `fs` from the extractor module.
+ */
+export const PHASE_A_PRS = [102, 104, 108, 109, 110, 111, 113] as const;
+
+/**
+ * Aggregated statistics for a single specialist across all reviews.
+ * Produced by `summarize()` in aggregate-telemetry.ts; consumed by
+ * Phase B (#106) to derive per-tool default budgets from `.p75`.
+ */
+export interface PerSpecialistSummary {
+  specialist: SpecialistName;
+  n: number;
+  min: number | null;
+  p50: number | null;
+  p75: number | null;
+  p95: number | null;
+  max: number | null;
+}
+
+/**
+ * Aggregate statistics across the sum-of-all-specialists per-review total.
+ */
+export interface AggregateSummary {
+  n: number;
+  min: number | null;
+  p50: number | null;
+  p75: number | null;
+  p95: number | null;
+  max: number | null;
+}
+
+/**
+ * Full dogfood summary shape — the contract between `aggregate-telemetry.ts`
+ * (writer) and Phase B (#106) consumers (readers of `dogfood-summary.json`).
+ */
+export interface DogfoodSummary {
+  rowCount: number;
+  perSpecialist: PerSpecialistSummary[];
+  aggregate: AggregateSummary;
+  verdictCounts: Record<string, number>;
+  severitySums: { critical: number; high: number; medium: number; low: number; info: number };
+  tierTotals: { T0: number; T1: number; T2: number; T3: number };
+  tierTotal: number;
 }
