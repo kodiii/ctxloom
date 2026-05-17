@@ -502,6 +502,83 @@ Pass `--no-git` to disable the overlay entirely. Tools degrade gracefully — th
 
 ---
 
+## Response Budgets (v1.2.7+)
+
+Twelve source-returning tools accept a server-enforced **token budget**. When a response would exceed the budget, the server auto-substitutes a lighter form (Skeletonizer signature view, summary-only XML, or paths-without-snippets) instead of dumping 50KB of source into your context window.
+
+### Opting in
+
+Pass any of these three optional fields to any of the 12 supported tools:
+
+```json
+{
+  "max_response_tokens": 4000,
+  "on_budget_exceeded": "skeleton",
+  "response_format": "auto"
+}
+```
+
+| Field | Values | Default |
+|---|---|---|
+| `max_response_tokens` | positive integer | per-tool (see below) |
+| `on_budget_exceeded` | `"skeleton"` \| `"truncate"` \| `"error"` | `"skeleton"` |
+| `response_format` | `"full"` \| `"skeleton"` \| `"auto"` | `"auto"` |
+
+**Back-compat:** when none of these fields are passed, the tool returns its raw response unchanged. Existing callers see zero behavior change.
+
+### Response envelope
+
+When you opt in, the response is wrapped in a JSON envelope:
+
+```json
+{
+  "data": "<the actual tool output — XML, text, or whatever the tool returns>",
+  "meta": {
+    "format": "full" | "skeleton" | "truncated",
+    "original_tokens_est": 8400,
+    "returned_tokens_est": 1600,
+    "fallback_reason": null | "budget_exceeded" | "minified_input" | "size_cap" | "skeleton_failed"
+  }
+}
+```
+
+### Supported tools + default budgets
+
+Defaults activate only when you opt in (any of the 3 fields above) without specifying `max_response_tokens` explicitly.
+
+| Tool | Default | Skeleton fallback |
+|---|---:|---|
+| `ctx_get_file` | 8000 | Skeletonizer view of the file (~90% reduction on TS) |
+| `ctx_get_context_packet` | 6000 | Re-render with the primary file skeletonized |
+| `ctx_get_definition` | 2000 | none — truncate-only (already structural) |
+| `ctx_git_diff_review` | 8000 | Drop `<skeleton>` blocks + omit transitive importers |
+| `ctx_search` | 4000 | Drop content snippets (paths + scores only) |
+| `ctx_full_text_search` | 4000 | Drop match snippets (paths + match counts only) |
+| `ctx_wiki_generate` | 12000 | Downgrade to `detail_level=minimal` |
+| `ctx_find_large_functions` | 2000 | none — truncate-only |
+| `ctx_apply_refactor` | 2000 | none — truncate-only |
+| `ctx_refactor_preview` | 4000 | Drop per-change before/after, keep file summary |
+| `ctx_cross_repo_search` | 4000 | Drop content snippets |
+| `ctx_execution_flow` | 4000 | none — truncate-only |
+
+Defaults are **provisional** (derived from the issue's initial table); a future release will re-derive them from real per-tool p75 telemetry once enough usage data accumulates.
+
+### Token estimator
+
+Default = `chars / 4` — within ±10% of GPT/Claude tokenizers on code with zero tokenization cost. Pluggable per-tool via the `estimator` option on `BudgetOptions` for callers that need accuracy-critical estimation (e.g. tiktoken).
+
+### Kill switch
+
+Set `CTXLOOM_DISABLE_BUDGET=1` in the environment to silently ignore every `max_response_tokens` arg server-wide. Tools behave exactly as in pre-v1.2.7. Documented escape hatch for the soak period.
+
+### Telemetry
+
+Set `CTXLOOM_TELEMETRY_LEVEL=full` to emit structured `mcp.budget.exceeded` and `mcp.fallback.used` events to stderr. Useful for tuning defaults against your own usage patterns.
+
+> **Note:** `CTXLOOM_TELEMETRY_LEVEL` is also consumed by the license / PostHog telemetry layer (see [Telemetry](#telemetry) below) which only recognizes `all` / `error` / `off`. `full` is a separate, **additive** level — it enables budget-event emission *without narrowing* PostHog scope. To narrow PostHog telemetry, set the variable to `error` or `off`; those values disable budget events as a side effect.
+
+---
+
 ## CLI Commands
 
 ```
