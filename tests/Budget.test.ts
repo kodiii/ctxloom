@@ -9,6 +9,9 @@
  * wrapResponse, telemetry emission).
  */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import {
   defaultTokenEstimator,
   hasBudgetArgs,
@@ -336,6 +339,8 @@ describe('enforceBudget', () => {
 describe('emitTelemetry', () => {
   let captured: Array<{ stream: 'stderr'; chunk: string }>;
   let originalWrite: typeof process.stderr.write;
+  let tempTelemetryDir: string;
+  let originalTelemetryDir: string | undefined;
 
   beforeEach(() => {
     captured = [];
@@ -344,10 +349,24 @@ describe('emitTelemetry', () => {
       captured.push({ stream: 'stderr', chunk: chunk.toString() });
       return true;
     }) as typeof process.stderr.write;
+
+    // Scope CTXLOOM_TELEMETRY_DIR to a temp dir per test so the
+    // appendEvent() call inside emitTelemetry doesn't leak files
+    // into the developer's real ~/.ctxloom/telemetry/. Pre-PR #135
+    // emitTelemetry was stderr-only; post-PR it ALSO writes to disk
+    // and these tests would otherwise pollute the same JSONL file
+    // the user's `ctxloom budget-stats` reads. Pinned by the
+    // convergent TEST-135-2 + PERF-135-1 dogfood finding on PR #135.
+    tempTelemetryDir = mkdtempSync(join(tmpdir(), 'ctxloom-budget-test-'));
+    originalTelemetryDir = process.env.CTXLOOM_TELEMETRY_DIR;
+    process.env.CTXLOOM_TELEMETRY_DIR = tempTelemetryDir;
   });
 
   afterEach(() => {
     process.stderr.write = originalWrite;
+    rmSync(tempTelemetryDir, { recursive: true, force: true });
+    if (originalTelemetryDir === undefined) delete process.env.CTXLOOM_TELEMETRY_DIR;
+    else process.env.CTXLOOM_TELEMETRY_DIR = originalTelemetryDir;
   });
 
   it('writes nothing when CTXLOOM_TELEMETRY_LEVEL is unset', () => {
