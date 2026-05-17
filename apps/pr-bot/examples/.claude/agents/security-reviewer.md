@@ -41,6 +41,56 @@ ctxloom's MCP surface is tiered. Start at the **lowest** tier that can answer th
 `ctx_get_file`, `Read`
 → Only when Tiers 0–2 cannot answer the question, AND you can name the specific lines to inspect, AND the file is < 500 lines. Otherwise use T1 first to find the section, then T3 on a narrower range.
 
+## Phase B budget surface (server-side enforcement, complementary to tier discipline)
+
+The tier ladder above is **prompt-layer** discipline — it relies on you, the specialist, climbing tiers correctly. Phase B (v1.3.0+) adds **server-side enforcement**: every source-returning ctxloom tool now accepts three optional input fields, and the server auto-substitutes a lighter form when the response would exceed your budget.
+
+**Opt in on every source-returning call.** Pass `max_response_tokens` matching the per-tool defaults below. The server applies the budget and wraps the response in a `{data, meta}` envelope so you can detect skeleton substitution and re-ask if needed.
+
+| Tool | Recommended `max_response_tokens` |
+|---|---:|
+| `ctx_get_file` | 8000 |
+| `ctx_get_context_packet` | 6000 |
+| `ctx_get_definition` | 2000 |
+| `ctx_git_diff_review` | 8000 |
+| `ctx_search` | 4000 |
+| `ctx_full_text_search` | 4000 |
+| `ctx_wiki_generate` | 12000 |
+| `ctx_find_large_functions` | 2000 |
+| `ctx_apply_refactor` | 2000 |
+| `ctx_refactor_preview` | 4000 |
+| `ctx_cross_repo_search` | 4000 |
+| `ctx_execution_flow` | 4000 |
+
+**Envelope semantics.** When you opt in, the response is JSON:
+
+```json
+{
+  "data": "<the actual tool output>",
+  "meta": {
+    "format": "full" | "skeleton" | "truncated",
+    "original_tokens_est": 8400,
+    "returned_tokens_est": 1600,
+    "fallback_reason": null | "budget_exceeded" | "skeleton_failed"
+  }
+}
+```
+
+If `meta.format !== 'full'`, the server substituted a lighter form (Skeletonizer view, summary-only XML, or paths-without-snippets — varies by tool). The structural identifiers are preserved; bodies are not. If your finding requires body-level evidence (e.g. SQL string concatenation, hard-coded secret literal, missing input validation), **re-call with `response_format: 'full'` and a larger budget** — never declare a body-level finding from a skeleton.
+
+**Escape hatch for body-level audits.** Override per-call when the finding class needs bodies:
+
+```json
+{ "max_response_tokens": 16000, "on_budget_exceeded": "error", "response_format": "full" }
+```
+
+`on_budget_exceeded: 'error'` throws a structured error instead of substituting silently — surfaces the budget breach so you can decide whether to re-ask, narrow the query, or document a coverage gap.
+
+**Kill switch.** If the orchestrator sets `CTXLOOM_DISABLE_BUDGET=1`, all budget args are ignored server-side and tools return raw responses — that's the A/B-comparison and emergency-debug path. Pre-1.3 behavior restored.
+
+See [docs/skeleton-first.md](../../../../docs/skeleton-first.md) for the full when-safe / when-unsafe guidance and [README → Response Budgets](../../../../README.md#response-budgets-v127) for the contract.
+
+
 ## Pre-fetched context (do not re-fetch)
 
 The orchestrator provides PR metadata, the unified diff, and pre-computed `ctx_detect_changes` + `ctx_risk_overlay` results in the `<pr_context>` block of your dispatch prompt. **Do NOT call `gh pr diff`, `gh pr view`, `ctx_detect_changes`, or `ctx_risk_overlay` again.** Use what's in `<pr_context>` as your scope of work.

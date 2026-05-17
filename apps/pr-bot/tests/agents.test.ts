@@ -634,6 +634,27 @@ const SHARED_BLOCKS: SharedBlock[] = [
     ],
   },
   {
+    name: 'Phase B budget surface section body',
+    source: {
+      kind: 'section',
+      header: /^## Phase B budget surface \(server-side enforcement, complementary to tier discipline\)/m,
+    },
+    // The block teaches every specialist the same opt-in policy for
+    // the v1.3.0 server-side budget surface. The four invariants pin
+    // the load-bearing tokens (closes TEST-109-1's "no flavor text"
+    // policy): the per-tool defaults table, the envelope shape, the
+    // body-level-audit escape hatch, and the kill switch. If any of
+    // these drift, the four specialists silently disagree on how to
+    // use the budget surface and the A/B dogfood baseline becomes
+    // unreliable.
+    semanticInvariants: [
+      /max_response_tokens/,
+      /\{data, meta\}/,
+      /response_format.*['"]full['"]/,
+      /CTXLOOM_DISABLE_BUDGET/,
+    ],
+  },
+  {
     name: 'Anti-patterns shared trailing bullets',
     source: {
       kind: 'section-from',
