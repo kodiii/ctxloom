@@ -5,6 +5,161 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
 ---
 
+## [Unreleased — 1.3.0]
+
+Coordinated release marking **Phase B complete**: skeleton-first
+response budgets are now enforced server-side on all 12 source-returning
+MCP tools (was: prompt-layer guidance only). Marketing claim updated
+from *"skeleton-first via `ctx_get_context_packet`"* to *"skeleton-first
+across all source-returning tools, server-enforced budgets, no quality
+loss"*.
+
+### Highlights
+
+- **Response Budgets** (#106) — all 12 source-returning tools accept
+  three new optional input fields (`max_response_tokens`,
+  `on_budget_exceeded`, `response_format`) and wrap their response in a
+  `{data, meta}` envelope when any field is set. Defaults activate only
+  when opted in; pre-1.3 callers see zero behavior change. Over-budget
+  responses auto-substitute a Skeletonizer signature view (or a
+  per-tool-specific lighter form) rather than dumping 50KB of source.
+  See [README → Response Budgets](README.md#response-budgets-v127) and
+  [docs/skeleton-first.md](docs/skeleton-first.md).
+- **Multi-language Skeletonizer coverage** (#105) — 8 of 11 languages
+  production-ready with full fixture suite (Python, Go, Rust, Java, C#,
+  Ruby, PHP, Dart); Kotlin/Swift pinned with tripwires pending CDN
+  grammar availability.
+- **`CTXLOOM_DISABLE_BUDGET=1` kill switch** — documented escape hatch
+  for the soak period. Server-side env var; silently ignores all budget
+  args.
+- **`CTXLOOM_TELEMETRY_LEVEL=full`** — emits structured
+  `mcp.budget.exceeded` and `mcp.fallback.used` events to stderr for
+  per-tool tuning telemetry. **Note:** additive to the existing
+  `all`/`error`/`off` PostHog scope — see README Telemetry section.
+- **pr-bot auto-prompt** — every PR review comment now ends in a
+  collapsible `<details>` block containing a ready-to-paste deep-review
+  prompt the user can drop into a local Claude Code session. Encodes
+  the bot's pre-computed risk band, blast radius, top-risk files, and
+  coverage status so the specialists skip the structural pre-fetch.
+- **Hardened grammar loader** — fixed an unhandled-error crash that
+  triggered on any repo containing a `.cs` file (or any future
+  subdir-pathed wasm). Two-line root cause: missing parent-dir creation
+  + `'error'` listener attached too late on the WriteStream.
+- **`vscode-extension/` app dropped** — was not shipped; deletion frees
+  ~11k lines and removes two CI workflows that pointed at an
+  unpublished target. `cli-v*` tarball releases preserved (the build
+  script moved to `scripts/cli-tarballs/`).
+
+### Tests
+
+- 805 → 953 across this release window (+148 net)
+- 117 new tests covering the budget surface (36 infrastructure + 81
+  per-tool integration)
+- 10 multi-language Skeletonizer tests (8 active + 10 `it.todo` for
+  the 2 grammar-blocked languages)
+- 18 README↔source drift-detection tests prevent the defaults table
+  from silently desyncing as per-tool budgets are tuned
+
+### Migration
+
+**Zero migration required.** Pre-1.3 callers that don't pass any of the
+three new fields receive their existing raw response unchanged. The
+budget surface is strictly opt-in.
+
+### Known follow-ups (post-release)
+
+- Telemetry collector — aggregate `mcp.budget.exceeded` /
+  `mcp.fallback.used` events across sessions for per-tool p75
+  derivation. Tracked in a follow-up issue.
+- Per-tool default tuning — re-derive each tool's `DEFAULT_MAX_RESPONSE_TOKENS`
+  from real usage data once ~2 weeks of telemetry accumulates.
+- Specialist agent opt-in — add explicit `max_response_tokens` args to
+  each ctxloom call inside the four reviewer-agent specs to let the
+  budget surface kick in during the dogfood loop itself.
+
+---
+
+## [1.2.7] — 2026-05-17
+
+### Added
+
+- **Phase B2 budget surface (Part 4/5, batch of 7 remaining tools).**
+  `ctx_git_diff_review`, `ctx_wiki_generate`, `ctx_find_large_functions`,
+  `ctx_apply_refactor`, `ctx_refactor_preview`, `ctx_cross_repo_search`,
+  and `ctx_execution_flow` all accept the three new optional input fields
+  and emit a `{data, meta}` envelope when opted in. Per-tool skeleton
+  fallbacks designed individually: `git_diff_review` drops `<skeleton>`
+  blocks + omits transitive importers; `wiki_generate` downgrades to
+  `detail_level=minimal`; `refactor_preview` drops per-change before/after
+  but keeps the file summary; etc. Brings B2 to **12/12 source-returning
+  tools wired**.
+- **pr-bot auto-prompt feature.** Every review comment now ends in a
+  collapsible `<details>` block with a ready-to-paste deep-review prompt
+  for a local Claude Code session. The prompt encodes the bot's
+  pre-computed risk band, blast radius, top-risk files (with coverage
+  status), and suggested reviewers so the four specialists skip the
+  structural pre-fetch and start straight on per-domain analysis.
+
+### Tests
+
+- 893 → 953 (+60: 42 B2.4 budget integration + 18 drift detection)
+
+---
+
+## [1.2.6] — 2026-05-17
+
+### Added
+
+- **Phase B2 budget surface (Parts 1–3/5).** Shared infrastructure
+  module ([`packages/core/src/budget/budget.ts`](packages/core/src/budget/budget.ts))
+  + pilot integration into `ctx_get_file` + first batch of 4 tools
+  (`ctx_get_definition`, `ctx_get_context_packet`, `ctx_search`,
+  `ctx_full_text_search`). Includes the `enforceBudget()` fallback
+  ladder, `CTXLOOM_DISABLE_BUDGET=1` kill switch, and
+  `CTXLOOM_TELEMETRY_LEVEL=full` event emission. **66 new tests.**
+- **Multi-language Skeletonizer coverage** (#105 Phase B1). 10
+  fixture files + 50 per-language assertions for Python, Go, Rust,
+  Java, C#, Ruby, PHP, and Dart. Kotlin and Swift gated behind
+  `it.todo` pending grammar availability.
+- **`packages/core/src/grammars/GrammarLoader.ts` hardening.** Two-line
+  fix for an unhandled `'error'` event crash that triggered on any
+  repo containing a file in a language whose `wasmFile` lives in a
+  subdirectory (originally surfaced on `.cs` files in CI). Root cause:
+  missing parent-dir `mkdirSync` + `'error'` listener attached inside
+  the `https.get` callback (too late). Fix attaches the listener
+  synchronously and creates `path.dirname(dest)` recursively before any
+  I/O. End-to-end win: C# grammar (which had been failing silently on
+  every CI run) now works.
+- **Go / Ruby / Dart skeleton import preservation.** Three independent
+  parser fixes in `ASTParser.ts`: `parseGo` now emits a wrapping
+  `import` node covering the full `import (...)` block; `parseRuby`
+  emits import nodes for `require` / `require_relative` / `load` /
+  `autoload` calls; `parseDart` removes the relative-only filter and
+  recursively descends into the deeper `library_import → ... → uri`
+  tree to find Dart's import URI.
+
+### Changed
+
+- **Dropped the `apps/vscode-extension/` workspace.** Not shipped;
+  removal frees ~11k lines from the tree and removes two CI workflows
+  that pointed at an unpublished target. The CLI tarball release
+  channel (`cli-v*` tag pushes) is preserved — the build script that
+  used to live under `apps/vscode-extension/scripts/` was moved to
+  `scripts/cli-tarballs/`.
+- **pr-bot machine-block security fix.** The `extractRowFromComment`
+  merge order now places `...machine` first and pins identity fields
+  (`pr`, `url`, `title`, `posted_at`, `source`) after the spread. A PR
+  comment author with prompt-injection authority can no longer overwrite
+  those identity fields in the committed `dogfood-telemetry.jsonl`.
+- **pr-bot summary cohort coherence.** Six small follow-ups from the
+  PR #115 dogfood (telemetry pipeline test coverage). Closes the cohort.
+
+### Tests
+
+- 805 → 893 (+88: 66 B2 infrastructure/integration + 22 B1 multi-language)
+
+---
+
 ## [1.2.5] — 2026-05-14
 
 ### Changed

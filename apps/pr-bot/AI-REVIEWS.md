@@ -310,6 +310,66 @@ Coordinates the above:
   comment marker `🧵 ctxloom AI review`, edited in place rather than
   spamming new comments).
 
+## Response budgets (v1.3.0+)
+
+The four specialist agents call ctxloom MCP tools with the standard
+input schemas. Starting in 1.3.0, every source-returning tool accepts
+three new optional input fields the agents *can* pass to get
+server-enforced response-size limits:
+
+```json
+{
+  "max_response_tokens": 4000,
+  "on_budget_exceeded": "skeleton",
+  "response_format": "auto"
+}
+```
+
+When set, the tool wraps its response in a `{data, meta}` envelope and
+auto-substitutes a Skeletonizer view (or per-tool-specific lighter
+form) if the full response would exceed the budget. See [README →
+Response Budgets](../../README.md#response-budgets-v127) for the
+contract and [docs/skeleton-first.md](../../docs/skeleton-first.md) for
+when this is and isn't safe.
+
+### Why this matters for reviewer agents
+
+Phase A discipline ([commit e05f2f2 / PR #104](https://github.com/kodiii/ctxloom/pull/104))
+already teaches each specialist to prefer T0 (structural) and T1
+(skeleton) tools before reaching for full files. That's soft, prompt-
+layer enforcement — it relies on LLM compliance. The Phase B budget
+surface is the hard, server-side complement: even if a specialist asks
+for the full file of a 50KB minified bundle, the server returns a
+skeleton instead.
+
+### Current agent spec opt-in status
+
+As of 1.3.0, **the four shipped specialist specs do NOT yet pass the
+new budget fields** to their ctxloom calls — the budget surface is
+purely opt-in at the schema layer, and pre-1.3 specs continue to
+receive raw responses. A follow-up patch will add the budget args
+inside each spec, validated by a dogfood A/B that confirms zero
+quality regression vs. the budget-disabled baseline. Until then:
+
+- **The budget surface is shipped and tested** (117 tests covering all
+  12 tools)
+- **The reviewer agents are unaffected** (their tool calls look
+  exactly like before)
+- **Users opting in manually** (e.g. via custom agent specs that pass
+  `max_response_tokens`) get the full benefit immediately
+
+### Kill switch
+
+If you suspect the budget surface is degrading review quality, set:
+
+```bash
+export CTXLOOM_DISABLE_BUDGET=1
+```
+
+Server-side env var that silently ignores every `max_response_tokens`
+arg, restoring exact pre-1.3 behavior. Documented escape hatch for
+the soak period.
+
 ## Cost expectations
 
 ### Modes 1 & 2 (subscription)
