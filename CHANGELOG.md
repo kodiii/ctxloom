@@ -5,7 +5,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
 ---
 
-## [Unreleased — 1.3.0]
+## [1.3.0] — 2026-05-17
 
 Coordinated release marking **Phase B complete**: skeleton-first
 response budgets are now enforced server-side on all 12 source-returning
