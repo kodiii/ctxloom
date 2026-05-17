@@ -23,6 +23,10 @@ import { generateEmbedding } from '../indexer/embedder.js';
 import { VectorStore } from '../db/VectorStore.js';
 import { logger } from '../utils/logger.js';
 import { ProjectRootField, PROJECT_ROOT_JSON_SCHEMA } from './projectRootParam.js';
+import { enforceBudget, hasBudgetArgs, readBudgetArgs, wrapResponse } from '../budget/budget.js';
+
+/** Per #106 provisional table. */
+const DEFAULT_MAX_RESPONSE_TOKENS = 4000;
 
 // ─── RepoRegistry ─────────────────────────────────────────────────────────
 
@@ -147,6 +151,13 @@ const Schema = z.object({
     'Specific repo root paths to search. Omit to search all registered repos.',
   ),
   project_root: ProjectRootField,
+  // ─── Phase B2 budget surface ──
+  max_response_tokens: z.number().int().positive().optional()
+    .describe('Soft response budget. Default: 4000 (when opted in). Over-budget drops content snippets (repo + path + score only).'),
+  on_budget_exceeded: z.enum(['skeleton', 'truncate', 'error']).optional()
+    .describe("Behavior when over budget. 'skeleton' (default) drops content snippets; 'truncate' slices; 'error' throws."),
+  response_format: z.enum(['full', 'skeleton', 'auto']).optional()
+    .describe("'skeleton' forces the path-and-score-only view; 'full'/'auto' lets the budget decide."),
 });
 
 function escapeXML(text: string): string {
@@ -191,6 +202,9 @@ export function registerCrossRepoSearchTool(
             description: 'Specific repo root paths to search. Omit to search all registered repos.',
           },
           project_root: PROJECT_ROOT_JSON_SCHEMA,
+          max_response_tokens: { type: 'number', description: 'Soft response budget. Default: 4000 (when opted in).' },
+          on_budget_exceeded: { type: 'string', enum: ['skeleton', 'truncate', 'error'], description: "Behavior over budget. 'skeleton' (default) drops content snippets; 'truncate' slices; 'error' throws." },
+          response_format: { type: 'string', enum: ['full', 'skeleton', 'auto'], description: "'skeleton' forces path+score-only view; 'full'/'auto' lets the budget decide." },
         },
         required: ['query'],
       },
@@ -277,21 +291,37 @@ export function registerCrossRepoSearchTool(
       }
       xmlLines.push('  </repos>');
 
-      // Results
-      xmlLines.push(`  <results count="${topResults.length}">`);
-      for (const r of topResults) {
-        xmlLines.push(
-          `    <result repo="${escapeXML(r.repoName)}" file="${escapeXML(r.filePath)}" score="${r.score.toFixed(4)}">`,
-        );
-        if (r.content) {
-          xmlLines.push(`      ${escapeXML(r.content.slice(0, 200))}`);
+      // Renderer extracted so the skeleton fallback can drop the
+      // content snippets (repo + path + score still surface enough
+      // signal to triage which results to drill into).
+      const render = (includeContent: boolean): string => {
+        const out = [...xmlLines];
+        out.push(`  <results count="${topResults.length}">`);
+        for (const r of topResults) {
+          if (includeContent && r.content) {
+            out.push(`    <result repo="${escapeXML(r.repoName)}" file="${escapeXML(r.filePath)}" score="${r.score.toFixed(4)}">`);
+            out.push(`      ${escapeXML(r.content.slice(0, 200))}`);
+            out.push('    </result>');
+          } else {
+            out.push(`    <result repo="${escapeXML(r.repoName)}" file="${escapeXML(r.filePath)}" score="${r.score.toFixed(4)}"/>`);
+          }
         }
-        xmlLines.push('    </result>');
-      }
-      xmlLines.push('  </results>');
+        out.push('  </results>');
+        out.push('</cross_repo_search>');
+        return out.join('\n');
+      };
 
-      xmlLines.push('</cross_repo_search>');
-      return xmlLines.join('\n');
+      const full = render(true);
+
+      if (!hasBudgetArgs(args)) return full;
+      const result = await enforceBudget({
+        full,
+        args: readBudgetArgs(args),
+        toolName: 'ctx_cross_repo_search',
+        defaultMaxTokens: DEFAULT_MAX_RESPONSE_TOKENS,
+        skeletonProducer: async () => render(false),
+      });
+      return wrapResponse(result);
     },
   );
 }

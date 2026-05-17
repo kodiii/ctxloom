@@ -10,6 +10,10 @@ import path from 'node:path';
 import type { ToolRegistry } from './registry.js';
 import type { ServerContext } from './context.js';
 import { ProjectRootField, PROJECT_ROOT_JSON_SCHEMA } from './projectRootParam.js';
+import { enforceBudget, hasBudgetArgs, readBudgetArgs, wrapResponse } from '../budget/budget.js';
+
+/** Per #106 provisional table — already a compact file/occurrence list. */
+const DEFAULT_MAX_RESPONSE_TOKENS = 2000;
 
 const Schema = z.object({
   symbol: z.string().min(1).describe('Symbol name to rename (exact, case-sensitive)'),
@@ -21,6 +25,13 @@ const Schema = z.object({
     'Maximum candidate files to process (default: 50)',
   ),
   project_root: ProjectRootField,
+  // ─── Phase B2 budget surface ──
+  max_response_tokens: z.number().int().positive().optional()
+    .describe('Soft response budget. Default: 2000 (when opted in). No skeleton fallback — response is already compact; over-budget falls through to truncation.'),
+  on_budget_exceeded: z.enum(['skeleton', 'truncate', 'error']).optional()
+    .describe("Behavior when over budget. 'skeleton'/'truncate' both slice the XML; 'error' throws."),
+  response_format: z.enum(['full', 'skeleton', 'auto']).optional()
+    .describe("'full'/'auto' default; 'skeleton' produces the same output."),
 });
 
 function escapeXML(text: string): string {
@@ -75,6 +86,9 @@ export function registerApplyRefactorTool(registry: ToolRegistry, ctx: ServerCon
           dry_run: { type: 'boolean', description: 'Preview only, no writes (default: false)' },
           max_files: { type: 'number', description: 'Max candidate files (default: 50)' },
           project_root: PROJECT_ROOT_JSON_SCHEMA,
+          max_response_tokens: { type: 'number', description: 'Soft response budget. Default: 2000 (when opted in).' },
+          on_budget_exceeded: { type: 'string', enum: ['skeleton', 'truncate', 'error'], description: "Behavior over budget." },
+          response_format: { type: 'string', enum: ['full', 'skeleton', 'auto'], description: "'full'/'auto' default; 'skeleton' same output." },
         },
         required: ['symbol', 'new_name'],
       },
@@ -120,7 +134,16 @@ export function registerApplyRefactorTool(registry: ToolRegistry, ctx: ServerCon
         );
       }
       xml.push('</apply_refactor>');
-      return xml.join('\n');
+      const full = xml.join('\n');
+
+      if (!hasBudgetArgs(args)) return full;
+      const result = await enforceBudget({
+        full,
+        args: readBudgetArgs(args),
+        toolName: 'ctx_apply_refactor',
+        defaultMaxTokens: DEFAULT_MAX_RESPONSE_TOKENS,
+      });
+      return wrapResponse(result);
     },
   );
 }

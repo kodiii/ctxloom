@@ -17,6 +17,10 @@ import type { ServerContext } from './context.js';
 import type { DependencyGraph } from '../graph/DependencyGraph.js';
 import type { CallGraphIndex } from '../graph/CallGraphIndex.js';
 import { ProjectRootField, PROJECT_ROOT_JSON_SCHEMA } from './projectRootParam.js';
+import { enforceBudget, hasBudgetArgs, readBudgetArgs, wrapResponse } from '../budget/budget.js';
+
+/** Per #106 provisional table — bounded step list, no useful skeleton form. */
+const DEFAULT_MAX_RESPONSE_TOKENS = 4000;
 
 const Schema = z.object({
   entry_point: z.string().min(1).describe('Symbol name to start the execution flow from'),
@@ -29,6 +33,13 @@ const Schema = z.object({
     'Max total steps to include in output (default: 50)',
   ),
   project_root: ProjectRootField,
+  // ─── Phase B2 budget surface ──
+  max_response_tokens: z.number().int().positive().optional()
+    .describe('Soft response budget. Default: 4000 (when opted in). No skeleton fallback — response is already a bounded step list; over-budget falls through to truncation.'),
+  on_budget_exceeded: z.enum(['skeleton', 'truncate', 'error']).optional()
+    .describe("Behavior when over budget. 'skeleton'/'truncate' both slice; 'error' throws."),
+  response_format: z.enum(['full', 'skeleton', 'auto']).optional()
+    .describe("'full'/'auto' default; 'skeleton' same output."),
 });
 
 function escapeXML(text: string): string {
@@ -130,6 +141,9 @@ export function registerExecutionFlowTool(registry: ToolRegistry, ctx: ServerCon
             description: 'Max total steps to return (default: 50)',
           },
           project_root: PROJECT_ROOT_JSON_SCHEMA,
+          max_response_tokens: { type: 'number', description: 'Soft response budget. Default: 4000 (when opted in).' },
+          on_budget_exceeded: { type: 'string', enum: ['skeleton', 'truncate', 'error'], description: "Behavior over budget." },
+          response_format: { type: 'string', enum: ['full', 'skeleton', 'auto'], description: "'full'/'auto' default; 'skeleton' same output." },
         },
         required: ['entry_point'],
       },
@@ -166,9 +180,20 @@ export function registerExecutionFlowTool(registry: ToolRegistry, ctx: ServerCon
         }
       }
 
+      const maybeBudget = async (full: string): Promise<string> => {
+        if (!hasBudgetArgs(args)) return full;
+        const result = await enforceBudget({
+          full,
+          args: readBudgetArgs(args),
+          toolName: 'ctx_execution_flow',
+          defaultMaxTokens: DEFAULT_MAX_RESPONSE_TOKENS,
+        });
+        return wrapResponse(result);
+      };
+
       // Give up — no call graph entries anywhere for this symbol
       if (!resolvedFile) {
-        return `<execution_flow entry="${escapeXML(entry_point)}" total_steps="0" has_cycles="false">\n  <!-- No call graph entries found for symbol -->\n</execution_flow>`;
+        return maybeBudget(`<execution_flow entry="${escapeXML(entry_point)}" total_steps="0" has_cycles="false">\n  <!-- No call graph entries found for symbol -->\n</execution_flow>`);
       }
 
       const { steps, hasCycles } = buildFlowSteps(
@@ -197,7 +222,7 @@ export function registerExecutionFlowTool(registry: ToolRegistry, ctx: ServerCon
       }
 
       xmlLines.push('</execution_flow>');
-      return xmlLines.join('\n');
+      return maybeBudget(xmlLines.join('\n'));
     },
   );
 }
