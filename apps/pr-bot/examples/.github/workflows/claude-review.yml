@@ -118,11 +118,21 @@ jobs:
         # The MCP server runs locally inside the Action runner. Claude
         # talks to it over stdio. No GHCR pull needed — npm is enough.
         #
-        # Pin to a known-good major. Bump deliberately so changes to the
-        # MCP tool surface land in PRs (and the agent-spec tests catch
-        # mismatches before they reach production).
+        # Pinned to an EXACT patch version (not `@^1`) per the Phase B3
+        # release coordination (#107, SEC-001 from PR #102 dogfood).
+        # Floating major pins let new MCP tool surfaces — and any
+        # breaking input-schema changes — silently reach production
+        # the next time npm resolves the dep. The agent specs in
+        # .claude/agents/ are pinned to a specific tool surface; the
+        # CLI must match, or the agents either dispatch tools that
+        # don't exist (false negatives) or miss new tools added since
+        # the agent spec was written (coverage gaps).
+        #
+        # Bump this pin deliberately on each ctxloom-pro release.
+        # CHANGELOG.md is the source of truth for which MCP surface a
+        # given version exposes.
         run: |
-          npm install -g ctxloom-pro@^1
+          npm install -g ctxloom-pro@1.3.0
           ctxloom --version
 
       - name: Activate ctxloom license (CI ephemeral)
