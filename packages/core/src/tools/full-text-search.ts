@@ -12,6 +12,15 @@ import path from 'node:path';
 import type { ToolRegistry } from './registry.js';
 import type { ServerContext } from './context.js';
 import { ProjectRootField, PROJECT_ROOT_JSON_SCHEMA } from './projectRootParam.js';
+import {
+  enforceBudget,
+  hasBudgetArgs,
+  readBudgetArgs,
+  wrapResponse,
+} from '../budget/budget.js';
+
+/** Per #106 provisional table. */
+const DEFAULT_MAX_RESPONSE_TOKENS = 4000;
 
 const Schema = z.object({
   query: z.string().min(1).describe('Search term — literal or /regex/'),
@@ -20,6 +29,13 @@ const Schema = z.object({
   limit: z.number().min(1).max(100).optional().default(20),
   context_lines: z.number().min(0).max(5).optional().default(1),
   project_root: ProjectRootField,
+  // ─── Phase B2 budget surface ──
+  max_response_tokens: z.number().int().positive().optional()
+    .describe('Soft response budget. Default: 4000 (when budget surface is opted into). Over-budget rebuilds the result list without match snippets (paths + match counts only).'),
+  on_budget_exceeded: z.enum(['skeleton', 'truncate', 'error']).optional()
+    .describe("Behavior when over budget. 'skeleton' (default) drops snippets; 'truncate' slices the raw XML; 'error' throws."),
+  response_format: z.enum(['full', 'skeleton', 'auto']).optional()
+    .describe("'skeleton' forces the path-and-count-only view; 'full'/'auto' lets the budget decide."),
 });
 
 function escapeXML(text: string): string {
@@ -92,12 +108,45 @@ export function registerFullTextSearchTool(registry: ToolRegistry, ctx: ServerCo
           limit: { type: 'number', description: 'Max results (default: 20)' },
           context_lines: { type: 'number', description: 'Context lines around each match (default: 1)' },
           project_root: PROJECT_ROOT_JSON_SCHEMA,
+          max_response_tokens: {
+            type: 'number',
+            description: 'Soft response budget in tokens. Default: 4000 (when opted into).',
+          },
+          on_budget_exceeded: {
+            type: 'string',
+            enum: ['skeleton', 'truncate', 'error'],
+            description: "Behavior when over budget. 'skeleton' (default) drops match snippets; 'truncate' slices; 'error' throws.",
+          },
+          response_format: {
+            type: 'string',
+            enum: ['full', 'skeleton', 'auto'],
+            description: "'skeleton' forces path+count-only view; 'full'/'auto' lets the budget decide.",
+          },
         },
         required: ['query'],
       },
     },
     async (args) => {
-      const { query, mode, case_sensitive, limit, context_lines, project_root } = Schema.parse(args);
+      const parsed = Schema.parse(args);
+      const { query, mode, case_sensitive, limit, context_lines, project_root } = parsed;
+
+      // Helper: budget-aware return. Tools with multiple early-return
+      // shapes all funnel through here so the back-compat invariant
+      // (no envelope when no budget args) holds uniformly across paths.
+      const maybeBudget = async (
+        full: string,
+        skeletonProducer?: () => Promise<string | null>,
+      ): Promise<string> => {
+        if (!hasBudgetArgs(args)) return full;
+        const result = await enforceBudget({
+          full,
+          args: readBudgetArgs(args),
+          toolName: 'ctx_full_text_search',
+          defaultMaxTokens: DEFAULT_MAX_RESPONSE_TOKENS,
+          skeletonProducer,
+        });
+        return wrapResponse(result);
+      };
 
       if (mode === 'semantic') {
         try {
@@ -110,14 +159,17 @@ export function registerFullTextSearchTool(registry: ToolRegistry, ctx: ServerCo
             xml.push(`  <result file="${escapeXML(r.filePath)}" matches="0"/>`);
           }
           xml.push('</full_text_search>');
-          return xml.join('\n');
+          // Semantic mode already returns path-only results — no
+          // skeleton form lighter than what's already rendered.
+          return maybeBudget(xml.join('\n'));
         } catch {
-          return `<full_text_search query="${escapeXML(query)}" mode="semantic" count="0"/>`;
+          return maybeBudget(`<full_text_search query="${escapeXML(query)}" mode="semantic" count="0"/>`);
         }
       }
 
       const pattern = buildPattern(query, case_sensitive);
       if (!pattern) {
+        // Errors are short — no point running them through the budget.
         return `<error>Invalid regex: ${escapeXML(query)}</error>`;
       }
 
@@ -162,18 +214,31 @@ export function registerFullTextSearchTool(registry: ToolRegistry, ctx: ServerCo
         }
       }
 
-      const xml = [
-        `<full_text_search query="${escapeXML(query)}" mode="${mode}" case_sensitive="${case_sensitive}" count="${merged.length}">`,
-      ];
-      for (const r of merged) {
-        xml.push(`  <result file="${escapeXML(r.filePath)}" matches="${r.matchCount}">`);
-        for (const snippet of r.snippets) {
-          xml.push(`    <match><![CDATA[${snippet}]]></match>`);
+      // Renderer is extracted so the skeleton fallback can re-render
+      // without the per-match snippets (paths + match counts only).
+      const render = (includeSnippets: boolean): string => {
+        const xml = [
+          `<full_text_search query="${escapeXML(query)}" mode="${mode}" case_sensitive="${case_sensitive}" count="${merged.length}">`,
+        ];
+        for (const r of merged) {
+          if (includeSnippets && r.snippets.length > 0) {
+            xml.push(`  <result file="${escapeXML(r.filePath)}" matches="${r.matchCount}">`);
+            for (const snippet of r.snippets) {
+              xml.push(`    <match><![CDATA[${snippet}]]></match>`);
+            }
+            xml.push('  </result>');
+          } else {
+            xml.push(`  <result file="${escapeXML(r.filePath)}" matches="${r.matchCount}"/>`);
+          }
         }
-        xml.push('  </result>');
-      }
-      xml.push('</full_text_search>');
-      return xml.join('\n');
+        xml.push('</full_text_search>');
+        return xml.join('\n');
+      };
+
+      return maybeBudget(
+        render(true),
+        async () => render(false),
+      );
     },
   );
 }
