@@ -38,6 +38,19 @@ export interface PersistedEvent extends Record<string, unknown> {
   tool: string;     // 'ctx_get_file' etc.
 }
 
+/**
+ * Input shape for `appendEvent`. Identical to `PersistedEvent` minus
+ * the `ts` (which the collector stamps itself). Spelled out
+ * explicitly rather than as `Omit<PersistedEvent, 'ts'>` because Omit
+ * on an interface that extends `Record<string, unknown>` collapses
+ * to the index signature and loses the required-key narrowing — TS
+ * then refuses to assign `{ts, ...input}` to `PersistedEvent`.
+ */
+export interface EventInput extends Record<string, unknown> {
+  event: string;
+  tool: string;
+}
+
 const DEFAULT_TELEMETRY_DIR = path.join(os.homedir(), '.ctxloom', 'telemetry');
 
 /**
@@ -76,7 +89,7 @@ export function filenameForDate(date: Date): string {
  *
  * @public
  */
-export function appendEvent(event: Omit<PersistedEvent, 'ts'>, now: Date = new Date()): void {
+export function appendEvent(event: EventInput, now: Date = new Date()): void {
   try {
     const dir = telemetryDir();
     fs.mkdirSync(dir, { recursive: true });
