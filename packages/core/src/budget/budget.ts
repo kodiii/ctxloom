@@ -21,6 +21,7 @@
  * meta envelope only appears when a caller opts in.
  */
 import { logger } from '../utils/logger.js';
+import { appendEvent } from './eventCollector.js';
 
 // ─── Token estimator ──────────────────────────────────────────────────
 
@@ -132,7 +133,14 @@ interface TelemetryEvent {
  */
 export function emitTelemetry(event: TelemetryEvent): void {
   if (process.env.CTXLOOM_TELEMETRY_LEVEL !== 'full') return;
+  // Live observability: stderr JSON line via the shared logger so
+  // event also flows through whatever the user has attached.
   logger.info(event.event, event);
+  // Persistent observability: append to ~/.ctxloom/telemetry/ so
+  // `ctxloom budget-stats` can re-derive per-tool p50/p75/p95 later.
+  // Sink failures are swallowed inside appendEvent — telemetry must
+  // never block the request that fired the event.
+  appendEvent(event);
 }
 
 // ─── enforceBudget — the fallback ladder ─────────────────────────────
