@@ -45,6 +45,13 @@ export interface PersistedEvent extends Record<string, unknown> {
  * on an interface that extends `Record<string, unknown>` collapses
  * to the index signature and loses the required-key narrowing — TS
  * then refuses to assign `{ts, ...input}` to `PersistedEvent`.
+ *
+ * @internal — implementation detail of appendEvent's signature; not
+ * part of the user-facing contract. External callers that want to
+ * persist their own events should call `appendEvent` (whose param
+ * type is inferred) rather than importing this directly. Marked per
+ * ARCH-135-3 from PR #135's dogfood: narrowing the published API so
+ * future param-shape evolution isn't a breaking change.
  */
 export interface EventInput extends Record<string, unknown> {
   event: string;
@@ -58,6 +65,11 @@ const DEFAULT_TELEMETRY_DIR = path.join(os.homedir(), '.ctxloom', 'telemetry');
  * `CTXLOOM_TELEMETRY_DIR` env var (used in tests to point at a temp
  * dir; the env-var override also helps users who relocate their
  * `~/.ctxloom` to a shared / network-attached volume).
+ *
+ * @internal — control the directory via the env var, not by calling
+ * this. Marked per ARCH-135-3 from PR #135's dogfood: the function
+ * is exported for tests but is not part of the user-facing contract;
+ * the env-var IS the contract.
  */
 export function telemetryDir(): string {
   return process.env.CTXLOOM_TELEMETRY_DIR ?? DEFAULT_TELEMETRY_DIR;
@@ -66,6 +78,11 @@ export function telemetryDir(): string {
 /**
  * Per-day filename. UTC so events emitted near midnight don't get
  * scattered across two local-time files on the same logical "day".
+ *
+ * @internal — implementation detail of the on-disk layout. External
+ * callers that need the path for a given date should derive it
+ * themselves; the filename shape is an internal convention that may
+ * evolve (e.g. weekly rotation). Marked per ARCH-135-3.
  */
 export function filenameForDate(date: Date): string {
   const y = date.getUTCFullYear();
