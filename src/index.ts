@@ -729,6 +729,30 @@ async function main(): Promise<void> {
       break;
     }
 
+    case 'budget-stats': {
+      // Aggregate persisted Phase B budget events from
+      // ~/.ctxloom/telemetry/ over a sliding window. Inputs:
+      //   --window=Nd   integer-day lookback (default: 14)
+      //   --tool=NAME   restrict to one tool
+      // Reads JSONL only — no network, no graph build, no MCP server.
+      // Safe to run while the MCP server is live in another process.
+      const windowArg = args.find((a) => a.startsWith('--window='))?.split('=')[1] ?? '14d';
+      const toolArg = args.find((a) => a.startsWith('--tool='))?.split('=')[1];
+      const days = parseInt(windowArg.replace(/d$/, ''), 10);
+      if (!Number.isFinite(days) || days <= 0) {
+        console.error(`[ctxloom] Invalid --window=${windowArg} — expected an integer day count like 14d`);
+        process.exit(1);
+      }
+      const until = new Date();
+      const since = new Date(until.getTime() - days * 24 * 60 * 60 * 1000);
+      const { readEvents } = await import('../packages/core/src/budget/eventCollector.js');
+      const { summarize, renderSummary } = await import('../packages/core/src/budget/budgetStats.js');
+      const events = readEvents({ since, until, tool: toolArg });
+      const summary = summarize(events, since, until);
+      console.log(renderSummary(summary));
+      break;
+    }
+
     case 'dashboard': {
       const port = Number(
         args.find(a => a.startsWith('--port='))?.split('=')[1] ?? '7842'
@@ -1022,6 +1046,9 @@ Usage:
   ctxloom dashboard            Start the web dashboard (port 7842)
   ctxloom dashboard --port=N   Start on custom port
   ctxloom dashboard --open     Open browser automatically
+  ctxloom budget-stats         Aggregate Phase B budget events (per-tool p50/p75/p95)
+  ctxloom budget-stats --window=Nd      Lookback window in days (default: 14)
+  ctxloom budget-stats --tool=NAME      Restrict to one tool
   ctxloom review-suggest [files]   Suggest reviewers from ownership index
   ctxloom authors-sync             Map git emails to GitHub handles (needs GITHUB_TOKEN)
   ctxloom rules check              Check architecture rules (.ctxloom/rules.yml)
