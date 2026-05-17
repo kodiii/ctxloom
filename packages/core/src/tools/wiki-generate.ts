@@ -17,6 +17,10 @@ import type { ToolRegistry } from './registry.js';
 import type { ServerContext } from './context.js';
 import { WikiGenerator } from '../graph/WikiGenerator.js';
 import { ProjectRootField, PROJECT_ROOT_JSON_SCHEMA } from './projectRootParam.js';
+import { enforceBudget, hasBudgetArgs, readBudgetArgs, wrapResponse } from '../budget/budget.js';
+
+/** Per #106 provisional table. */
+const DEFAULT_MAX_RESPONSE_TOKENS = 12000;
 
 const Schema = z.object({
   force: z.boolean().optional().default(false).describe(
@@ -26,6 +30,13 @@ const Schema = z.object({
     '"standard" (default) lists each written page with size. "minimal" returns counts only.',
   ),
   project_root: ProjectRootField,
+  // ─── Phase B2 budget surface ──
+  max_response_tokens: z.number().int().positive().optional()
+    .describe('Soft response budget. Default: 12000 (when opted in). Over-budget re-renders at detail_level=minimal (counts only) — the wiki files themselves are unaffected.'),
+  on_budget_exceeded: z.enum(['skeleton', 'truncate', 'error']).optional()
+    .describe("Behavior when over budget. 'skeleton' (default) downgrades to minimal output; 'truncate' slices; 'error' throws."),
+  response_format: z.enum(['full', 'skeleton', 'auto']).optional()
+    .describe("'skeleton' forces minimal output regardless of budget; 'full'/'auto' lets the budget decide."),
 });
 
 function escapeXML(text: string): string {
@@ -64,6 +75,9 @@ export function registerWikiGenerateTool(registry: ToolRegistry, ctx: ServerCont
             description: '"standard" lists written pages with size. "minimal" returns counts only.',
           },
           project_root: PROJECT_ROOT_JSON_SCHEMA,
+          max_response_tokens: { type: 'number', description: 'Soft response budget. Default: 12000 (when opted in).' },
+          on_budget_exceeded: { type: 'string', enum: ['skeleton', 'truncate', 'error'], description: "Behavior over budget. 'skeleton' (default) downgrades to minimal; 'truncate' slices; 'error' throws." },
+          response_format: { type: 'string', enum: ['full', 'skeleton', 'auto'], description: "'skeleton' forces minimal output; 'full'/'auto' lets the budget decide." },
         },
       },
     },
@@ -73,29 +87,41 @@ export function registerWikiGenerateTool(registry: ToolRegistry, ctx: ServerCont
       const generator = new WikiGenerator(graph, ctx.projectRoot, skeletonizer);
       const result = await generator.generate(force);
 
-      if (detail_level === 'minimal') {
-        return (
-          `<wiki_generate detail_level="minimal" wiki_dir="${escapeXML(result.wikiDir)}" ` +
-          `written="${result.written.length}" skipped="${result.skipped.length}" />`
-        );
-      }
+      const renderMinimal = (): string =>
+        `<wiki_generate detail_level="minimal" wiki_dir="${escapeXML(result.wikiDir)}" ` +
+        `written="${result.written.length}" skipped="${result.skipped.length}" />`;
 
-      const lines = [
-        `<wiki_generate wiki_dir="${escapeXML(result.wikiDir)}" written="${result.written.length}" skipped="${result.skipped.length}">`,
-      ];
-      for (const p of result.written) {
-        const size = safeFileSize(p.filePath);
-        lines.push(
-          `  <page community="${escapeXML(p.communityName)}" file="${escapeXML(p.filePath)}" ` +
-            `size="${size}" status="written" />`,
-        );
-      }
-      // Per-skipped <page> entries dropped — see file header. The count is
-      // already in the parent attribute, and skipped pages are on disk
-      // unchanged from a prior run, so a caller can re-list the wiki dir
-      // if they need the full path set.
-      lines.push('</wiki_generate>');
-      return lines.join('\n');
+      const renderStandard = (): string => {
+        const lines = [
+          `<wiki_generate wiki_dir="${escapeXML(result.wikiDir)}" written="${result.written.length}" skipped="${result.skipped.length}">`,
+        ];
+        for (const p of result.written) {
+          const size = safeFileSize(p.filePath);
+          lines.push(
+            `  <page community="${escapeXML(p.communityName)}" file="${escapeXML(p.filePath)}" ` +
+              `size="${size}" status="written" />`,
+          );
+        }
+        // Per-skipped <page> entries dropped — see file header.
+        lines.push('</wiki_generate>');
+        return lines.join('\n');
+      };
+
+      const full = detail_level === 'minimal' ? renderMinimal() : renderStandard();
+
+      if (!hasBudgetArgs(args)) return full;
+
+      // Skeleton fallback: downgrade to detail_level=minimal output
+      // (counts only). Already-explicitly-minimal callers fall through
+      // to truncation since there's no lighter form below minimal.
+      const budgetResult = await enforceBudget({
+        full,
+        args: readBudgetArgs(args),
+        toolName: 'ctx_wiki_generate',
+        defaultMaxTokens: DEFAULT_MAX_RESPONSE_TOKENS,
+        skeletonProducer: detail_level === 'standard' ? async () => renderMinimal() : undefined,
+      });
+      return wrapResponse(budgetResult);
     },
   );
 }

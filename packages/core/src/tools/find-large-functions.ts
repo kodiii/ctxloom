@@ -9,6 +9,10 @@ import type { ToolRegistry } from './registry.js';
 import type { ServerContext } from './context.js';
 import type { DependencyGraph } from '../graph/DependencyGraph.js';
 import { ProjectRootField, PROJECT_ROOT_JSON_SCHEMA } from './projectRootParam.js';
+import { enforceBudget, hasBudgetArgs, readBudgetArgs, wrapResponse } from '../budget/budget.js';
+
+/** Per #106 provisional table — already structural metadata. */
+const DEFAULT_MAX_RESPONSE_TOKENS = 2000;
 
 const schema = z.object({
   threshold: z.number().int().min(1).default(50).describe(
@@ -21,6 +25,13 @@ const schema = z.object({
     'Maximum results to return (default: 30).',
   ),
   project_root: ProjectRootField,
+  // ─── Phase B2 budget surface ──
+  max_response_tokens: z.number().int().positive().optional()
+    .describe('Soft response budget. Default: 2000 (when opted in). No skeleton fallback — response is already structural; over-budget falls through to truncation.'),
+  on_budget_exceeded: z.enum(['skeleton', 'truncate', 'error']).optional()
+    .describe("Behavior when over budget. 'skeleton'/'truncate' both slice the XML; 'error' throws."),
+  response_format: z.enum(['full', 'skeleton', 'auto']).optional()
+    .describe("'full'/'auto' default; 'skeleton' produces the same output (response is already compact)."),
 });
 
 export interface LargeFunctionResult {
@@ -98,6 +109,9 @@ export function registerFindLargeFunctionsTool(registry: ToolRegistry, ctx: Serv
             description: 'Maximum results to return (default: 30, max: 200).',
           },
           project_root: PROJECT_ROOT_JSON_SCHEMA,
+          max_response_tokens: { type: 'number', description: 'Soft response budget. Default: 2000 (when opted in).' },
+          on_budget_exceeded: { type: 'string', enum: ['skeleton', 'truncate', 'error'], description: "Behavior over budget. 'skeleton'/'truncate' slice; 'error' throws." },
+          response_format: { type: 'string', enum: ['full', 'skeleton', 'auto'], description: "'full'/'auto' default; 'skeleton' same output (already compact)." },
         },
       },
     },
@@ -107,24 +121,34 @@ export function registerFindLargeFunctionsTool(registry: ToolRegistry, ctx: Serv
 
       const results = findLargeFunctions(graph, threshold, file_filter).slice(0, limit);
 
+      let full: string;
       if (results.length === 0) {
-        return (
+        full = (
           `<ctx_find_large_functions threshold="${threshold}" count="0">\n` +
           `  <message>No functions or classes exceed ${threshold} lines.</message>\n` +
           `</ctx_find_large_functions>`
         );
+      } else {
+        const lines = [
+          `<ctx_find_large_functions threshold="${threshold}" count="${results.length}">`,
+          ...results.map(
+            r =>
+              `  <symbol name="${escapeXML(r.name)}" type="${r.type}" file="${escapeXML(r.filePath)}" ` +
+              `start="${r.startLine}" end="${r.endLine}" lines="${r.lineCount}" />`,
+          ),
+          `</ctx_find_large_functions>`,
+        ];
+        full = lines.join('\n');
       }
 
-      const lines = [
-        `<ctx_find_large_functions threshold="${threshold}" count="${results.length}">`,
-        ...results.map(
-          r =>
-            `  <symbol name="${escapeXML(r.name)}" type="${r.type}" file="${escapeXML(r.filePath)}" ` +
-            `start="${r.startLine}" end="${r.endLine}" lines="${r.lineCount}" />`,
-        ),
-        `</ctx_find_large_functions>`,
-      ];
-      return lines.join('\n');
+      if (!hasBudgetArgs(args)) return full;
+      const result = await enforceBudget({
+        full,
+        args: readBudgetArgs(args),
+        toolName: 'ctx_find_large_functions',
+        defaultMaxTokens: DEFAULT_MAX_RESPONSE_TOKENS,
+      });
+      return wrapResponse(result);
     },
   );
 }

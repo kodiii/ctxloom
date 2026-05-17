@@ -17,6 +17,10 @@ import path from 'node:path';
 import type { ToolRegistry } from './registry.js';
 import type { ServerContext } from './context.js';
 import { ProjectRootField, PROJECT_ROOT_JSON_SCHEMA } from './projectRootParam.js';
+import { enforceBudget, hasBudgetArgs, readBudgetArgs, wrapResponse } from '../budget/budget.js';
+
+/** Per #106 provisional table. */
+const DEFAULT_MAX_RESPONSE_TOKENS = 4000;
 
 const Schema = z.object({
   symbol: z.string().min(1).describe('Symbol name to rename (exact match, case-sensitive)'),
@@ -25,6 +29,13 @@ const Schema = z.object({
     'Maximum number of files to scan for occurrences (default: 50)',
   ),
   project_root: ProjectRootField,
+  // ─── Phase B2 budget surface ──
+  max_response_tokens: z.number().int().positive().optional()
+    .describe('Soft response budget. Default: 4000 (when opted in). Over-budget drops the per-change before/after lines; keeps the file+occurrence summary so callers can decide which files to drill into.'),
+  on_budget_exceeded: z.enum(['skeleton', 'truncate', 'error']).optional()
+    .describe("Behavior when over budget. 'skeleton' (default) drops change details; 'truncate' slices; 'error' throws."),
+  response_format: z.enum(['full', 'skeleton', 'auto']).optional()
+    .describe("'skeleton' forces the summary-only view; 'full'/'auto' lets the budget decide."),
 });
 
 function escapeXML(text: string): string {
@@ -94,6 +105,9 @@ export function registerRefactorPreviewTool(registry: ToolRegistry, ctx: ServerC
             description: 'Maximum number of candidate files to scan (default: 50)',
           },
           project_root: PROJECT_ROOT_JSON_SCHEMA,
+          max_response_tokens: { type: 'number', description: 'Soft response budget. Default: 4000 (when opted in).' },
+          on_budget_exceeded: { type: 'string', enum: ['skeleton', 'truncate', 'error'], description: "Behavior over budget. 'skeleton' (default) drops change details; 'truncate' slices; 'error' throws." },
+          response_format: { type: 'string', enum: ['full', 'skeleton', 'auto'], description: "'skeleton' forces summary-only view; 'full'/'auto' lets the budget decide." },
         },
         required: ['symbol', 'new_name'],
       },
@@ -136,36 +150,52 @@ export function registerRefactorPreviewTool(registry: ToolRegistry, ctx: ServerC
         }
       }
 
-      // 4. Build XML response
-      const xmlLines: string[] = [
-        `<refactor_preview symbol="${escapeXML(symbol)}" new_name="${escapeXML(new_name)}" total_files="${fileChanges.length}" total_occurrences="${totalOccurrences}">`,
-      ];
-
-      // definitions section
-      xmlLines.push(`  <definitions count="${definitions.length}">`);
-      for (const def of definitions) {
-        xmlLines.push(
-          `    <definition file="${escapeXML(def.filePath)}" type="${escapeXML(def.type)}" signature="${escapeXML(def.signature)}" />`,
-        );
-      }
-      xmlLines.push('  </definitions>');
-
-      // changes section
-      xmlLines.push(`  <changes count="${fileChanges.length}">`);
-      for (const fc of fileChanges) {
-        xmlLines.push(`    <file path="${escapeXML(fc.filePath)}" occurrences="${fc.occurrences.length}">`);
-        for (const occ of fc.occurrences) {
-          xmlLines.push(`      <change line="${occ.line}">`);
-          xmlLines.push(`        <before>${escapeXML(occ.before)}</before>`);
-          xmlLines.push(`        <after>${escapeXML(occ.after)}</after>`);
-          xmlLines.push('      </change>');
+      // 4. Build XML response (full = with per-change before/after,
+      //    skeleton = summary only). Renderer extracted so the budget
+      //    fallback can swap depths without re-running step 3.
+      const render = (includeChanges: boolean): string => {
+        const xmlLines: string[] = [
+          `<refactor_preview symbol="${escapeXML(symbol)}" new_name="${escapeXML(new_name)}" total_files="${fileChanges.length}" total_occurrences="${totalOccurrences}">`,
+        ];
+        xmlLines.push(`  <definitions count="${definitions.length}">`);
+        for (const def of definitions) {
+          xmlLines.push(
+            `    <definition file="${escapeXML(def.filePath)}" type="${escapeXML(def.type)}" signature="${escapeXML(def.signature)}" />`,
+          );
         }
-        xmlLines.push('    </file>');
-      }
-      xmlLines.push('  </changes>');
+        xmlLines.push('  </definitions>');
 
-      xmlLines.push('</refactor_preview>');
-      return xmlLines.join('\n');
+        xmlLines.push(`  <changes count="${fileChanges.length}">`);
+        for (const fc of fileChanges) {
+          if (includeChanges) {
+            xmlLines.push(`    <file path="${escapeXML(fc.filePath)}" occurrences="${fc.occurrences.length}">`);
+            for (const occ of fc.occurrences) {
+              xmlLines.push(`      <change line="${occ.line}">`);
+              xmlLines.push(`        <before>${escapeXML(occ.before)}</before>`);
+              xmlLines.push(`        <after>${escapeXML(occ.after)}</after>`);
+              xmlLines.push('      </change>');
+            }
+            xmlLines.push('    </file>');
+          } else {
+            xmlLines.push(`    <file path="${escapeXML(fc.filePath)}" occurrences="${fc.occurrences.length}"/>`);
+          }
+        }
+        xmlLines.push('  </changes>');
+        xmlLines.push('</refactor_preview>');
+        return xmlLines.join('\n');
+      };
+
+      const full = render(true);
+
+      if (!hasBudgetArgs(args)) return full;
+      const result = await enforceBudget({
+        full,
+        args: readBudgetArgs(args),
+        toolName: 'ctx_refactor_preview',
+        defaultMaxTokens: DEFAULT_MAX_RESPONSE_TOKENS,
+        skeletonProducer: async () => render(false),
+      });
+      return wrapResponse(result);
     },
   );
 }
