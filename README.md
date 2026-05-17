@@ -565,7 +565,7 @@ Defaults are **provisional** (derived from the issue's initial table); a future 
 
 ### Token estimator
 
-Default = `chars / 4` — within ±10% of GPT/Claude tokenizers on code with zero tokenization cost. Pluggable via `ServerContext` for callers that need accuracy-critical estimation (e.g. tiktoken).
+Default = `chars / 4` — within ±10% of GPT/Claude tokenizers on code with zero tokenization cost. Pluggable per-tool via the `estimator` option on `BudgetOptions` for callers that need accuracy-critical estimation (e.g. tiktoken).
 
 ### Kill switch
 
@@ -574,6 +574,8 @@ Set `CTXLOOM_DISABLE_BUDGET=1` in the environment to silently ignore every `max_
 ### Telemetry
 
 Set `CTXLOOM_TELEMETRY_LEVEL=full` to emit structured `mcp.budget.exceeded` and `mcp.fallback.used` events to stderr. Useful for tuning defaults against your own usage patterns.
+
+> **Note:** `CTXLOOM_TELEMETRY_LEVEL` is also consumed by the license / PostHog telemetry layer (see [Telemetry](#telemetry) below) which only recognizes `all` / `error` / `off`. `full` is a separate, **additive** level — it enables budget-event emission *without narrowing* PostHog scope. To narrow PostHog telemetry, set the variable to `error` or `off`; those values disable budget events as a side effect.
 
 ---
 
