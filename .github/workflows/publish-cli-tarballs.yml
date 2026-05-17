@@ -37,11 +37,11 @@ jobs:
       - uses: actions/setup-node@v4
         with: { node-version: '20', cache: 'npm' }
       - run: npm ci
-      - run: cd apps/vscode-extension && node scripts/build-cli-tarballs.mjs --platform=${{ matrix.platform }}
+      - run: node scripts/cli-tarballs/build-cli-tarballs.mjs --platform=${{ matrix.platform }}
       - uses: actions/upload-artifact@v4
         with:
           name: cli-${{ matrix.platform }}
-          path: apps/vscode-extension/dist-cli/*
+          path: dist-cli/*
 
   build-darwin-x64:
     # Intel Mac — flaky runner queue (macos-13). Best-effort: runs in
@@ -57,11 +57,11 @@ jobs:
       - uses: actions/setup-node@v4
         with: { node-version: '20', cache: 'npm' }
       - run: npm ci
-      - run: cd apps/vscode-extension && node scripts/build-cli-tarballs.mjs --platform=darwin-x64
+      - run: node scripts/cli-tarballs/build-cli-tarballs.mjs --platform=darwin-x64
       - uses: actions/upload-artifact@v4
         with:
           name: cli-darwin-x64
-          path: apps/vscode-extension/dist-cli/*
+          path: dist-cli/*
 
   release:
     needs: build

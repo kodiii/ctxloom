@@ -1,7 +1,0 @@
-{
-  "name": "ctxloom-pro-fake",
-  "version": "0.0.0-test",
-  "main": "dist/index.js",
-  "bin": { "ctxloom": "dist/index.js" },
-  "type": "module"
-}

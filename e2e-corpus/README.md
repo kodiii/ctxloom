@@ -71,8 +71,6 @@ parallel — a flaky single repo doesn't gate the others (`fail-fast: false`).
 ## Relationship to other testing
 
 - **Unit tests** (`vitest` + `tests/`) — fast, mock-heavy, run on every PR
-- **Integration tests** (`apps/vscode-extension/tests/integration/`) — real
-  filesystem + real subprocesses but synthetic fixtures
 - **e2e-corpus** (this) — **real public repos**, real product surface
 - **Benchmarks** (`benchmarks/benchmark-public-repos.ts`) — performance
   numbers, not correctness assertions
