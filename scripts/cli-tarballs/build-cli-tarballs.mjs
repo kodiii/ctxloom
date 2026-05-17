@@ -4,12 +4,17 @@
  * Produces dist-cli/ctxloom-cli-<version>-<platform>.tar.gz + .sha256 sidecar.
  *
  * Usage:
- *   node scripts/build-cli-tarballs.mjs --platform=linux-x64
- *   node scripts/build-cli-tarballs.mjs               # builds host's native platform
+ *   node scripts/cli-tarballs/build-cli-tarballs.mjs --platform=linux-x64
+ *   node scripts/cli-tarballs/build-cli-tarballs.mjs    # host's native platform
  *
  * The script always runs `npm install --omit=dev` for the platform it's running on
  * (cross-platform native binaries via npm_config_target_* are out of scope for v1.1 —
  * the publish workflow runs the matrix across native runners).
+ *
+ * Originally lived under apps/vscode-extension/scripts/; promoted to a
+ * top-level scripts/ location when the vscode-extension app was dropped
+ * (the script never depended on extension state, only on the monorepo
+ * root, so the move is purely path bookkeeping).
  */
 import * as fs from 'node:fs';
 import * as os from 'node:os';
@@ -19,9 +24,9 @@ import { execSync } from 'node:child_process';
 import crypto from 'node:crypto';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const extRoot = path.resolve(__dirname, '..');
-const repoRoot = path.resolve(extRoot, '../..');
-const distCli = path.join(extRoot, 'dist-cli');
+// scripts/cli-tarballs/build-cli-tarballs.mjs → repo root is 2 levels up.
+const repoRoot = path.resolve(__dirname, '..', '..');
+const distCli = path.join(repoRoot, 'dist-cli');
 
 function detectPlatform() {
   const flag = process.argv.find(a => a.startsWith('--platform='));

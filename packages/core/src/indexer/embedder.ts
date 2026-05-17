@@ -185,9 +185,11 @@ export function collectFiles(dir: string, results: string[] = []): string[] {
   //     duplicated copies of the user's source (.claude with its
   //     worktrees/, .code-review-graph with its own snapshots) or
   //     thousands of unrelated installer files (.vscode-test bundles the
-  //     full VS Code distribution under apps/vscode-extension/).
-  //     Discovered against ctxloom's own repo: a single
-  //     `apps/vscode-extension/.vscode-test/Visual Studio Code.app/...`
+  //     full VS Code distribution; a vscode-extension app in any repo
+  //     can drop one of these and pollute the index with vendored
+  //     installer code).
+  //     Discovered against ctxloom's own repo before the vscode-extension
+  //     app was dropped: a single .vscode-test/Visual Studio Code.app/...
   //     tree polluted execution-flow output with calls into
   //     ms-vscode.js-debug, and `.claude/worktrees/*` produced five
   //     identical copies of every large function in find-large-functions.

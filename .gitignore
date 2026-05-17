@@ -20,3 +20,12 @@ coverage/
 **/src/**/*.js.map
 **/src/**/*.d.ts
 **/src/**/*.d.ts.map
+
+# Build output of `scripts/cli-tarballs/build-cli-tarballs.mjs` — only
+# materialized in CI before being uploaded as a release artifact.
+dist-cli/
+
+# VSIX builds — the vscode-extension app was dropped from this repo
+# but stray .vsix files from prior local builds may still exist in the
+# working tree; never re-add them.
+*.vsix
