@@ -16,7 +16,7 @@ Uses ctxloom's local dependency graph + git overlay to find:
 
 ### Option 1 — `ctxloom install-pr-bot` (one command)
 
-If you have ctxloom installed (`npm install -g ctxloom-pro`), the fastest path is:
+If you have ctxloom installed (`npm install -g ctxloom-pro` — unpinned is fine for local dev; for CI use the exact-version pin shown in the workflow example), the fastest path is:
 
 ```bash
 cd /path/to/your/repo
