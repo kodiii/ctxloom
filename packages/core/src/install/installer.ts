@@ -26,6 +26,9 @@ import {
   SESSION_START_FULL,
   CTXLOOM_HOOK_ENTRIES,
   type HooksJsonShape,
+  HOST_ADAPTERS,
+  getHostAdapter,
+  type HostAdapter,
 } from './templates.js';
 import { upsertBlock, extractBlock, verifyBlock } from './hmacBlock.js';
 import { CTXLOOM_SKILLS, skillFilePath, type SkillTemplate } from './skillTemplates.js';
@@ -62,6 +65,12 @@ export interface InstallHarnessResult {
    * `.claude/skills/<name>/SKILL.md`. Phase 3.
    */
   skills: FileResult[];
+  /**
+   * Per-host-adapter results — one entry per installed cross-agent
+   * host file (.cursorrules, CONVENTIONS.md, etc). Phase 4d. Empty
+   * array when no `--host` flag was passed.
+   */
+  extraHosts: Array<FileResult & { hostId: string }>;
   /** Non-fatal advisories surfaced during install. */
   warnings: string[];
 }
@@ -81,6 +90,17 @@ export interface InstallHarnessOptions {
    * change before we overwrite.
    */
   force?: boolean;
+  /**
+   * Phase 4d: additional cross-agent host adapters to install
+   * alongside the default Claude/AGENTS/Gemini rules. Pass host IDs
+   * matching `HOST_ADAPTERS` entries — currently 'cursor', 'aider',
+   * 'copilot', 'windsurf'. The literal 'all' is also accepted and
+   * expands to every available adapter.
+   *
+   * Unknown host IDs are silently dropped with a warning. Default:
+   * no extra hosts (preserves Phase 2 behavior).
+   */
+  extraHosts?: ReadonlyArray<string>;
 }
 
 /**
@@ -109,6 +129,11 @@ export function installHarness(opts: InstallHarnessOptions = {}): InstallHarness
   const sessionStartSh = writeSessionStartScript(projectRoot, { dryRun });
   const skills = CTXLOOM_SKILLS.map((s) => writeSkill(projectRoot, s, { dryRun }));
 
+  // Phase 4d — cross-agent host matrix.
+  const extraHosts = resolveExtraHosts(opts.extraHosts ?? [], warnings).map((adapter) =>
+    Object.assign(writeHostAdapter(projectRoot, adapter, { dryRun }), { hostId: adapter.id }),
+  );
+
   return {
     projectRoot,
     claudeMd,
@@ -117,8 +142,38 @@ export function installHarness(opts: InstallHarnessOptions = {}): InstallHarness
     hooksJson,
     sessionStartSh,
     skills,
+    extraHosts,
     warnings,
   };
+}
+
+/**
+ * Resolve the user-supplied --host list to a deduped set of adapters.
+ * Accepts the literal 'all' as shorthand for every available adapter.
+ * Drops unknown IDs with a warning. Returns adapters in stable order
+ * (matches HOST_ADAPTERS declaration order).
+ */
+function resolveExtraHosts(
+  ids: ReadonlyArray<string>,
+  warnings: string[],
+): HostAdapter[] {
+  const requested = new Set<string>();
+  for (const raw of ids) {
+    const id = raw.trim().toLowerCase();
+    if (id === '') continue;
+    if (id === 'all') {
+      for (const a of HOST_ADAPTERS) requested.add(a.id);
+      continue;
+    }
+    if (!getHostAdapter(id)) {
+      warnings.push(
+        `Unknown --host id "${id}" — ignored. Supported: ${HOST_ADAPTERS.map((a) => a.id).join(', ')}, or "all".`,
+      );
+      continue;
+    }
+    requested.add(id);
+  }
+  return HOST_ADAPTERS.filter((a) => requested.has(a.id));
 }
 
 // ─── Per-file writers ────────────────────────────────────────────────
@@ -256,6 +311,45 @@ function isCtxloomEntry(entry: { matcher: string; hooks: unknown }, expectedMatc
     if (typeof cmd !== 'string') return false;
     return cmd.includes('ctxloom') || cmd.includes('.claude/hooks/session-start.sh');
   });
+}
+
+/**
+ * Phase 4d: write a single host-adapter file. Uses the adapter's own
+ * `render()` + `isCanonical()` to decide writing. Idempotent. Creates
+ * any needed parent directories (.github/ for copilot, etc).
+ *
+ * @internal
+ */
+function writeHostAdapter(
+  projectRoot: string,
+  adapter: HostAdapter,
+  opts: { dryRun: boolean },
+): FileResult {
+  const filePath = safeJoin(projectRoot, adapter.path);
+  const dir = path.dirname(filePath);
+  const existed = fs.existsSync(filePath);
+  const rendered = adapter.render();
+
+  let alreadyCorrect = false;
+  if (existed) {
+    const current = fs.readFileSync(filePath, 'utf-8');
+    if (adapter.isCanonical(current)) {
+      alreadyCorrect = true;
+    }
+  }
+
+  if (!opts.dryRun && !alreadyCorrect) {
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(filePath, rendered, 'utf-8');
+  }
+
+  return {
+    path: filePath,
+    created: !existed,
+    updated: existed && !alreadyCorrect,
+    alreadyCorrect,
+    dryRun: opts.dryRun,
+  };
 }
 
 /**
