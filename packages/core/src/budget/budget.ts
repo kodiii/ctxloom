@@ -152,10 +152,22 @@ export function emitTelemetry(event: TelemetryEvent, sink: TelemetrySink = diskS
   // the event also flows through whatever the user has attached.
   logger.info(event.event, event);
   // Persistent observability: route through the sink. Default sink
-  // writes to ~/.ctxloom/telemetry/ via `appendEvent`. Sink failures
-  // are swallowed inside the sink implementation — telemetry must
-  // never block the request that fired the event.
-  sink.append(event);
+  // writes to ~/.ctxloom/telemetry/ via `appendEvent` (which already
+  // swallows fs errors). The try/catch here defends against
+  // third-party sinks (Sentry / OTLP / dashboard ring buffer) that
+  // forget to honor the `TelemetrySink.append` JSDoc contract —
+  // telemetry MUST NEVER fault the request that fired the event.
+  // The PR #139 dogfood (M1) caught this gap: pre-fix, only diskSink
+  // was crash-safe; the type itself did not enforce the invariant.
+  try {
+    sink.append(event);
+  } catch {
+    // Intentionally swallowed — sink errors are observability
+    // regressions, never correctness failures. The stderr-side
+    // `logger.info()` above already surfaced the event for live
+    // observability; losing the persisted sink call is a stats-
+    // visibility regression, not a tool-call failure.
+  }
 }
 
 // ─── enforceBudget — the fallback ladder ─────────────────────────────
