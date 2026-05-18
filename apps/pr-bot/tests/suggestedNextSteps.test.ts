@@ -256,6 +256,42 @@ describe('renderSummary integration', () => {
     const body = renderSummary(payload());
     expect(body).toContain('Suggested next steps');
   });
+
+  // ─── L6: actually assert the command list content (not just presence) ─
+  //
+  // Pre-L6: tests above only checked that "Suggested next steps"
+  // appears between deep-review and footer. A bug that emitted the
+  // section header with ZERO commands inside would still pass both
+  // assertions. Post-L6 we pin that the actual slash commands the
+  // computeSuggestedSteps function decided to emit are present in the
+  // rendered output, AND that they are ordered as designed (review-pr
+  // first, blast second when applicable, etc).
+  it('rendered body contains the exact slash commands computeSuggestedSteps returned', () => {
+    const p = payload({
+      riskLabel: 'high',
+      changedFiles: [
+        changedFile({ path: 'src/critical.ts', importerCount: 50 }),
+        changedFile({ path: 'src/other.ts', importerCount: 5 }),
+        changedFile({ path: 'src/third.ts', importerCount: 1 }),
+      ],
+    });
+    const expectedCommands = computeSuggestedSteps(p).map((s) => s.command);
+    const body = renderSummary(p);
+    // Every command from compute MUST appear in the rendered body.
+    for (const cmd of expectedCommands) {
+      expect(body, `missing command in body: ${cmd}`).toContain(cmd);
+    }
+    // Commands appear in the documented order — review-pr always first.
+    const indices = expectedCommands.map((c) => body.indexOf(c));
+    for (let i = 1; i < indices.length; i++) {
+      expect(indices[i]).toBeGreaterThan(indices[i - 1]);
+    }
+  });
+
+  it('rendered body always contains the always-on /ctxloom-review-pr command', () => {
+    const body = renderSummary(payload());
+    expect(body).toContain('/ctxloom-review-pr 142');
+  });
 });
 
 // ─── v1.5.0 dogfood M1 fix: filename injection safety ────────────────

@@ -178,6 +178,104 @@ describe('learnSuggestionsFromTelemetry — token estimates', () => {
     const rules = learnSuggestionsFromTelemetry({ events, minSamples: 3 });
     expect(rules.A[0].estimated_tokens).toBeLessThanOrEqual(100_000);
   });
+
+  it('M2: clamps PER-SAMPLE so one poisoned event cannot skew the average', () => {
+    // Pre-M2 fix: a single Number.MAX_SAFE_INTEGER event would skew
+    // the average → average clamps to 100_000 (n=1 case). With more
+    // legitimate samples, the absurd value still dominates the sum
+    // until averaged.
+    // Post-M2 fix: every observation is clamped to [0,100_000] BEFORE
+    // accumulation, so the average is bounded regardless of how
+    // many poisoned events appear.
+    const events: PersistedEvent[] = [];
+    // 2 well-formed observations of 1000 tokens
+    events.push(evt(0, 'A'), evt(500, 'B', 1000));
+    events.push(evt(1000, 'A'), evt(1500, 'B', 1000));
+    // 1 poisoned observation
+    events.push(evt(2000, 'A'), evt(2500, 'B', Number.MAX_SAFE_INTEGER));
+    const rules = learnSuggestionsFromTelemetry({ events, minSamples: 3 });
+    // Without per-sample clamp: avg = (1000 + 1000 + MAX) / 3 →
+    // clamped to 100_000. With per-sample clamp: avg = (1000 + 1000
+    // + 100_000) / 3 ≈ 34_000. Either way the AVERAGE is clamped at
+    // read time too, so the worst-case observable is 100_000 —
+    // we assert that the post-fix avg is BELOW the clamped ceiling,
+    // proving the per-sample clamp actually moves the needle.
+    expect(rules.A[0].estimated_tokens).toBeLessThan(100_000);
+    // Hard lower bound: at least the two well-formed observations'
+    // average (~666 after dilution by the clamped poison).
+    expect(rules.A[0].estimated_tokens).toBeGreaterThan(0);
+  });
+});
+
+// ─── M4: privacy-sentinel tripwire for the learner ───────────────────
+
+describe('M4: privacy-sentinel — learner never leaks non-allowlisted fields', () => {
+  // Mirrors the PR #140 sentinel-grep contract for telemetry payloads.
+  // Phase 4b consumes telemetry, so it must respect the same privacy
+  // boundary. The learner reads only `event`, `tool`, `ts`,
+  // `original_tokens` — the test seeds a corrupted event with extra
+  // fields containing sentinel strings and asserts NONE of them appear
+  // in the serialized output of `getLearnedRules`.
+  it('serialized learner output excludes sentinel fields even when present on input events', () => {
+    const SENTINEL_PATH = 'SECRET_PATH_e8b3a9f7';
+    const SENTINEL_QUERY = 'SECRET_QUERY_4f2c1d9e';
+    const SENTINEL_STACK = 'SECRET_STACK_a7b4c2f1';
+    const events: PersistedEvent[] = [];
+    for (let i = 0; i < 5; i++) {
+      // Tainted A event — has extra fields that the privacy contract
+      // says we shouldn't carry. The learner must read ONLY `tool` +
+      // `original_tokens` + `ts`.
+      events.push({
+        ts: new Date(baseTs + i * 1000).toISOString(),
+        event: 'mcp.budget.exceeded',
+        tool: 'A',
+        // These fields are NEVER on real ctxloom telemetry events
+        // (PR #140 pins this), but a corrupted file or future code
+        // mistake could land them here. Their PRESENCE in input
+        // must not result in their PRESENCE in output.
+        path: SENTINEL_PATH,
+        query: SENTINEL_QUERY,
+        stack: SENTINEL_STACK,
+        args: { secret: SENTINEL_PATH },
+        error: SENTINEL_STACK,
+      } as PersistedEvent);
+      events.push(evt(i * 1000 + 500, 'B'));
+    }
+
+    const rules = learnSuggestionsFromTelemetry({ events, minSamples: 3 });
+    expect(rules.A).toBeDefined();
+    expect(rules.A[0].tool).toBe('B');
+
+    // Belt-and-suspenders: serialize the ENTIRE result and grep for
+    // every sentinel. If the learner ever copies an unexpected
+    // field through, this fails.
+    const serialized = JSON.stringify(rules);
+    expect(serialized).not.toContain(SENTINEL_PATH);
+    expect(serialized).not.toContain(SENTINEL_QUERY);
+    expect(serialized).not.toContain(SENTINEL_STACK);
+  });
+
+  it('structural allowlist: every suggestion key is on the documented contract', () => {
+    // Pin the FIELDS, not just the absence of sentinels. Any future
+    // refactor that adds an unsanctioned key would require updating
+    // this allowlist AND surviving a privacy review.
+    const ALLOWED_KEYS = new Set([
+      'tool',
+      'args',
+      'why',
+      'estimated_tokens',
+    ]);
+    const events: PersistedEvent[] = [];
+    for (let i = 0; i < 3; i++) {
+      events.push(evt(i * 1000, 'A'), evt(i * 1000 + 500, 'B', 1500));
+    }
+    const rules = learnSuggestionsFromTelemetry({ events, minSamples: 3 });
+    for (const suggestion of rules.A) {
+      for (const key of Object.keys(suggestion)) {
+        expect(ALLOWED_KEYS.has(key)).toBe(true);
+      }
+    }
+  });
 });
 
 // ─── cache ───────────────────────────────────────────────────────────

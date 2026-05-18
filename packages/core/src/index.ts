@@ -247,20 +247,41 @@ export {
   applyOverBudgetOverrides,
   emitTaskBudgetBreached,
   OVER_BUDGET_ARG_OVERRIDES,
-  __resetTaskBudgetTrackerForTests,
 } from './budget/taskBudget.js';
 export type { TaskBudgetDecision } from './budget/taskBudget.js';
+/**
+ * Test-only reset. Re-exported for the global vitest setup
+ * (tests/vitest.setup.ts) which clears the singleton between every
+ * test. Not part of the public API surface — consumers should
+ * construct their own `TaskBudgetTracker` instance for isolation
+ * instead of mutating the singleton.
+ *
+ * v1.5.0 dogfood M3 fix: re-exported separately under an @internal
+ * annotation so consumers + IDE autocomplete can distinguish public
+ * APIs from test hooks. The runtime symbol stays accessible because
+ * tsc's `stripInternal` only affects `.d.ts` output, not the JS
+ * module surface.
+ *
+ * @internal
+ */
+export { __resetTaskBudgetTrackerForTests } from './budget/taskBudget.js';
 
 // ─── Telemetry-learned suggestions (Phase 4b) ─────────────────────────
 export {
   learnSuggestionsFromTelemetry,
   getLearnedRules,
-  __resetLearnedSuggestionsCacheForTests,
 } from './budget/learnedSuggestions.js';
 export type {
   LearnedRules,
   LearnSuggestionsOptions,
 } from './budget/learnedSuggestions.js';
+/**
+ * Test-only reset for the 1-hour learner cache. Same rationale as
+ * `__resetTaskBudgetTrackerForTests`. v1.5.0 dogfood M3.
+ *
+ * @internal
+ */
+export { __resetLearnedSuggestionsCacheForTests } from './budget/learnedSuggestions.js';
 
 // ─── Phase 4d: cross-agent host matrix ────────────────────────────────
 export {

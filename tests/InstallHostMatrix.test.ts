@@ -210,4 +210,38 @@ describe('rendered host content includes ctxloom guidance', () => {
       expect(content).toMatch(/ctxloom init/);
     },
   );
+
+  // ─── L5: drift pin on canonical content sections ──────────────────
+  //
+  // Pre-L5: smoke checks only verified that the rendered content
+  // mentions the orientation anchor + init command. A refactor that
+  // removed the budget protocol or the tool-suggestion paragraph but
+  // kept those two strings would slip through.
+  //
+  // Post-L5: every adapter must include the load-bearing sections
+  // from the canonical rules block. Updating an adapter's structure
+  // requires updating this test (forcing review).
+  it.each(HOST_ADAPTERS.map((a) => [a.id, a] as const))(
+    '%s — rendered content pins the load-bearing canonical sections',
+    (_id, adapter) => {
+      const content = adapter.render();
+      // The four canonical sections every host MUST surface:
+      expect(content, 'graph-first directive').toMatch(/(graph|MCP tools).*BEFORE.*(Grep|Read|file scan)/i);
+      expect(content, 'orientation anchor').toMatch(/ctx_get_minimal_context/);
+      expect(content, 'next_tool_suggestions reference').toMatch(/next_tool_suggestions/i);
+      expect(content, 'token-budget protocol').toMatch(/(token-budget|tool calls per task|response_format|max_response_tokens)/i);
+    },
+  );
+
+  it.each(HOST_ADAPTERS.map((a) => [a.id, a] as const))(
+    '%s — rendered content stays within a reasonable size envelope',
+    (_id, adapter) => {
+      // Each adapter file should be 1–5 KB. Smaller suggests content
+      // was trimmed; larger suggests bloat creeping in. Hard bounds
+      // catch both directions.
+      const bytes = Buffer.byteLength(adapter.render(), 'utf-8');
+      expect(bytes).toBeGreaterThan(1000);
+      expect(bytes).toBeLessThan(5000);
+    },
+  );
 });
