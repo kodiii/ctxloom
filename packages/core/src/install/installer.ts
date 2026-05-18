@@ -187,7 +187,17 @@ function resolveExtraHosts(
 function safeJoin(root: string, name: string): string {
   const target = path.resolve(root, name);
   const rootResolved = path.resolve(root);
-  if (!target.startsWith(rootResolved + path.sep) && target !== rootResolved) {
+  // v1.5.0 dogfood L1 fix: case-fold the comparison on macOS/Windows
+  // where the filesystem is case-insensitive (APFS / NTFS default).
+  // Pre-fix a path that differed only in case from a root prefix
+  // could slip past the startsWith check; post-fix the comparison
+  // matches the OS's actual containment semantics. Linux (case-
+  // sensitive ext4 etc) sees identical behavior — toLowerCase is a
+  // no-op when the strings already match exactly.
+  const caseFold = process.platform === 'darwin' || process.platform === 'win32';
+  const t = caseFold ? target.toLowerCase() : target;
+  const r = caseFold ? rootResolved.toLowerCase() : rootResolved;
+  if (!t.startsWith(r + path.sep) && t !== r) {
     throw new Error(`installHarness: refusing to write outside project root: ${target}`);
   }
   return target;

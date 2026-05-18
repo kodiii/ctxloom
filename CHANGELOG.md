@@ -5,6 +5,78 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
 ---
 
+## [1.5.1] — 2026-05-18
+
+Patch release — hardening cohort surfaced by v1.5.0's multi-agent
+dogfood review. Six small, thematic items: 1 correctness fix +
+1 API-hygiene change + 4 regression-tripwire tests. None block any
+v1.5.0 user; all reduce future regression risk.
+
+### Fixed
+
+- **M2 — Per-sample `original_tokens` clamping in the telemetry
+  learner.** Pre-fix `clampTokens` ran on the AVERAGE; a single
+  poisoned event with `Number.MAX_SAFE_INTEGER` and `n=1` produced
+  a misleading `estimated_tokens: 100000`. Post-fix every
+  observation is clamped to `[0, 100000]` BEFORE accumulation, so
+  even a corrupted telemetry file yields sane suggestions.
+  (\`packages/core/src/budget/learnedSuggestions.ts:185-193\`)
+- **L1 — Case-fold-aware `safeJoin()` containment check.** Pre-fix
+  the install-time path check used case-sensitive \`startsWith\` on
+  macOS/Windows where the filesystem is case-insensitive (APFS /
+  NTFS). Post-fix the comparison case-folds on those platforms;
+  Linux behavior unchanged (\`toLowerCase()\` no-op when strings
+  already match). No known active exploit — defense in depth.
+  (\`packages/core/src/install/installer.ts:187-204\`)
+
+### Changed (API hygiene)
+
+- **M3 — `@internal` annotation on test-only exports.**
+  \`__resetTaskBudgetTrackerForTests\` and
+  \`__resetLearnedSuggestionsCacheForTests\` are now exported with
+  `@internal` JSDoc + the root tsconfig gains `stripInternal: true`.
+  Signal to IDE autocomplete + future doc tooling that these are
+  test hooks, not public API. Runtime symbols stay accessible
+  (so the global vitest setup still works).
+  (\`packages/core/src/index.ts:251-289\`, \`tsconfig.json:18\`)
+
+### Tests (regression tripwires)
+
+- **M4 — Privacy-sentinel grep for learner output.** Mirrors the
+  PR #140 sentinel-grep contract. Tests seed events with sentinel
+  fields (\`path\`, \`query\`, \`stack\`, \`args\`, \`error\`); assert
+  \`JSON.stringify(getLearnedRules(...))\` excludes every sentinel.
+  Plus a structural allowlist test pinning the four documented
+  suggestion fields (\`tool\` / \`args\` / \`why\` / \`estimated_tokens\`).
+  (\`tests/LearnedSuggestions.test.ts\`)
+- **L5 — Drift pin on host adapter rendered content.** Pre-fix the
+  host-adapter tests only smoke-checked the orientation anchor
+  mention. Post-fix every adapter is pinned to four load-bearing
+  sections (graph-first directive, anchor, \`next_tool_suggestions\`
+  reference, token-budget protocol) AND a size envelope (1–5 KB).
+  A refactor that trims structural content fails CI.
+  (\`tests/InstallHostMatrix.test.ts\`)
+- **L6 — Tighten `renderSummary` integration assertion.** Pre-fix
+  the bot-section integration test asserted only "header present
+  before footer." Post-fix the test computes the expected slash-
+  command list, asserts every command actually appears in the
+  rendered body, AND that they appear in the expected order. A
+  bug that emitted an empty section would now fail CI.
+  (\`apps/pr-bot/tests/suggestedNextSteps.test.ts\`)
+
+### Tests
+
+- 1203 → 1214 root (+11 net); 306 → 308 pr-bot (+2 net)
+
+### Deferred to future
+
+- L2 (DoS softener — not actionable yet), L3 (TaskBudgetPolicy
+  refactor — bigger scope), L4 (budget.ts barrel split — moderate
+  refactor), L7 (cache-eviction stampede — needs async refactor).
+  All non-blocking; track separately.
+
+---
+
 ## [1.5.0] — 2026-05-18
 
 **Phase 4 — Agent-Harness completion.** v1.4.0 shipped the

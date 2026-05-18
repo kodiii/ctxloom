@@ -14,7 +14,8 @@
     "declarationMap": true,
     "sourceMap": true,
     "noUnusedLocals": false,
-    "noUnusedParameters": false
+    "noUnusedParameters": false,
+    "stripInternal": true
   },
   "include": ["src/**/*"],
   "exclude": ["node_modules", "dist", "tests"]

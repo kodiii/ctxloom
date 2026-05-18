@@ -186,7 +186,13 @@ export function learnSuggestionsFromTelemetry(
     const tok = (raw as { original_tokens?: unknown }).original_tokens;
     if (typeof tok === 'number' && Number.isFinite(tok)) {
       const acc = tokenSums.get(raw.tool) ?? { sum: 0, n: 0 };
-      acc.sum += tok;
+      // v1.5.0 dogfood M2 fix: clamp PER SAMPLE before accumulating.
+      // Pre-fix the clamp ran only on the average; a single poisoned
+      // event with Number.MAX_SAFE_INTEGER pulled the average to a
+      // misleading 100,000 with n=1. Per-sample clamping bounds every
+      // observation to the legal range so even a corrupted telemetry
+      // file produces sane suggestions.
+      acc.sum += clampTokens(tok);
       acc.n += 1;
       tokenSums.set(raw.tool, acc);
     }
