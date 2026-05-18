@@ -582,15 +582,28 @@ async function main(): Promise<void> {
     }
 
     case 'init': {
-      // Per-project bootstrap: writes .mcp.json with CTXLOOM_ROOT pinned
-      // to cwd + appends .ctxloom/ to .gitignore. See src/setup/init.ts
-      // for the why — short version: without per-project .mcp.json the
-      // MCP server's cwd is inherited from the parent IDE/CLI and stays
-      // pinned to the wrong project when the user switches workspaces.
+      // Per-project bootstrap. Two layers:
+      //   1. runInit() — .mcp.json (CTXLOOM_ROOT pinned to cwd) +
+      //      .gitignore append. See src/setup/init.ts.
+      //   2. installHarness() — agent-rule blocks (CLAUDE.md, AGENTS.md,
+      //      GEMINI.md) + Claude Code hooks (.claude/hooks.json +
+      //      .claude/hooks/session-start.sh). Phase 2 of the agent-
+      //      harness plan. HMAC-signed blocks for drift detection.
+      //
+      // Flags:
+      //   --skip-harness  Skip layer 2 (back-compat shape with pre-Phase-2)
+      //   --dry-run       Print what would change, write nothing
+      //   --force         On HMAC drift, overwrite hand-edited blocks
       process.stdout.write(fmtHeader('Init'));
       const initRoot = process.cwd();
       process.stdout.write(`  ${style.dim('Root:')} ${initRoot}\n\n`);
+
+      const skipHarness = process.argv.includes('--skip-harness');
+      const dryRun = process.argv.includes('--dry-run');
+      const force = process.argv.includes('--force');
+
       try {
+        // ─── Layer 1: .mcp.json + .gitignore ─────────────────────
         const result = runInit(initRoot);
         const mcpLabel = result.mcpJson.created
           ? `${style.bold('Created')} ${result.mcpJson.path}`
@@ -609,10 +622,30 @@ async function main(): Promise<void> {
         for (const w of result.warnings) {
           process.stdout.write(`  ${fmtWarn(w)}\n`);
         }
+
+        // ─── Layer 2: agent-harness (CLAUDE.md / AGENTS.md / GEMINI.md / hooks) ─
+        if (!skipHarness) {
+          process.stdout.write('\n');
+          const { installHarness } = await import('@ctxloom/core');
+          const h = installHarness({ cwd: initRoot, dryRun, force });
+          for (const fr of [h.claudeMd, h.agentsMd, h.geminiMd, h.hooksJson, h.sessionStartSh]) {
+            const rel = path.relative(initRoot, fr.path);
+            const label = fr.alreadyCorrect
+              ? `${style.dim('Already up to date:')} ${rel}`
+              : fr.created
+                ? `${style.bold(dryRun ? 'Would create' : 'Created')} ${rel}`
+                : `${style.bold(dryRun ? 'Would update' : 'Updated')} ${rel}`;
+            process.stdout.write(`  ${fmtSuccess(label)}\n`);
+          }
+          for (const w of h.warnings) {
+            process.stdout.write(`  ${fmtWarn(w)}\n`);
+          }
+        }
+
         process.stdout.write('\n');
         process.stdout.write(fmtNextStep('Build the index', 'ctxloom index'));
         process.stdout.write(
-          `  ${style.dim('Then reopen your AI tool in this directory to pick up the new .mcp.json.')}\n\n`,
+          `  ${style.dim('Then reopen your AI tool in this directory to pick up the new .mcp.json + hooks.')}\n\n`,
         );
       } catch (err) {
         process.stdout.write(`\n  ${fmtError(String(err instanceof Error ? err.message : err))}\n\n`);

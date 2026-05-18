@@ -212,3 +212,28 @@ export type { IndexingTier, EnvelopeInput } from './server/indexingEnvelope.js';
 export { wrapWithIndexingEnvelope, FirstTouchTracker } from './server/indexingEnvelope.js';
 export { hashProjectRoot } from './server/projectId.js';
 export { EmittedOnceTracker } from './server/EmittedOnceTracker.js';
+
+// ─── Agent-harness installer (Phase 2) ────────────────────────────────
+export { installHarness } from './install/installer.js';
+export type {
+  FileResult,
+  InstallHarnessResult,
+  InstallHarnessOptions,
+} from './install/installer.js';
+export {
+  RULES_BLOCK_NAME,
+  RULES_BLOCK_CONTENT,
+  SESSION_START_FULL,
+  CTXLOOM_HOOK_ENTRIES,
+} from './install/templates.js';
+export type { HooksJsonShape } from './install/templates.js';
+export {
+  computeBlockHmac,
+  extractBlock,
+  verifyBlock,
+  upsertBlock,
+  wrapBlock,
+  resolveHmacKey,
+  DEFAULT_HMAC_KEY,
+} from './install/hmacBlock.js';
+export type { ExtractedBlock } from './install/hmacBlock.js';
