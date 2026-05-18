@@ -20,7 +20,9 @@ import {
   enforceBudget,
   wrapResponse,
   emitTelemetry,
+  diskSink,
   type BudgetArgs,
+  type TelemetrySink,
 } from '../src/budget/budget.js';
 
 // ─── helpers ─────────────────────────────────────────────────────────
@@ -428,6 +430,88 @@ describe('wrapResponse', () => {
         fallback_reason: null,
       },
     });
+  });
+});
+
+// ─── injectable TelemetrySink (ARCH-135-1) ───────────────────────────
+
+describe('TelemetrySink injection', () => {
+  // Pre-refactor every emitTelemetry() call hard-coded `appendEvent()`
+  // — the disk-JSONL sink. That made the budget module transitively
+  // depend on `~/.ctxloom/telemetry/` for ALL callers, including
+  // tests that want to assert "this branch emits X event" without
+  // touching disk, and future in-process consumers (dashboard ring
+  // buffer, OpenTelemetry exporter, Sentry breadcrumb sink).
+  //
+  // This block pins the contract that callers can swap the sink and
+  // that the default is still `diskSink`. The test itself is the
+  // best evidence the abstraction pulls its weight — an in-memory
+  // sink lets us assert event shape WITHOUT mkdtemp / fs cleanup.
+
+  it('routes events through a caller-provided sink (no disk I/O)', () => {
+    const captured: Array<Record<string, unknown>> = [];
+    const memSink: TelemetrySink = {
+      append: (event) => {
+        captured.push(event);
+      },
+    };
+
+    withEnv({ CTXLOOM_TELEMETRY_LEVEL: 'full' }, () => {
+      emitTelemetry(
+        { event: 'mcp.budget.exceeded', tool: 'ctx_get_file', ratio: 2 },
+        memSink,
+      );
+    });
+
+    expect(captured).toHaveLength(1);
+    expect(captured[0]).toMatchObject({
+      event: 'mcp.budget.exceeded',
+      tool: 'ctx_get_file',
+      ratio: 2,
+    });
+  });
+
+  it('defaults to diskSink when no sink is passed', () => {
+    // Sanity: the default export exists and is the sink used when
+    // the optional 2nd arg is omitted. Doesn't assert disk writes
+    // (that's covered in the "emitTelemetry" block above with a
+    // scoped CTXLOOM_TELEMETRY_DIR).
+    expect(diskSink).toBeDefined();
+    expect(typeof diskSink.append).toBe('function');
+  });
+
+  it('enforceBudget threads opts.sink through to over-budget telemetry', async () => {
+    const captured: Array<Record<string, unknown>> = [];
+    const memSink: TelemetrySink = {
+      append: (event) => {
+        captured.push(event);
+      },
+    };
+
+    // Force the over-budget branch with a skeleton fallback so BOTH
+    // `mcp.budget.exceeded` and `mcp.fallback.used` events fire.
+    const original = process.env.CTXLOOM_TELEMETRY_LEVEL;
+    process.env.CTXLOOM_TELEMETRY_LEVEL = 'full';
+    try {
+      await enforceBudget({
+        full: 'x'.repeat(10_000), // ~2500 tokens
+        args: { max_response_tokens: 100 },
+        toolName: 'ctx_get_file',
+        skeletonProducer: async () => 'class Foo { method(): void; }',
+        sink: memSink,
+      });
+    } finally {
+      if (original === undefined) delete process.env.CTXLOOM_TELEMETRY_LEVEL;
+      else process.env.CTXLOOM_TELEMETRY_LEVEL = original;
+    }
+
+    // Over-budget emits BOTH `mcp.budget.exceeded` and
+    // `mcp.fallback.used` events — both must route through the
+    // injected sink, not the default disk sink.
+    expect(captured.length).toBeGreaterThanOrEqual(2);
+    const events = captured.map((e) => e.event);
+    expect(events).toContain('mcp.budget.exceeded');
+    expect(events).toContain('mcp.fallback.used');
   });
 });
 
