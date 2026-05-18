@@ -261,3 +261,11 @@ export type {
   LearnedRules,
   LearnSuggestionsOptions,
 } from './budget/learnedSuggestions.js';
+
+// ─── Phase 4d: cross-agent host matrix ────────────────────────────────
+export {
+  HOST_ADAPTERS,
+  getHostAdapter,
+  SUPPORTED_HOST_IDS,
+} from './install/templates.js';
+export type { HostAdapter } from './install/templates.js';

@@ -601,6 +601,17 @@ async function main(): Promise<void> {
       const skipHarness = process.argv.includes('--skip-harness');
       const dryRun = process.argv.includes('--dry-run');
       const force = process.argv.includes('--force');
+      // Phase 4d: --host=cursor,aider OR --host=all to enable extra
+      // host adapters. Multiple --host flags merge.
+      const extraHosts: string[] = [];
+      for (let i = 0; i < process.argv.length; i++) {
+        const arg = process.argv[i];
+        if (arg.startsWith('--host=')) {
+          extraHosts.push(...arg.slice('--host='.length).split(',').map((s) => s.trim()));
+        } else if (arg === '--host' && i + 1 < process.argv.length) {
+          extraHosts.push(...process.argv[i + 1].split(',').map((s) => s.trim()));
+        }
+      }
 
       try {
         // ─── Layer 1: .mcp.json + .gitignore ─────────────────────
@@ -627,7 +638,7 @@ async function main(): Promise<void> {
         if (!skipHarness) {
           process.stdout.write('\n');
           const { installHarness } = await import('@ctxloom/core');
-          const h = installHarness({ cwd: initRoot, dryRun, force });
+          const h = installHarness({ cwd: initRoot, dryRun, force, extraHosts });
           const harnessFiles = [
             h.claudeMd,
             h.agentsMd,
@@ -635,6 +646,7 @@ async function main(): Promise<void> {
             h.hooksJson,
             h.sessionStartSh,
             ...h.skills,
+            ...h.extraHosts,
           ];
           for (const fr of harnessFiles) {
             const rel = path.relative(initRoot, fr.path);
