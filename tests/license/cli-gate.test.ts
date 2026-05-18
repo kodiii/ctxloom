@@ -111,6 +111,24 @@ describe('license gate', () => {
     expect(exitCode).toBe(0);
     expect(stdout).toContain('ctxloom trial');
   }, 20_000);
+
+  it('budget-stats command bypasses gate (local read-only diagnostic)', async () => {
+    // Pinning the LICENSE_GATE_BYPASS_COMMANDS addition from
+    // TEST-135-3 follow-up. budget-stats is a purely local
+    // read-only command (parses JSONL files under
+    // ~/.ctxloom/telemetry/) — it must remain usable during
+    // license-recovery scenarios (expired/revoked/network-
+    // failing-validate) so users can inspect telemetry even when
+    // their license is in a weird state. A regression that dropped
+    // budget-stats from the bypass set would block diagnostic
+    // access exactly when it matters most.
+    const home = tmpHome();
+    const { exitCode } = await run(['budget-stats'], { HOME: home });
+    // Exit code is 0 (success — empty telemetry dir renders the
+    // "No events in window" diagnostic). Specifically asserting
+    // NOT 2 (the license-gate failure code).
+    expect(exitCode).toBe(0);
+  }, 20_000);
 });
 
 describe('ctxloom status', () => {
