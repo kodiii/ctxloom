@@ -7,6 +7,7 @@ import { RiskTable } from './pages/RiskTable.tsx';
 import { Trends } from './pages/Trends.tsx';
 import { Communities } from './pages/Communities.tsx';
 import { Ownership } from './pages/Ownership.tsx';
+import { Budget } from './pages/Budget.tsx';
 import { Guide } from './pages/Guide.tsx';
 import { track } from './lib/telemetry.ts';
 
@@ -37,6 +38,7 @@ export default function App() {
           <Route path="trends" element={<Trends />} />
           <Route path="communities" element={<Communities />} />
           <Route path="ownership" element={<Ownership />} />
+          <Route path="budget" element={<Budget />} />
           <Route path="guide" element={<Guide />} />
         </Route>
       </Routes>

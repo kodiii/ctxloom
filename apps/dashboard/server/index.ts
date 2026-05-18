@@ -17,6 +17,7 @@ import { buildTrendsRouter } from './routes/trends.js';
 import { buildFileTrendsRouter } from './routes/file-trends.js';
 import { buildProjectsRouter } from './routes/projects.js';
 import { buildTelemetryRouter } from './routes/telemetry.js';
+import { buildBudgetEventsRouter } from './routes/budget-events.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -63,6 +64,10 @@ export async function startDashboard(options: {
   app.use('/api/tokens', buildTokensRouter(ctx));
   app.use('/api/trends', buildTrendsRouter(ctx));
   app.use('/api/trends', buildFileTrendsRouter(ctx));
+  // Budget events — reads ~/.ctxloom/telemetry/ via readEvents().
+  // Independent of `ctx` because budget telemetry is process-global,
+  // not per-project. Matches the CLI's `ctxloom budget-stats` semantics.
+  app.use('/api/budget-events', buildBudgetEventsRouter());
   // /api/projects is wired further down — it needs the watcher
   // re-attach hook (`attachWatcher`), which is defined later in this
   // function. We attach the route after the watcher helper exists.
