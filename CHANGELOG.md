@@ -5,6 +5,134 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
 ---
 
+## [1.4.0] — 2026-05-18
+
+**Agent-First Harness** — the headline shift in v1.4.0. ctxloom now
+ships a self-installing harness that makes ctxloom MCP tools the
+*path of least resistance* for any agent host (Claude Code, Gemini
+CLI, generic). Closes the gap with code-review-graph's "forced-use"
+model — but with stronger primitives (HMAC-pinned blocks, response
+budgets already in place, PR-bot pipeline already wired).
+
+The strategic shift: pre-1.4 relied on the agent **remembering** to
+use ctxloom (via free-text rules in CLAUDE.md). v1.4 makes the
+harness decide — via prepackaged skills, SessionStart guidance,
+PostToolUse auto-update, and a self-guiding API surface.
+
+### Added
+
+- **\`ctx_get_minimal_context\` — the orientation anchor** (#148).
+  Mandatory first MCP call in any ctxloom workflow. Returns
+  ~150 tokens covering graph readiness, recent working-tree
+  changes, top hub nodes, and a **task-aware** suggested-first-tool.
+  Pass \`task\` ("review PR 142", "rename X", "check coverage") and
+  regex routing picks the most-fitting follow-up. Each suggestion
+  carries \`estimated_tokens\` so the agent can budget the next call.
+  Cache: 10s TTL keyed on \`(project_root, task)\` — multiple agents
+  asking in quick succession get cached answers (<5ms).
+- **\`next_tool_suggestions\` on every budget-wrapped response** (#148).
+  Author-curated follow-ups with \`why\` reasoning + token-cost
+  estimates. Zero per-call cost (static lookup, ~0ns). Capped at 3
+  entries per response. Drift test asserts every rule's source AND
+  target tool name is a real registered tool — typos / deleted tools
+  fail CI.
+- **\`ctxloom init\` writes the harness layer** (#149). New flags
+  \`--skip-harness\` / \`--dry-run\` / \`--force\`. Files written:
+  \`CLAUDE.md\`, \`AGENTS.md\`, \`GEMINI.md\` (HMAC-signed agent-rule
+  blocks), \`.claude/hooks.json\` (SessionStart + PostToolUse),
+  \`.claude/hooks/session-start.sh\` (banner). All idempotent.
+- **HMAC-pinned templated blocks** (#149). Each agent-rule block is
+  wrapped with \`<!-- BEGIN CTXLOOM-RULES v:1 hmac:sha256:... -->\`
+  markers. On re-install: intact + canonical → no-op; drift detected
+  + content matches canonical → update in place; HMAC mismatch
+  (hand-edited) → refuse to clobber, warn unless \`--force\`. The
+  HMAC is for **drift detection, not security** — anyone with
+  source can compute it; goal is catching good-faith hand-edits.
+- **SessionStart hook** (#149, \`.claude/hooks/session-start.sh\`).
+  Prints orientation banner with graph stats at every Claude Code
+  session start. Uses \`ctxloom status --json\` (cached <100ms).
+- **PostToolUse hook** (#149, matcher \`Write|Edit\`). Auto-runs
+  \`ctxloom update --incremental --quiet\` after every agent file
+  edit. **Belt-and-suspenders** with the live file watcher: if the
+  watcher dies, the hook still keeps the graph fresh.
+- **Six prepackaged Claude Code skills** (#150). Slash commands that
+  orchestrate ctxloom tool sequences:
+    - \`/ctxloom-explore\` — architecture overview + communities + hubs
+    - \`/ctxloom-blast <symbol>\` — blast radius + callers + flows + coverage
+    - \`/ctxloom-refactor-safely <old> <new>\` — preview-before-apply rename
+    - \`/ctxloom-coverage-gap\` — knowledge gaps scored by callers + churn + risk
+    - \`/ctxloom-review-pr <PR>\` — multi-tier PR review (mirrors the bot)
+    - \`/ctxloom-budget-stats\` — wraps the CLI inline
+  Every skill enforces three invariants (drift-tested):
+  opens with \`ctx_get_minimal_context\`, has explicit
+  Steps + Budget sections, references only real registered tool names.
+
+### Changed (internal)
+
+- \`EnforceBudgetOptions\` gains an optional \`ctx\` field (existing
+  callers unaffected; #148 wiring).
+- \`BudgetMeta\` gains optional \`next_tool_suggestions: NextToolSuggestion[]\`
+  (only present when source tool has author-curated rules — #148).
+- \`@ctxloom/core\` barrel exports new installer + skill APIs
+  (\`installHarness\`, \`CTXLOOM_SKILLS\`, \`computeBlockHmac\`,
+  \`extractBlock\`, \`verifyBlock\`, \`upsertBlock\` — for tests +
+  future tooling that wants to inspect the templated blocks).
+
+### Security
+
+- All harness writes go through a \`safeJoin()\` helper that resolves
+  paths and refuses writes outside the project root — symlink-
+  resistant. Tested.
+- Generated \`session-start.sh\` is POSIX-portable (no bashisms); no
+  user-controllable env vars echoed; hardcoded relative DB path.
+- \`task\` input to \`ctx_get_minimal_context\` is sanitized (control
+  chars stripped, Zod cap at 200 chars), **never** echoed into the
+  response body. Used only for regex routing + privacy-preserving
+  telemetry.
+
+### Compare table (vs code-review-graph)
+
+| Layer | code-review-graph | ctxloom v1.4.0 |
+|---|---|---|
+| \`.mcp.json\` shipped in repo | ✅ | ✅ |
+| SessionStart hook | ✅ | ✅ |
+| PostToolUse auto-update | ✅ | ✅ |
+| Prepackaged skills | ✅ 7 | ✅ 6 |
+| Self-guiding API (\`get_minimal_context\` + \`next_tool_suggestions\`) | ✅ | ✅ |
+| Response budgets / skeleton-first | ❌ | ✅ |
+| PR-bot multi-agent reviews | ❌ | ✅ |
+| Multi-project state | ❌ | ✅ |
+| HMAC-pinned blocks (drift detection) | ❌ (version hash only) | ✅ |
+| Task-aware first-tool routing | ❌ (static) | ✅ |
+| Token-cost estimates per suggestion | ❌ | ✅ |
+
+### Tests
+
+- 1041 → 1133 (+92 net across the cohort)
+- 36 minimal-context + next-tool-suggestions tests (#148)
+- 30 installer + HMAC-block tests (#149)
+- 18 skill installation + content drift tests (#150)
+
+### Migration
+
+**Zero migration required.** Every change is additive:
+
+- \`ctx_get_minimal_context\` is a new tool; pre-1.4 callers don't see it
+- \`next_tool_suggestions\` only attaches when callers opt into the
+  budget surface (existing behavior — \`hasBudgetArgs\` gate)
+- \`ctxloom init\` keeps its pre-Phase-2 behavior with \`--skip-harness\`
+- Pre-1.4 \`init\` users automatically get the new harness files on
+  next re-run (idempotent)
+
+### Roadmap forward (Phase 4 — v1.5.x)
+
+- **4a** Server-enforced graph-call budget (≤8 tool calls per task)
+- **4b** Telemetry-learned \`next_tool_suggestions\` (replaces static rules)
+- **4c** PR-bot integration with the new skills
+- **4d** Cross-agent host matrix (\`ctxloom init --host=cursor|aider|copilot\`)
+
+---
+
 ## [1.3.1] — 2026-05-18
 
 Patch release. Closes the dogfood follow-up cohort surfaced by PR #135's
