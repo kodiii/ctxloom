@@ -26,8 +26,11 @@ import {
   readEvents,
   telemetryDir,
   filenameForDate,
+  __resetTelemetryWarnFlagsForTests,
   type PersistedEvent,
 } from '../src/budget/eventCollector.js';
+import { logger } from '../packages/core/src/utils/logger.js';
+import { vi } from 'vitest';
 
 const ORIGINAL_DIR_ENV = process.env.CTXLOOM_TELEMETRY_DIR;
 
@@ -204,6 +207,131 @@ describe('type narrow: PersistedEvent', () => {
     const now = new Date('2026-05-18T12:00:00Z');
     appendEvent({ event: 'mcp.budget.exceeded', tool: 'ctx_get_file' }, now);
     const events: PersistedEvent[] = readEvents({ since: new Date('2026-05-18T00:00:00Z'), until: new Date('2026-05-18T23:59:59Z') });
+    expect(events[0].ts).toBe('2026-05-18T12:00:00.000Z');
+  });
+});
+
+// ─── #142: CTXLOOM_TELEMETRY_DIR sanitization ─────────────────────────
+
+describe('telemetryDir sanitization (#142)', () => {
+  beforeEach(() => {
+    __resetTelemetryWarnFlagsForTests();
+  });
+
+  it('rejects paths containing ".." and falls back to default', () => {
+    const warn = vi.spyOn(logger, 'warn').mockImplementation(() => {});
+    process.env.CTXLOOM_TELEMETRY_DIR = '/tmp/../etc/foo';
+    const resolved = telemetryDir();
+    expect(resolved).toBe(path.join(os.homedir(), '.ctxloom', 'telemetry'));
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(warn.mock.calls[0][0]).toMatch(/rejected/i);
+    warn.mockRestore();
+  });
+
+  it('rejects non-absolute relative paths and falls back to default', () => {
+    const warn = vi.spyOn(logger, 'warn').mockImplementation(() => {});
+    process.env.CTXLOOM_TELEMETRY_DIR = 'some/relative/path';
+    const resolved = telemetryDir();
+    // A relative env value is rejected (path.isAbsolute on the raw
+    // value is false). Sanity: fallback is the home default.
+    expect(resolved).toBe(path.join(os.homedir(), '.ctxloom', 'telemetry'));
+    expect(warn).toHaveBeenCalledTimes(1);
+    warn.mockRestore();
+  });
+
+  it('accepts a clean absolute path verbatim (resolved form)', () => {
+    // testDir is set by the outer beforeEach to an mkdtempSync result
+    // — already absolute, no traversal segments. Should resolve and
+    // be returned unchanged.
+    expect(telemetryDir()).toBe(path.resolve(testDir));
+  });
+
+  it('warns at most once across many rejections in the same process (once-flag)', () => {
+    const warn = vi.spyOn(logger, 'warn').mockImplementation(() => {});
+    process.env.CTXLOOM_TELEMETRY_DIR = '/tmp/../bad';
+    telemetryDir();
+    telemetryDir();
+    telemetryDir();
+    expect(warn).toHaveBeenCalledTimes(1);
+    warn.mockRestore();
+  });
+});
+
+// ─── #143: appendEvent once-flag warn on failure ──────────────────────
+
+describe('appendEvent failure surfacing (#143)', () => {
+  beforeEach(() => {
+    __resetTelemetryWarnFlagsForTests();
+  });
+
+  it('emits exactly one logger.warn on the first appendFileSync failure', () => {
+    const warn = vi.spyOn(logger, 'warn').mockImplementation(() => {});
+    const spy = vi.spyOn(fs, 'appendFileSync').mockImplementation(() => {
+      throw new Error('EACCES: permission denied');
+    });
+
+    appendEvent({ event: 'mcp.budget.exceeded', tool: 'ctx_get_file' });
+    appendEvent({ event: 'mcp.budget.exceeded', tool: 'ctx_get_file' });
+    appendEvent({ event: 'mcp.budget.exceeded', tool: 'ctx_get_file' });
+
+    // First failure → warn. Subsequent failures → silent.
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(warn.mock.calls[0][0]).toMatch(/telemetry sink append failed/);
+    // Error message surfaces for operator triage.
+    const warnContext = warn.mock.calls[0][1] as { error: string };
+    expect(warnContext.error).toMatch(/EACCES/);
+
+    spy.mockRestore();
+    warn.mockRestore();
+  });
+
+  it('does not throw or propagate when appendFileSync fails', () => {
+    const warn = vi.spyOn(logger, 'warn').mockImplementation(() => {});
+    const spy = vi.spyOn(fs, 'appendFileSync').mockImplementation(() => {
+      throw new Error('ENOSPC: no space left on device');
+    });
+
+    // Pre-existing crash-isolation contract: telemetry MUST NEVER
+    // take down the MCP server. The new logger.warn must not break
+    // this invariant.
+    expect(() => {
+      appendEvent({ event: 'mcp.budget.exceeded', tool: 'ctx_get_file' });
+    }).not.toThrow();
+
+    spy.mockRestore();
+    warn.mockRestore();
+  });
+});
+
+// ─── #144: NaN-date boundary filter ───────────────────────────────────
+
+describe('readEvents NaN-date handling (#144)', () => {
+  it('drops events with malformed timestamps from boundary filter', () => {
+    const now = new Date('2026-05-18T12:00:00Z');
+    // Seed today's file with both a valid event and a malformed one
+    // (truncated mid-write, manually edited, etc).
+    const file = path.join(testDir, filenameForDate(now));
+    fs.writeFileSync(
+      file,
+      [
+        JSON.stringify({ ts: '2026-05-18T12:00:00.000Z', event: 'mcp.budget.exceeded', tool: 'ctx_get_file' }),
+        JSON.stringify({ ts: 'not-a-date', event: 'mcp.budget.exceeded', tool: 'ctx_get_file' }),
+        JSON.stringify({ ts: 'also-bogus-2026-13-99', event: 'mcp.fallback.used', tool: 'ctx_get_file' }),
+      ].join('\n') + '\n',
+      'utf-8',
+    );
+
+    const events = readEvents({
+      since: new Date('2026-05-18T00:00:00Z'),
+      until: new Date('2026-05-18T23:59:59Z'),
+    });
+
+    // Pre-fix: all 3 events would pass (NaN < x && NaN > x are both
+    // false, so the malformed events slip through and contaminate
+    // budget-stats aggregations). Post-fix: only the well-formed
+    // event survives.
+    expect(events).toHaveLength(1);
+    expect(events[0].tool).toBe('ctx_get_file');
     expect(events[0].ts).toBe('2026-05-18T12:00:00.000Z');
   });
 });
