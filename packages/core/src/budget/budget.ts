@@ -22,12 +22,17 @@
  */
 import { logger } from '../utils/logger.js';
 import { diskSink, type TelemetrySink } from './eventCollector.js';
+import { suggestNext, type NextToolSuggestion } from './nextToolSuggestions.js';
 
 // Re-export so existing consumers that import TelemetrySink from
 // the budget module's barrel-equivalent (budget.ts) keep working.
 // The actual type definition lives next to its default
 // implementation in eventCollector.ts.
 export type { TelemetrySink };
+// Re-export the next-tool suggestion type so consumers that already
+// import from `./budget.js` (the public budget barrel) pick it up
+// without learning a second import path.
+export type { NextToolSuggestion };
 export { diskSink };
 
 // ─── Token estimator ──────────────────────────────────────────────────
@@ -105,6 +110,21 @@ export interface BudgetMeta {
   original_tokens_est: number;
   returned_tokens_est: number;
   fallback_reason: FallbackReason;
+  /**
+   * Author-curated follow-up MCP calls — agents can pick the next
+   * step without guessing. Each entry carries `why` reasoning + a
+   * token-cost estimate so the agent can budget the next call.
+   *
+   * Wiring: populated by `enforceBudget()` via `suggestNext()` from
+   * `nextToolSuggestions.ts`. Filtered through the registered-tools
+   * allowlist (defense against telemetry-poisoned rules in the
+   * Phase 4b learner).
+   *
+   * Closes Phase 1b of the agent-harness plan.
+   *
+   * @public
+   */
+  next_tool_suggestions?: NextToolSuggestion[];
 }
 
 export interface BudgetEnvelope {
@@ -260,6 +280,25 @@ export async function enforceBudget(opts: EnforceBudgetOptions): Promise<Budgete
   //   3. diskSink              — default disk-JSONL persistence
   const sink: TelemetrySink = opts.sink ?? opts.ctx?.telemetrySink ?? diskSink;
 
+  // Phase 1b — next-tool suggestions. Computed ONCE here so the same
+  // array is shared across every meta object produced by this call
+  // (no per-branch recomputation). Static lookup; ~0 cost.
+  // Allowlist param intentionally omitted — drift test enforces
+  // static-rule targets are registered. Phase 4b (learned rules) will
+  // pass the registered-tools set when the learner is enabled.
+  const nextToolSuggestions = suggestNext(toolName);
+  /**
+   * Helper — attaches `next_tool_suggestions` to a base meta literal.
+   * Centralizes the field naming so a future field-shape change
+   * (rename, version bump) is a one-line edit. Returns undefined
+   * field when the suggestion array is empty so consumers don't see
+   * a noisy empty array in responses.
+   */
+  const withSuggestions = <T extends BudgetMeta>(base: T): T => {
+    if (nextToolSuggestions.length === 0) return base;
+    return { ...base, next_tool_suggestions: nextToolSuggestions };
+  };
+
   // Pre-compute the full-response token count once — used by every
   // downstream branch for the meta envelope.
   const originalTokens = estimate(full);
@@ -268,12 +307,12 @@ export async function enforceBudget(opts: EnforceBudgetOptions): Promise<Budgete
   if (isBudgetDisabled()) {
     return {
       text: full,
-      meta: {
+      meta: withSuggestions({
         format: 'full',
         original_tokens_est: originalTokens,
         returned_tokens_est: originalTokens,
         fallback_reason: null,
-      },
+      }),
     };
   }
 
@@ -286,23 +325,23 @@ export async function enforceBudget(opts: EnforceBudgetOptions): Promise<Budgete
       const skTokens = estimate(skeleton);
       return {
         text: skeleton,
-        meta: {
+        meta: withSuggestions({
           format: 'skeleton',
           original_tokens_est: originalTokens,
           returned_tokens_est: skTokens,
           fallback_reason: null,
-        },
+        }),
       };
     }
     // Fall through: skeleton producer failed, return full + flag it.
     return {
       text: full,
-      meta: {
+      meta: withSuggestions({
         format: 'full',
         original_tokens_est: originalTokens,
         returned_tokens_est: originalTokens,
         fallback_reason: 'skeleton_failed',
-      },
+      }),
     };
   }
 
@@ -311,12 +350,12 @@ export async function enforceBudget(opts: EnforceBudgetOptions): Promise<Budgete
   if (budget === undefined) {
     return {
       text: full,
-      meta: {
+      meta: withSuggestions({
         format: 'full',
         original_tokens_est: originalTokens,
         returned_tokens_est: originalTokens,
         fallback_reason: null,
-      },
+      }),
     };
   }
 
@@ -324,12 +363,12 @@ export async function enforceBudget(opts: EnforceBudgetOptions): Promise<Budgete
   if (originalTokens <= budget) {
     return {
       text: full,
-      meta: {
+      meta: withSuggestions({
         format: 'full',
         original_tokens_est: originalTokens,
         returned_tokens_est: originalTokens,
         fallback_reason: null,
-      },
+      }),
     };
   }
 
@@ -369,12 +408,12 @@ export async function enforceBudget(opts: EnforceBudgetOptions): Promise<Budgete
     }, sink);
     return {
       text: sliced,
-      meta: {
+      meta: withSuggestions({
         format: 'truncated',
         original_tokens_est: originalTokens,
         returned_tokens_est: slicedTokens,
         fallback_reason: 'budget_exceeded',
-      },
+      }),
     };
   }
 
@@ -392,12 +431,12 @@ export async function enforceBudget(opts: EnforceBudgetOptions): Promise<Budgete
       }, sink);
       return {
         text: skeleton,
-        meta: {
+        meta: withSuggestions({
           format: 'skeleton',
           original_tokens_est: originalTokens,
           returned_tokens_est: skTokens,
           fallback_reason: 'budget_exceeded',
-        },
+        }),
       };
     }
     // Skeleton still over budget — slice it.
@@ -410,12 +449,12 @@ export async function enforceBudget(opts: EnforceBudgetOptions): Promise<Budgete
     }, sink);
     return {
       text: slicedSk,
-      meta: {
+      meta: withSuggestions({
         format: 'truncated',
         original_tokens_est: originalTokens,
         returned_tokens_est: estimate(slicedSk),
         fallback_reason: 'budget_exceeded',
-      },
+      }),
     };
   }
 
@@ -429,12 +468,12 @@ export async function enforceBudget(opts: EnforceBudgetOptions): Promise<Budgete
   }, sink);
   return {
     text: sliced,
-    meta: {
+    meta: withSuggestions({
       format: 'truncated',
       original_tokens_est: originalTokens,
       returned_tokens_est: estimate(sliced),
       fallback_reason: 'skeleton_failed',
-    },
+    }),
   };
 }
 

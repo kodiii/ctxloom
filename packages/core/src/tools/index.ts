@@ -33,6 +33,7 @@ import { registerGitCouplingTool } from './git-coupling.js';
 import { registerRiskOverlayTool } from './risk-overlay.js';
 import { registerRulesCheckTool } from './rules-check.js';
 import { registerGetAffectedFlowsTool } from './get-affected-flows.js';
+import { registerMinimalContextTool } from './minimal-context.js';
 
 export function createToolRegistry(ctx: ServerContext): ToolRegistry {
   const registry = new ToolRegistry();
@@ -69,5 +70,9 @@ export function createToolRegistry(ctx: ServerContext): ToolRegistry {
   registerGitCouplingTool(registry, ctx);
   registerRiskOverlayTool(registry, ctx);
   registerGetAffectedFlowsTool(registry, ctx);
+  // Orientation anchor — registered LAST so agents inspecting
+  // `registry.list()` see the new self-guiding entry point at the
+  // end of the surface (acts as a "start here" beacon).
+  registerMinimalContextTool(registry, ctx);
   return registry;
 }
