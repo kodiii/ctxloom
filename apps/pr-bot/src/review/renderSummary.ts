@@ -1,5 +1,9 @@
 import type { ReviewPayload } from './types.js';
 import type { ChangedFile } from '@ctxloom/core';
+import {
+  computeSuggestedSteps,
+  renderSuggestedStepsSection,
+} from './suggestedNextSteps.js';
 
 const CHAR_LIMIT = 60_000;
 const RISK_BREAKDOWN_ROWS = 5;
@@ -193,6 +197,12 @@ export function renderSummary(payload: ReviewPayload): string {
   // <details> block so it doesn't dominate the comment.
   const deepReview = buildDeepReviewSection(payload);
 
+  // Phase 4c — risk-tiered next-step suggestions using the prepackaged
+  // skills from Phase 3. The bot already did the structural pre-fetch
+  // (risk + impact); this section turns that data into actionable
+  // slash commands the PR author can paste into Claude Code.
+  const suggestedSteps = renderSuggestedStepsSection(computeSuggestedSteps(payload));
+
   // The footer used to advertise `/ctxloom explain|ignore|refresh`
   // slash commands. Those were Probot-handler features and were
   // deleted when pr-bot pivoted to a fire-and-forget GitHub Action
@@ -213,6 +223,7 @@ export function renderSummary(payload: ReviewPayload): string {
     affectedFlows +
     breakdown +
     deepReview +
+    suggestedSteps +
     footer +
     marker;
 
@@ -230,6 +241,7 @@ export function renderSummary(payload: ReviewPayload): string {
       affectedFlows +
       breakdownCompact +
       deepReview +
+      suggestedSteps +
       footer +
       marker;
   }
