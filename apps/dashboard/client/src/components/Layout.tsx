@@ -8,6 +8,7 @@ const NAV = [
   { to: '/trends', label: 'Trends', icon: '⤴' },
   { to: '/communities', label: 'Communities', icon: '⬡⬡' },
   { to: '/ownership', label: 'Ownership', icon: '◎' },
+  { to: '/budget', label: 'Budget', icon: '◐' },
   { to: '/guide', label: 'Guide', icon: '◉' },
 ];
 

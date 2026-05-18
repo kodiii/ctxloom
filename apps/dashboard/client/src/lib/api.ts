@@ -65,6 +65,32 @@ async function postJson<T>(path: string, body: unknown): Promise<T> {
   return res.json() as Promise<T>;
 }
 
+// ─── Budget events (mirrors `ctxloom budget-stats` CLI output) ──────
+
+export interface BudgetFallbackRow {
+  tool: string;
+  breaches: number;
+  skeletonPct: number;
+  truncatePct: number;
+  errorPct: number;
+}
+export interface BudgetDistributionRow {
+  tool: string;
+  n: number;
+  min: number | null;
+  p50: number | null;
+  p75: number | null;
+  p95: number | null;
+  max: number | null;
+}
+export interface BudgetEventsResponse {
+  window: { since: string; until: string; days: number };
+  totalEvents: number;
+  fallbackTable: BudgetFallbackRow[];
+  distributionTable: BudgetDistributionRow[];
+  breachesPerDay: Array<{ day: string; count: number }>;
+}
+
 export const api = {
   overview: () => get<OverviewResponse>('/overview'),
   graph: () => get<GraphResponse>('/graph'),
@@ -79,4 +105,9 @@ export const api = {
   listProjects: () => get<ProjectsListResponse>('/projects'),
   activeProject: () => get<ActiveProjectResponse>('/projects/active'),
   switchProject: (slug: string) => postJson<ActiveProjectResponse>('/projects/active', { slug }),
+  budgetEvents: (window: string = '14d', tool?: string) => {
+    const params = new URLSearchParams({ window });
+    if (tool) params.set('tool', tool);
+    return get<BudgetEventsResponse>(`/budget-events?${params.toString()}`);
+  },
 };

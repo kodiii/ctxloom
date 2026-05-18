@@ -283,6 +283,16 @@ export type {
  */
 export { __resetLearnedSuggestionsCacheForTests } from './budget/learnedSuggestions.js';
 
+// ─── Budget event aggregation (drives ctxloom budget-stats + dashboard) ─
+export { readEvents, telemetryDir, filenameForDate } from './budget/eventCollector.js';
+export type { PersistedEvent, ReadEventsOptions } from './budget/eventCollector.js';
+export { summarize as summarizeBudgetEvents, renderSummary as renderBudgetSummary } from './budget/budgetStats.js';
+export type {
+  FallbackRow,
+  DistributionRow,
+  BudgetStatsSummary,
+} from './budget/budgetStats.js';
+
 // ─── Phase 4d: cross-agent host matrix ────────────────────────────────
 export {
   HOST_ADAPTERS,
