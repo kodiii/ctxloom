@@ -23,6 +23,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { logger } from '../utils/logger.js';
 
 /**
  * Persisted shape — adds `ts` to the emitTelemetry() payload.
@@ -72,8 +73,34 @@ const DEFAULT_TELEMETRY_DIR = path.join(os.homedir(), '.ctxloom', 'telemetry');
  * the env-var IS the contract.
  */
 export function telemetryDir(): string {
-  return process.env.CTXLOOM_TELEMETRY_DIR ?? DEFAULT_TELEMETRY_DIR;
+  const raw = process.env.CTXLOOM_TELEMETRY_DIR ?? DEFAULT_TELEMETRY_DIR;
+  // Defense in depth (#142): if an operator typo or env-injection
+  // elsewhere supplies a path-traversal-style or non-absolute value,
+  // refuse it rather than silently creating directories under the
+  // wrong root. If `CTXLOOM_TELEMETRY_DIR` is malformed we fall back
+  // to the safe default — telemetry is best-effort, so silently
+  // logging once + using the default is the right failure mode
+  // (vs. throwing, which would break tool calls via the swallowed
+  // appendEvent try/catch and yield zero operator signal).
+  // NB: `path.resolve(relative)` would silently absolve a relative
+  // path against cwd; we want to reject relatives, so check the
+  // RAW value's absolute-ness — not the resolved form.
+  if (raw.includes('..') || !path.isAbsolute(raw)) {
+    if (!telemetryDirWarned) {
+      telemetryDirWarned = true;
+      logger.warn('CTXLOOM_TELEMETRY_DIR rejected — must be an absolute path with no ".." segments; using default', {
+        rejected: raw,
+        fallback: DEFAULT_TELEMETRY_DIR,
+      });
+    }
+    return DEFAULT_TELEMETRY_DIR;
+  }
+  return path.resolve(raw);
 }
+
+// Module-scope once-flag (#142): prevents log flooding when a
+// misconfigured env var triggers telemetryDir() on every event.
+let telemetryDirWarned = false;
 
 /**
  * Per-day filename. UTC so events emitted near midnight don't get
@@ -113,12 +140,38 @@ export function appendEvent(event: EventInput, now: Date = new Date()): void {
     const file = path.join(dir, filenameForDate(now));
     const persisted: PersistedEvent = { ts: now.toISOString(), ...event };
     fs.appendFileSync(file, JSON.stringify(persisted) + '\n', 'utf-8');
-  } catch {
-    // Intentionally swallowed — see fn comment. The stderr-side
-    // `logger.info()` in emitTelemetry already surfaced the event
-    // for live observability; losing the disk persist is a stats-
-    // visibility regression, not a correctness one.
+  } catch (err) {
+    // Surface the FIRST failure (#143) so an operator gets one
+    // signal that telemetry persistence is broken — EACCES, ENOSPC,
+    // EROFS, write-protected mount, misconfigured TELEMETRY_DIR, etc.
+    // Subsequent failures in the same process are swallowed silently
+    // to avoid log flooding on a persistent error. The MCP server
+    // still never faults on a telemetry error — telemetry is
+    // observability, not correctness.
+    if (!appendFailureWarned) {
+      appendFailureWarned = true;
+      logger.warn('telemetry sink append failed (further failures suppressed)', {
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
   }
+}
+
+// Module-scope once-flag (#143): first appendFileSync failure logs
+// a single warn; subsequent failures are silent.
+let appendFailureWarned = false;
+
+/**
+ * Test-only: reset the module-scope once-flags so tests can assert
+ * the "first failure warns, subsequent failures silent" contract
+ * without depending on test execution order.
+ *
+ * @internal — not part of the public API; exported for test hooks
+ * only.
+ */
+export function __resetTelemetryWarnFlagsForTests(): void {
+  telemetryDirWarned = false;
+  appendFailureWarned = false;
 }
 
 export interface ReadEventsOptions {
@@ -167,6 +220,12 @@ export function readEvents(opts: ReadEventsOptions = {}): PersistedEvent[] {
       // Boundary filter — files are date-bucketed but individual
       // events still need a precise timestamp check at the edges.
       const eventTs = new Date(parsed.ts).getTime();
+      // Skip malformed dates (#144): `new Date('not-a-date').getTime()`
+      // is NaN, and `NaN < x || NaN > x` are BOTH false — so without
+      // this guard a corrupted timestamp would silently pass the
+      // boundary filter and contaminate budget-stats percentile
+      // calculations downstream.
+      if (!Number.isFinite(eventTs)) continue;
       if (eventTs < since.getTime() || eventTs > until.getTime()) continue;
       if (opts.tool && parsed.tool !== opts.tool) continue;
       out.push(parsed);
