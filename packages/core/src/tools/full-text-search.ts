@@ -139,6 +139,7 @@ export function registerFullTextSearchTool(registry: ToolRegistry, ctx: ServerCo
       ): Promise<string> => {
         if (!hasBudgetArgs(args)) return full;
         const result = await enforceBudget({
+          ctx,
           full,
           args: readBudgetArgs(args),
           toolName: 'ctx_full_text_search',

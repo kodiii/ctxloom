@@ -183,6 +183,7 @@ export function registerExecutionFlowTool(registry: ToolRegistry, ctx: ServerCon
       const maybeBudget = async (full: string): Promise<string> => {
         if (!hasBudgetArgs(args)) return full;
         const result = await enforceBudget({
+          ctx,
           full,
           args: readBudgetArgs(args),
           toolName: 'ctx_execution_flow',

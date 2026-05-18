@@ -143,6 +143,7 @@ export function registerFindLargeFunctionsTool(registry: ToolRegistry, ctx: Serv
 
       if (!hasBudgetArgs(args)) return full;
       const result = await enforceBudget({
+        ctx,
         full,
         args: readBudgetArgs(args),
         toolName: 'ctx_find_large_functions',

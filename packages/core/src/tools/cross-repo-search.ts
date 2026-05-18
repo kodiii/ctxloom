@@ -174,7 +174,7 @@ interface CrossRepoResult {
 
 export function registerCrossRepoSearchTool(
   registry: ToolRegistry,
-  _ctx: ServerContext,
+  ctx: ServerContext,
   registryFilePath?: string,
 ): void {
   // Default registry path: ~/.ctxloom/repos.json
@@ -315,6 +315,7 @@ export function registerCrossRepoSearchTool(
 
       if (!hasBudgetArgs(args)) return full;
       const result = await enforceBudget({
+        ctx,
         full,
         args: readBudgetArgs(args),
         toolName: 'ctx_cross_repo_search',

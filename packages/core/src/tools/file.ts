@@ -78,6 +78,7 @@ export function registerFileTool(registry: ToolRegistry, ctx: ServerContext): vo
       const skeletonizer = await ctx.getSkeletonizer(parsed.project_root);
 
       const result = await enforceBudget({
+        ctx,
         full,
         args: readBudgetArgs(args),
         toolName: 'ctx_get_file',

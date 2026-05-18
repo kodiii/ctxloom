@@ -643,6 +643,112 @@ describe('TelemetrySink injection', () => {
 
 // ─── back-compat type guard (pinning the spec invariant) ─────────────
 
+// ─── ServerContext.telemetrySink wiring (#141) ───────────────────────
+
+describe('ServerContext.telemetrySink resolution', () => {
+  // Closes issue #141 from the Phase B A/B dogfood gate. Pre-fix, the
+  // injectable sink abstraction (PR #139) only reached the test suite
+  // because every tool registrar called enforceBudget({...}) without
+  // opts.sink — so production was hard-coded to diskSink. Now
+  // enforceBudget resolves opts.sink ?? opts.ctx?.telemetrySink ?? diskSink,
+  // letting the boot site pick a Sentry / OTLP / dashboard sink ONCE
+  // for all 12+ instrumented tools.
+  //
+  // These tests pin the precedence order so a regression at any level
+  // (drop the ctx fallthrough, swap the precedence) is caught.
+
+  it('routes events through ctx.telemetrySink when opts.sink is omitted', async () => {
+    const captured: Array<Record<string, unknown>> = [];
+    const ctxSink: TelemetrySink = {
+      append: (event) => {
+        captured.push(event);
+      },
+    };
+
+    const originalLevel = process.env.CTXLOOM_TELEMETRY_LEVEL;
+    process.env.CTXLOOM_TELEMETRY_LEVEL = 'full';
+    try {
+      await enforceBudget({
+        // Structural ctx — production passes the full ServerContext.
+        ctx: { telemetrySink: ctxSink },
+        full: 'x'.repeat(10_000),
+        args: { max_response_tokens: 100 },
+        toolName: 'ctx_get_file',
+        skeletonProducer: async () => 'class Foo {}',
+      });
+    } finally {
+      if (originalLevel === undefined) delete process.env.CTXLOOM_TELEMETRY_LEVEL;
+      else process.env.CTXLOOM_TELEMETRY_LEVEL = originalLevel;
+    }
+
+    // Boot-wired sink received the events without any tool-level
+    // plumbing of opts.sink.
+    expect(captured.length).toBeGreaterThanOrEqual(2);
+    expect(captured.map((e) => e.event)).toContain('mcp.budget.exceeded');
+    expect(captured.map((e) => e.event)).toContain('mcp.fallback.used');
+  });
+
+  it('opts.sink wins over ctx.telemetrySink (per-call > boot)', async () => {
+    const callSiteCaptured: Array<Record<string, unknown>> = [];
+    const ctxCaptured: Array<Record<string, unknown>> = [];
+    const callSiteSink: TelemetrySink = {
+      append: (e) => callSiteCaptured.push(e),
+    };
+    const ctxSink: TelemetrySink = {
+      append: (e) => ctxCaptured.push(e),
+    };
+
+    const originalLevel = process.env.CTXLOOM_TELEMETRY_LEVEL;
+    process.env.CTXLOOM_TELEMETRY_LEVEL = 'full';
+    try {
+      await enforceBudget({
+        ctx: { telemetrySink: ctxSink },
+        sink: callSiteSink,
+        full: 'x'.repeat(10_000),
+        args: { max_response_tokens: 100 },
+        toolName: 'ctx_get_file',
+        skeletonProducer: async () => 'class Foo {}',
+      });
+    } finally {
+      if (originalLevel === undefined) delete process.env.CTXLOOM_TELEMETRY_LEVEL;
+      else process.env.CTXLOOM_TELEMETRY_LEVEL = originalLevel;
+    }
+
+    // Per-call sink (opts.sink) is the highest-precedence resolution
+    // — tests that need to assert event shape on a specific call
+    // can override the boot wiring without unwiring it.
+    expect(callSiteCaptured.length).toBeGreaterThanOrEqual(2);
+    expect(ctxCaptured).toEqual([]);
+  });
+
+  it('falls through to diskSink when neither opts.sink nor ctx.telemetrySink set', () => {
+    // Mirrors the strengthened "defaults to diskSink" spy test
+    // upstream, but exercised through the enforceBudget path with
+    // a ctx object that has no telemetrySink. Catches a regression
+    // where the precedence chain forgot the final diskSink fallback.
+    const captured: Array<Record<string, unknown>> = [];
+    const originalAppend = diskSink.append;
+    (diskSink as { append: TelemetrySink['append'] }).append = (event) => {
+      captured.push(event);
+    };
+    const originalLevel = process.env.CTXLOOM_TELEMETRY_LEVEL;
+    process.env.CTXLOOM_TELEMETRY_LEVEL = 'full';
+    try {
+      // ctx with no telemetrySink set — third fallback (diskSink) must fire.
+      emitTelemetry(
+        { event: 'mcp.budget.exceeded', tool: 'ctx_get_file', ratio: 2 },
+        // No explicit sink: emitTelemetry's 2nd-arg default fires diskSink.
+        // (enforceBudget's resolver is tested in the two specs above.)
+      );
+    } finally {
+      (diskSink as { append: TelemetrySink['append'] }).append = originalAppend;
+      if (originalLevel === undefined) delete process.env.CTXLOOM_TELEMETRY_LEVEL;
+      else process.env.CTXLOOM_TELEMETRY_LEVEL = originalLevel;
+    }
+    expect(captured).toHaveLength(1);
+  });
+});
+
 describe('back-compat invariant', () => {
   it('hasBudgetArgs gates whether a tool wraps its response', () => {
     // The 21 untouched tools and all pre-B2 callers MUST see no

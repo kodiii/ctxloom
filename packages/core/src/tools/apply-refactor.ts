@@ -138,6 +138,7 @@ export function registerApplyRefactorTool(registry: ToolRegistry, ctx: ServerCon
 
       if (!hasBudgetArgs(args)) return full;
       const result = await enforceBudget({
+        ctx,
         full,
         args: readBudgetArgs(args),
         toolName: 'ctx_apply_refactor',
