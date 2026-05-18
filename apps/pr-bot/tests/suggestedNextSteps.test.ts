@@ -15,6 +15,7 @@ import { describe, it, expect } from 'vitest';
 import {
   computeSuggestedSteps,
   renderSuggestedStepsSection,
+  isSafePathForMarkdown,
 } from '../src/review/suggestedNextSteps.js';
 import type { ReviewPayload } from '../src/review/types.js';
 import { renderSummary } from '../src/review/renderSummary.js';
@@ -254,5 +255,74 @@ describe('renderSummary integration', () => {
     // change can't accidentally leave a dangling header.
     const body = renderSummary(payload());
     expect(body).toContain('Suggested next steps');
+  });
+});
+
+// ─── v1.5.0 dogfood M1 fix: filename injection safety ────────────────
+
+describe('isSafePathForMarkdown (M1 from v1.5.0 dogfood)', () => {
+  it.each([
+    'src/foo.ts',
+    'packages/core/src/budget/budget.ts',
+    'apps/pr-bot/tests/suggestedNextSteps.test.ts',
+    'docs/2026-05-18-agent-harness.md',
+    'a/b/c-d_e+f.ts',
+  ])('%j is safe', (p) => {
+    expect(isSafePathForMarkdown(p)).toBe(true);
+  });
+
+  it.each([
+    'src/`evil`.ts',                          // backtick — breaks inline code
+    'src/<script>.ts',                        // HTML tag injection
+    'src/foo\nbar.ts',                        // newline — breaks <details>
+    'src/foo\rbar.ts',                        // carriage return
+    'src/foo|bar.ts',                         // table cell escape
+    'src/foo\\bar.ts',                        // backslash — Markdown escape
+    'src/foo bar.ts',                         // whitespace (rejected for safety)
+    '',                                       // empty
+    'a'.repeat(501),                          // overlong
+    '../../../etc/passwd',                    // path traversal — also rejected (good defense in depth)
+    'src/</details>injection.md',             // details escape
+  ])('%j is rejected', (p) => {
+    expect(isSafePathForMarkdown(p)).toBe(false);
+  });
+
+  it('non-string inputs are rejected without throwing', () => {
+    expect(isSafePathForMarkdown(null as unknown as string)).toBe(false);
+    expect(isSafePathForMarkdown(undefined as unknown as string)).toBe(false);
+    expect(isSafePathForMarkdown(42 as unknown as string)).toBe(false);
+  });
+
+  it('computeSuggestedSteps drops blast suggestion when top file fails the safety check', () => {
+    // Construct a high-risk payload where the highest-importer file
+    // has a hostile name. The blast suggestion should NOT fire.
+    const steps = computeSuggestedSteps(
+      payload({
+        riskLabel: 'high',
+        changedFiles: [
+          changedFile({ path: 'src/<malicious>.ts', importerCount: 100 }),
+          changedFile({ path: 'src/safe.ts', importerCount: 1 }),
+        ],
+      }),
+    );
+    // No blast suggestion (top file rejected by safety check, and we
+    // don't fall back to the next-best file — leaving it out is the
+    // safe default).
+    expect(steps.some((s) => s.command.startsWith('/ctxloom-blast'))).toBe(false);
+  });
+
+  it('renderSuggestedStepsSection only contains its OWN wrapping </details>, no injected HTML', () => {
+    // Belt-and-suspenders: the section legitimately wraps itself in
+    // <details>...</details>. A safe input must NOT introduce
+    // additional `</details>` (which would prematurely close the
+    // block) or any `<script` tags or triple-backtick code fences.
+    const body = renderSuggestedStepsSection([
+      { command: '/ctxloom-blast safe-path.ts', rationale: 'r' },
+    ]);
+    expect(body).toContain('safe-path.ts');
+    // Exactly one closing details tag (the section's own).
+    expect((body.match(/<\/details>/g) ?? []).length).toBe(1);
+    expect(body).not.toMatch(/<script/);
+    expect(body).not.toMatch(/```/);
   });
 });

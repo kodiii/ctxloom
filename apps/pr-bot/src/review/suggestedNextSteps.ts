@@ -120,7 +120,43 @@ function pickTopRiskFile(payload: ReviewPayload): string | null {
   const top = ranked[0];
   if (!top.path) return null;
   if ((top.importerCount ?? 0) === 0) return null;
+  // v1.5.0 dogfood M1 fix: PR filenames are USER INPUT — a malicious
+  // PR can use backticks / angle brackets / newlines in filenames to
+  // escape the inline-code span + the wrapping <details> block,
+  // injecting arbitrary Markdown/HTML into every review comment. The
+  // allowlist regex rejects anything outside a safe charset; this is
+  // the cheapest defense vs. trying to escape Markdown perfectly.
+  // Git allows broader filenames, but EVERY reasonable PR uses
+  // strict-ASCII paths, so the false-positive cost is near zero.
+  if (!isSafePathForMarkdown(top.path)) return null;
   return top.path;
+}
+
+/**
+ * Allowlist regex for file paths safe to interpolate into the Markdown
+ * suggested-steps section. Permits ASCII alphanumerics, dot, slash,
+ * dash, underscore, plus sign. Rejects:
+ *
+ *   - Backticks (would break out of inline-code spans)
+ *   - Angle brackets (HTML tag injection — \<details\> escape)
+ *   - Newlines / carriage returns (would break out of <details>)
+ *   - Pipe (Markdown table cell escape)
+ *   - Backslash (Markdown escape introducer)
+ *   - Whitespace anywhere (paths-with-spaces are rare in ctxloom-relevant repos)
+ *
+ * Closes M1 from the v1.5.0 dogfood security review.
+ *
+ * @internal — exported for unit tests
+ */
+export function isSafePathForMarkdown(p: string): boolean {
+  if (typeof p !== 'string' || p.length === 0 || p.length > 500) return false;
+  if (!/^[A-Za-z0-9._/\-+]+$/.test(p)) return false;
+  // Defense in depth: reject `..` segments. The bot doesn't read the
+  // file, so a traversal-shaped path can't open `/etc/passwd` here —
+  // but echoing one into a public review comment is still confusing
+  // for the user. Reject as a hygiene measure.
+  if (p.split('/').includes('..')) return false;
+  return true;
 }
 
 /**

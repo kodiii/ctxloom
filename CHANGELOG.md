@@ -5,6 +5,113 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
 ---
 
+## [1.5.0] — 2026-05-18
+
+**Phase 4 — Agent-Harness completion.** v1.4.0 shipped the
+harness layer (self-guiding API + install pipeline + skills).
+v1.5.0 adds the four hardening pieces that were planned to follow:
+server-enforced call budget, telemetry-learned suggestions, PR-bot
+integration, and cross-agent host matrix. Every Phase 4 finding
+from the agent-harness plan
+([docs/superpowers/plans/2026-05-18-agent-harness.md](docs/superpowers/plans/2026-05-18-agent-harness.md))
+is now shipped.
+
+### Added
+
+- **Server-enforced task-tool budget** (#152). The ≤8-call protocol
+  target is now ENFORCED in \`ToolRegistry.dispatch\` instead of
+  living only in CLAUDE.md prose. Agents exceeding the ceiling
+  (default 8 calls, override via \`CTXLOOM_TASK_TOOL_BUDGET=N\`) get
+  their arguments transparently overridden to skeleton/minimal mode
+  — the bot can't ignore the rule and burn unbounded tokens.
+  Inactivity gap (90s) auto-resets the budget for the next task.
+  Five tools exempt from counting: \`ctx_get_minimal_context\` (the
+  orientation anchor must always be reachable), \`ctx_status\`,
+  \`ctx_get_workflow\`, \`ctx_get_rules\`, \`ctx_suggested_questions\`.
+  Single \`mcp.task_budget.exceeded\` telemetry event per breach
+  (log-flood safe). Honors the existing \`CTXLOOM_DISABLE_BUDGET=1\`
+  kill switch.
+- **Telemetry-learned \`next_tool_suggestions\`** (#153). Opt-in via
+  \`CTXLOOM_LEARNED_SUGGESTIONS=1\`. Mines
+  \`~/.ctxloom/telemetry/budget-events-*.jsonl\` to derive tool-
+  transition rules from real usage (≥3 samples per pair, default
+  14-day window). Replaces author-curated static rules from
+  v1.4.0's Phase 1b where data exists, falls through to static
+  otherwise. Token estimates filled from observed
+  \`original_tokens\` averages — agents see real cost shape, not
+  author guesses. Cached 1h; ~0ns per-call cost.
+- **PR-bot suggests Phase 3 skills** (#155). Every review comment
+  now ends in a "Suggested next steps" section with risk-tiered
+  slash-command recommendations the PR author can paste into local
+  Claude Code. Recommendations: always \`/ctxloom-review-pr <N>\`;
+  high/medium risk + top-importer file → \`/ctxloom-blast <file>\`;
+  multi-file + non-low risk → \`/ctxloom-coverage-gap\`; large diff
+  (≥10 files) → \`/ctxloom-explore\`. Wrapped in \`<details>\` so it
+  doesn't dominate the comment.
+- **Cross-agent host matrix** (#154). \`ctxloom init --host=<id>\`
+  writes rule files for additional agent hosts beyond
+  Claude/AGENTS/Gemini. Supported ids: \`cursor\` →
+  \`.cursorrules\`, \`aider\` → \`CONVENTIONS.md\`, \`copilot\` →
+  \`.github/copilot-instructions.md\`, \`windsurf\` →
+  \`.windsurfrules\`. \`--host=all\` expands to every adapter;
+  comma-separated values + multiple flags merge. Unknown ids drop
+  with a warning (not a hard failure). All paths go through the
+  same \`safeJoin()\` boundary as Phase 2.
+
+### Privacy + security (cross-cutting)
+
+- Task-budget tracker is process-local — no IPC, no disk
+  persistence, no user input persisted in tracker state.
+- Telemetry learner reads only event name + tool name + token
+  counts (privacy contract pinned by PR #140). Allowlist filter
+  drops references to deleted/renamed tools. Token estimates
+  clamped to [0, 100000]. Parse failures fall through to empty →
+  static rules take over.
+- PR-bot suggested-steps section built from author-controlled
+  static templates + PR metadata only (number, file paths from
+  \`changedFiles\`). No content from the diff itself echoed.
+- Cross-agent host adapters render via author-controlled templates
+  — no user input in generated files.
+
+### Tests
+
+- 1133 → 1201 (+68 net across the cohort):
+  - 22 task-budget tests (counter, inactivity gap, kill switch,
+    env override, arg injection, dispatch integration)
+  - 17 telemetry-learner tests (transition counting, session-gap
+    boundaries, allowlist, token aggregation, cache, robustness,
+    suggestNext integration, opt-in gate)
+  - 29 host-matrix tests (adapter registry, --host opt-in,
+    \`all\` expansion, dedup, unknown-id warning, idempotency,
+    drift recovery, dry-run, path safety, content shape)
+- 287 → 305 PR-bot tests (+18 suggested-steps tests: risk-tiered
+  recommendations, top-file picking, Markdown shape, integration
+  ordering)
+
+### Migration
+
+Zero migration required. All changes are additive or behind opt-in
+flags:
+
+- Task budget enforcement: triggered only when an agent exceeds 8
+  calls. Existing agents that stay under the protocol target see
+  no change.
+- Learned suggestions: opt-in via \`CTXLOOM_LEARNED_SUGGESTIONS=1\`.
+  Default behavior is the v1.4.0 static rules.
+- Cross-agent hosts: opt-in via \`--host=<id>\`. Default install is
+  unchanged from v1.4.0.
+- PR-bot suggested-steps section: always present, wrapped in
+  \`<details>\` so it's collapsed by default.
+
+### Looking forward
+
+Phase 4 closes the agent-harness implementation arc. v1.5.x
+follow-ups will tune the constants (per-tool
+\`DEFAULT_MAX_RESPONSE_TOKENS\` from real p75 telemetry, learner
+defaults from observed adoption) once usage data accumulates.
+
+---
+
 ## [1.4.0] — 2026-05-18
 
 **Agent-First Harness** — the headline shift in v1.4.0. ctxloom now

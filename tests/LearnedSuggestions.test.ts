@@ -278,6 +278,50 @@ describe('suggestNext — learned beats static (opt-in via CTXLOOM_LEARNED_SUGGE
   });
 });
 
+// ─── v1.5.0 dogfood H1 fix: cache-key correctness ────────────────────
+
+describe('getLearnedRules cache + allowlist composition (H1)', () => {
+  it('cached rules stay unfiltered; allowlist is applied at READ time', () => {
+    const events: PersistedEvent[] = [];
+    for (let i = 0; i < 5; i++) {
+      events.push(evt(i * 1000, 'A'), evt(i * 1000 + 500, 'B'));
+    }
+    // First call: NO allowlist → caches the unfiltered { A: [{ tool: 'B' }] }.
+    const first = getLearnedRules({ events, minSamples: 3 });
+    expect(first.A?.[0]?.tool).toBe('B');
+    // Second call: allowlist that EXCLUDES B → must return empty, not
+    // the cached unfiltered result. Pre-fix this returned B (cache poisoning).
+    const second = getLearnedRules({ events: [], minSamples: 3, registeredTools: new Set(['A']) });
+    expect(second.A).toBeUndefined();
+    // Third call: allowlist that INCLUDES B → must surface B again.
+    // Proves the cache survived both prior calls + the read-time
+    // filter doesn't mutate the stored payload.
+    const third = getLearnedRules({ events: [], minSamples: 3, registeredTools: new Set(['A', 'B']) });
+    expect(third.A?.[0]?.tool).toBe('B');
+  });
+
+  it('caching first WITH allowlist still serves subsequent NO-allowlist correctly', () => {
+    // Inverse direction: cache primed with a restrictive allowlist.
+    // The cache stores the unfiltered superset regardless of caller
+    // opts, so a subsequent no-allowlist call must see ALL transitions.
+    const events: PersistedEvent[] = [];
+    for (let i = 0; i < 5; i++) {
+      events.push(evt(i * 1000, 'A'), evt(i * 1000 + 500, 'B'));
+      events.push(evt(i * 1000 + 10_000, 'C'), evt(i * 1000 + 10_500, 'D'));
+    }
+    const first = getLearnedRules({
+      events,
+      minSamples: 3,
+      registeredTools: new Set(['A', 'B']), // C→D filtered for THIS caller
+    });
+    expect(first.A?.[0]?.tool).toBe('B');
+    expect(first.C).toBeUndefined();
+    // Second NO-allowlist call: should see C→D from the cache.
+    const second = getLearnedRules({ events: [], minSamples: 3 });
+    expect(second.C?.[0]?.tool).toBe('D');
+  });
+});
+
 describe('suggestNext — learner disabled by default', () => {
   it('with CTXLOOM_LEARNED_SUGGESTIONS unset, learned rules are ignored', () => {
     const orig = process.env.CTXLOOM_LEARNED_SUGGESTIONS;
