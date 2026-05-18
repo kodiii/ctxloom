@@ -206,7 +206,13 @@ function buildActivityFromOverlay(store: GitOverlayStore): CandidateActivity[] {
 //
 // Tests use either the same internal key or a CTXLOOM_LICENSE_KEY env
 // var that hits the validate endpoint — no source-level bypass.
-const LICENSE_GATE_BYPASS_COMMANDS = new Set(['trial', 'activate', 'deactivate', 'status', '--help']);
+// `budget-stats` is a purely local read-only command (parses JSONL
+// files under ~/.ctxloom/telemetry/) — no MCP server, no API call,
+// no graph build. Same class as `status`. Requiring a valid license
+// just to inspect local telemetry would be hostile during license-
+// recovery scenarios (expired/revoked/network-failing-validate).
+// Added to bypass set per TEST-135-3 follow-up.
+const LICENSE_GATE_BYPASS_COMMANDS = new Set(['trial', 'activate', 'deactivate', 'status', 'budget-stats', '--help']);
 
 async function checkLicense(): Promise<void> {
   if (command !== undefined && LICENSE_GATE_BYPASS_COMMANDS.has(command)) return;
