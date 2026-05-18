@@ -5,6 +5,53 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
 ---
 
+## [1.5.2] — 2026-05-18
+
+Patch release — surfaces budget telemetry in the web dashboard.
+
+### Added
+
+- **Dashboard Budget page** (#159). New `/budget` route in the web
+  dashboard with a window selector (1d/7d/14d/30d) and tool filter.
+  Mirrors `ctxloom budget-stats` CLI output — same `summarizeBudgetEvents()`
+  aggregator from `@ctxloom/core`, so the numbers match exactly — and
+  adds a per-day breach sparkline the CLI can't render. Includes an
+  empty-state callout with the `CTXLOOM_TELEMETRY_LEVEL=full` hint
+  for users who haven't opted into telemetry yet.
+- **New API endpoint** `GET /api/budget-events?window=Nd&tool=<name>`.
+  Reads `~/.ctxloom/telemetry/budget-events-*.jsonl` via the existing
+  `readEvents()` helper. Returns aggregated fallback distribution +
+  original-token percentile distribution + per-day breach buckets.
+- **`@ctxloom/core` barrel** now exports `readEvents`, `telemetryDir`,
+  `filenameForDate`, `summarizeBudgetEvents`, `renderBudgetSummary`,
+  and the associated types (`PersistedEvent`, `FallbackRow`,
+  `DistributionRow`, `BudgetStatsSummary`).
+
+### Tests
+
+- 1214 → 1214 root (no change — feature is dashboard-only)
+- 47 → 56 dashboard (+9 new tests for the route covering empty-state,
+  fallback + percentile aggregation, window parsing, tool filter,
+  invalid-window 400, per-day breach buckets without double-counting)
+
+### Migration
+
+Zero migration required. Existing users who upgrade get the new
+dashboard page automatically when they next run `ctxloom dashboard`.
+Users who haven't enabled telemetry see an empty-state callout
+explaining how to opt in.
+
+### Companion non-npm work
+
+- [kodiii/ctxloomAPP #32](https://github.com/kodiii/ctxloomAPP/pull/32)
+  refreshes the marketing landing + docs pages with v1.4.0–v1.5.1
+  features (`ctx_get_minimal_context`, `--host=<id>`, Agent-First
+  Harness, prepackaged skills, task-tool budget enforcement,
+  telemetry-learned suggestions). Auto-deploys via the hosted
+  pipeline — no npm release tied to it.
+
+---
+
 ## [1.5.1] — 2026-05-18
 
 Patch release — hardening cohort surfaced by v1.5.0's multi-agent
