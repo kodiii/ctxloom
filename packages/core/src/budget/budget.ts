@@ -21,7 +21,14 @@
  * meta envelope only appears when a caller opts in.
  */
 import { logger } from '../utils/logger.js';
-import { appendEvent } from './eventCollector.js';
+import { diskSink, type TelemetrySink } from './eventCollector.js';
+
+// Re-export so existing consumers that import TelemetrySink from
+// the budget module's barrel-equivalent (budget.ts) keep working.
+// The actual type definition lives next to its default
+// implementation in eventCollector.ts.
+export type { TelemetrySink };
+export { diskSink };
 
 // ─── Token estimator ──────────────────────────────────────────────────
 
@@ -129,18 +136,26 @@ interface TelemetryEvent {
  * Uses the standard logger so events surface in JSON mode (MCP) and
  * are suppressed in CLI mode — same plumbing as every other event.
  *
+ * The sink controls where the EVENT is persisted (default: disk
+ * JSONL via `diskSink`). Tests typically pass an in-memory sink so
+ * they can assert event shape without touching the disk or
+ * scoping CTXLOOM_TELEMETRY_DIR. The stderr `logger.info()` call
+ * fires independently — it's the live-observability channel and
+ * is not controlled by the sink (callers that want to mute it
+ * use LOG_LEVEL or CTXLOOM_LOG_MODE).
+ *
  * Exported so tests can pin event shape without spying on logger.
  */
-export function emitTelemetry(event: TelemetryEvent): void {
+export function emitTelemetry(event: TelemetryEvent, sink: TelemetrySink = diskSink): void {
   if (process.env.CTXLOOM_TELEMETRY_LEVEL !== 'full') return;
   // Live observability: stderr JSON line via the shared logger so
-  // event also flows through whatever the user has attached.
+  // the event also flows through whatever the user has attached.
   logger.info(event.event, event);
-  // Persistent observability: append to ~/.ctxloom/telemetry/ so
-  // `ctxloom budget-stats` can re-derive per-tool p50/p75/p95 later.
-  // Sink failures are swallowed inside appendEvent — telemetry must
+  // Persistent observability: route through the sink. Default sink
+  // writes to ~/.ctxloom/telemetry/ via `appendEvent`. Sink failures
+  // are swallowed inside the sink implementation — telemetry must
   // never block the request that fired the event.
-  appendEvent(event);
+  sink.append(event);
 }
 
 // ─── enforceBudget — the fallback ladder ─────────────────────────────
@@ -170,6 +185,13 @@ export interface EnforceBudgetOptions {
   skeletonProducer?: () => Promise<string | null>;
   /** Override the default chars/4 estimator. */
   estimator?: TokenEstimator;
+  /**
+   * Override the default disk-JSONL telemetry sink. Tests use an
+   * in-memory sink to assert event emission without touching
+   * ~/.ctxloom/telemetry/. Web dashboard / Sentry / OTLP exporters
+   * are the other natural use case. Defaults to `diskSink`.
+   */
+  sink?: TelemetrySink;
 }
 
 export interface BudgetedResult {
@@ -201,6 +223,10 @@ export interface BudgetedResult {
 export async function enforceBudget(opts: EnforceBudgetOptions): Promise<BudgetedResult> {
   const { full, args, toolName, defaultMaxTokens, skeletonProducer } = opts;
   const estimate = opts.estimator ?? defaultTokenEstimator;
+  // Default to the disk-JSONL sink. Tests inject a mem sink to
+  // assert event emission without disk I/O; alternate transports
+  // (dashboard / Sentry / OTLP) can plug in here too.
+  const sink: TelemetrySink = opts.sink ?? diskSink;
 
   // Pre-compute the full-response token count once — used by every
   // downstream branch for the meta envelope.
@@ -282,7 +308,7 @@ export async function enforceBudget(opts: EnforceBudgetOptions): Promise<Budgete
     original_tokens: originalTokens,
     budget,
     ratio: originalTokens / budget,
-  });
+  }, sink);
 
   const mode = args.on_budget_exceeded ?? 'skeleton';
 
@@ -308,7 +334,7 @@ export async function enforceBudget(opts: EnforceBudgetOptions): Promise<Budgete
       tool: toolName,
       fallback_reason: 'budget_exceeded',
       mode: 'truncate',
-    });
+    }, sink);
     return {
       text: sliced,
       meta: {
@@ -331,7 +357,7 @@ export async function enforceBudget(opts: EnforceBudgetOptions): Promise<Budgete
         tool: toolName,
         fallback_reason: 'budget_exceeded',
         mode: 'skeleton',
-      });
+      }, sink);
       return {
         text: skeleton,
         meta: {
@@ -349,7 +375,7 @@ export async function enforceBudget(opts: EnforceBudgetOptions): Promise<Budgete
       tool: toolName,
       fallback_reason: 'budget_exceeded',
       mode: 'skeleton+truncate',
-    });
+    }, sink);
     return {
       text: slicedSk,
       meta: {
@@ -368,7 +394,7 @@ export async function enforceBudget(opts: EnforceBudgetOptions): Promise<Budgete
     tool: toolName,
     fallback_reason: 'skeleton_failed',
     mode: 'truncate-fallback',
-  });
+  }, sink);
   return {
     text: sliced,
     meta: {

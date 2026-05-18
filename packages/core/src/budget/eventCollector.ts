@@ -181,3 +181,50 @@ function isPersistedEvent(v: unknown): v is PersistedEvent {
   const o = v as Record<string, unknown>;
   return typeof o.ts === 'string' && typeof o.event === 'string' && typeof o.tool === 'string';
 }
+
+// ─── TelemetrySink — injectable transport ────────────────────────────
+
+/**
+ * A pluggable transport for telemetry events. The default
+ * implementation (`diskSink` below) writes JSONL to
+ * `~/.ctxloom/telemetry/` via `appendEvent`. Alternate sinks make
+ * sense for:
+ *
+ *   - tests (in-memory ring buffer; asserts events without
+ *     touching the disk or scoping CTXLOOM_TELEMETRY_DIR)
+ *   - the web dashboard (in-process ring buffer feeding a live
+ *     UI panel)
+ *   - external observability backends (a Sentry-breadcrumb sink,
+ *     an OpenTelemetry exporter, etc.)
+ *
+ * Closes ARCH-135-1 from PR #135's dogfood: pre-refactor every
+ * caller of `emitTelemetry` transitively pulled in the disk sink
+ * via static import. With the sink behind an interface and threaded
+ * through `EnforceBudgetOptions.sink`, callers can pick their
+ * transport explicitly and only the bootstrap site knows about disk
+ * persistence.
+ *
+ * @public
+ */
+export interface TelemetrySink {
+  /**
+   * Best-effort append. MUST swallow errors — telemetry is
+   * observability, not correctness; a sink failure must never
+   * propagate to the caller and surface as a tool-call error.
+   * The default `diskSink` enforces this; custom sinks should too.
+   */
+  append(event: EventInput): void;
+}
+
+/**
+ * Default sink — writes to `~/.ctxloom/telemetry/budget-events-<UTC-day>.jsonl`
+ * via the existing `appendEvent` function. Error-swallowing is
+ * inherited from `appendEvent`'s try/catch.
+ *
+ * @public
+ */
+export const diskSink: TelemetrySink = {
+  append(event: EventInput): void {
+    appendEvent(event);
+  },
+};
