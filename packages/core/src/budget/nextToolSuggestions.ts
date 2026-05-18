@@ -28,7 +28,12 @@
  *   - Allowlist returns suggestions silently filtered, not the whole
  *     set rejected — graceful degradation if a future tool spec lies
  *     about a follow-up tool that hasn't been registered yet
+ *
+ * Phase 4b adds telemetry-learned rules via `getLearnedRules()` —
+ * they take priority over static when the user has accumulated
+ * enough usage samples.
  */
+import { getLearnedRules } from './learnedSuggestions.js';
 
 /**
  * Shape attached under `meta.next_tool_suggestions` on every budget-
@@ -399,18 +404,23 @@ function clampEstimate(n: number): number {
 /**
  * Look up next-tool suggestions for a tool that just ran.
  *
+ * Resolution order:
+ *
+ *   1. **Learned rules** (Phase 4b) — telemetry-derived suggestions
+ *      from `getLearnedRules()`. Reflects how agents actually use
+ *      this tool in this user's recent history. Cached 1h.
+ *      Returned ONLY if the user has accumulated enough telemetry
+ *      (≥3 transition samples per pair, default 14-day window).
+ *   2. **Static rules** — author-curated fallback for tools the
+ *      learner hasn't seen yet. Always present; covers all tools.
+ *
  * @param fromTool — name of the tool that produced the response we're
  *   attaching suggestions to.
  * @param registeredTools — OPTIONAL canonical set of registered tool
  *   names from `ToolRegistry.list()`. When provided, suggestions
- *   pointing at non-registered tools are filtered out. When omitted,
- *   no filter applies — appropriate for v1.4.0 where suggestions
- *   come exclusively from author-curated static rules whose targets
- *   are pinned to the registered set by the drift test
- *   (`tests/NextToolSuggestions.test.ts`). Phase 4b's telemetry
- *   learner will require this param.
- * @returns up to 3 suggestions, allowlist-filtered (if param given),
- *   with clamped token estimates. Empty array if no rules exist.
+ *   pointing at non-registered tools are filtered out.
+ * @returns up to 3 suggestions with clamped token estimates. Empty
+ *   array if no rules exist.
  *
  * @public
  */
@@ -418,6 +428,26 @@ export function suggestNext(
   fromTool: string,
   registeredTools?: ReadonlySet<string>,
 ): NextToolSuggestion[] {
+  // Phase 4b: try learned rules first when the user has opted in via
+  // CTXLOOM_LEARNED_SUGGESTIONS=1. The learner is the higher-priority
+  // source because real usage beats author guesses once enough samples
+  // accumulate — but it's opt-in for v1.5.0 so existing test
+  // assertions + zero-telemetry deployments aren't affected by the
+  // change. Future versions may flip the default once the learner
+  // earns user trust.
+  if (process.env.CTXLOOM_LEARNED_SUGGESTIONS === '1') {
+    const learned = getLearnedRules({ registeredTools })[fromTool];
+    if (learned && learned.length > 0) {
+      return learned.slice(0, 3).map((s) => ({
+        tool: s.tool,
+        args: s.args,
+        why: s.why,
+        estimated_tokens: clampEstimate(s.estimated_tokens),
+      }));
+    }
+  }
+
+  // Fallback to author-curated static rules.
   const raw = STATIC_RULES[fromTool] ?? [];
   const filtered = registeredTools
     ? raw.filter((s) => registeredTools.has(s.tool))

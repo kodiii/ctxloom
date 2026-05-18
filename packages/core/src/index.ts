@@ -250,3 +250,14 @@ export {
   __resetTaskBudgetTrackerForTests,
 } from './budget/taskBudget.js';
 export type { TaskBudgetDecision } from './budget/taskBudget.js';
+
+// ─── Telemetry-learned suggestions (Phase 4b) ─────────────────────────
+export {
+  learnSuggestionsFromTelemetry,
+  getLearnedRules,
+  __resetLearnedSuggestionsCacheForTests,
+} from './budget/learnedSuggestions.js';
+export type {
+  LearnedRules,
+  LearnSuggestionsOptions,
+} from './budget/learnedSuggestions.js';
