@@ -628,7 +628,15 @@ async function main(): Promise<void> {
           process.stdout.write('\n');
           const { installHarness } = await import('@ctxloom/core');
           const h = installHarness({ cwd: initRoot, dryRun, force });
-          for (const fr of [h.claudeMd, h.agentsMd, h.geminiMd, h.hooksJson, h.sessionStartSh]) {
+          const harnessFiles = [
+            h.claudeMd,
+            h.agentsMd,
+            h.geminiMd,
+            h.hooksJson,
+            h.sessionStartSh,
+            ...h.skills,
+          ];
+          for (const fr of harnessFiles) {
             const rel = path.relative(initRoot, fr.path);
             const label = fr.alreadyCorrect
               ? `${style.dim('Already up to date:')} ${rel}`

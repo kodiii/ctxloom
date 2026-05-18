@@ -28,6 +28,7 @@ import {
   type HooksJsonShape,
 } from './templates.js';
 import { upsertBlock, extractBlock, verifyBlock } from './hmacBlock.js';
+import { CTXLOOM_SKILLS, skillFilePath, type SkillTemplate } from './skillTemplates.js';
 
 /** Per-file outcome of the install. */
 export interface FileResult {
@@ -56,6 +57,11 @@ export interface InstallHarnessResult {
   hooksJson: FileResult;
   /** .claude/hooks/session-start.sh result. */
   sessionStartSh: FileResult;
+  /**
+   * Per-skill results — one entry per shipped skill under
+   * `.claude/skills/<name>/SKILL.md`. Phase 3.
+   */
+  skills: FileResult[];
   /** Non-fatal advisories surfaced during install. */
   warnings: string[];
 }
@@ -101,6 +107,7 @@ export function installHarness(opts: InstallHarnessOptions = {}): InstallHarness
   const geminiMd = writeRulesBlock(projectRoot, 'GEMINI.md', { dryRun, force, warnings });
   const hooksJson = writeHooksJson(projectRoot, { dryRun, warnings });
   const sessionStartSh = writeSessionStartScript(projectRoot, { dryRun });
+  const skills = CTXLOOM_SKILLS.map((s) => writeSkill(projectRoot, s, { dryRun }));
 
   return {
     projectRoot,
@@ -109,6 +116,7 @@ export function installHarness(opts: InstallHarnessOptions = {}): InstallHarness
     geminiMd,
     hooksJson,
     sessionStartSh,
+    skills,
     warnings,
   };
 }
@@ -248,6 +256,46 @@ function isCtxloomEntry(entry: { matcher: string; hooks: unknown }, expectedMatc
     if (typeof cmd !== 'string') return false;
     return cmd.includes('ctxloom') || cmd.includes('.claude/hooks/session-start.sh');
   });
+}
+
+/**
+ * Write a single SKILL.md under .claude/skills/<name>/. Idempotent —
+ * skips writes when on-disk content already matches canonical.
+ *
+ * Skills are NOT HMAC-wrapped because the file is fully managed by
+ * ctxloom (no surrounding user content). A full content match check
+ * provides the same idempotency guarantee with less ceremony.
+ *
+ * @internal
+ */
+function writeSkill(
+  projectRoot: string,
+  skill: SkillTemplate,
+  opts: { dryRun: boolean },
+): FileResult {
+  const dir = safeJoin(projectRoot, `.claude/skills/${skill.name}`);
+  const filePath = safeJoin(projectRoot, skillFilePath(skill.name));
+  const existed = fs.existsSync(filePath);
+
+  let alreadyCorrect = false;
+  if (existed) {
+    if (fs.readFileSync(filePath, 'utf-8') === skill.content) {
+      alreadyCorrect = true;
+    }
+  }
+
+  if (!opts.dryRun && !alreadyCorrect) {
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(filePath, skill.content, 'utf-8');
+  }
+
+  return {
+    path: filePath,
+    created: !existed,
+    updated: existed && !alreadyCorrect,
+    alreadyCorrect,
+    dryRun: opts.dryRun,
+  };
 }
 
 function writeSessionStartScript(
