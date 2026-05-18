@@ -21,6 +21,8 @@ import {
   SESSION_START_FULL,
   extractBlock,
   verifyBlock,
+  CTXLOOM_SKILLS,
+  skillFilePath,
 } from '../packages/core/src/index.js';
 
 let tmp: string;
@@ -200,6 +202,61 @@ describe('hooks.json merge', () => {
     const hooks = JSON.parse(fs.readFileSync(path.join(tmp, '.claude/hooks.json'), 'utf-8'));
     expect(hooks.SessionStart).toBeDefined();
     expect(hooks.PostToolUse).toBeDefined();
+  });
+});
+
+// ─── Phase 3: prepackaged skills ─────────────────────────────────────
+
+describe('skills installation (Phase 3)', () => {
+  it('writes every shipped skill to .claude/skills/<name>/SKILL.md', () => {
+    const result = installHarness({ cwd: tmp });
+    expect(result.skills.length).toBe(CTXLOOM_SKILLS.length);
+    for (const skill of CTXLOOM_SKILLS) {
+      const filePath = path.join(tmp, skillFilePath(skill.name));
+      expect(fs.existsSync(filePath), `missing ${skill.name}`).toBe(true);
+      expect(fs.readFileSync(filePath, 'utf-8')).toBe(skill.content);
+    }
+  });
+
+  it('every SKILL.md has YAML frontmatter with name + description', () => {
+    installHarness({ cwd: tmp });
+    for (const skill of CTXLOOM_SKILLS) {
+      const content = fs.readFileSync(path.join(tmp, skillFilePath(skill.name)), 'utf-8');
+      expect(content.startsWith('---\n')).toBe(true);
+      expect(content).toMatch(/^name:\s+\S/m);
+      expect(content).toMatch(/^description:\s+\S/m);
+      // The skill name in the frontmatter MUST match the directory name
+      // — Claude Code routes the slash command by the frontmatter name.
+      expect(content).toMatch(new RegExp(`^name:\\s+${skill.name}\\b`, 'm'));
+    }
+  });
+
+  it('idempotent on second install', () => {
+    installHarness({ cwd: tmp });
+    const second = installHarness({ cwd: tmp });
+    for (const fr of second.skills) {
+      expect(fr.alreadyCorrect).toBe(true);
+    }
+  });
+
+  it('rewrites a tampered SKILL.md back to canonical (no HMAC needed; full-content compare)', () => {
+    installHarness({ cwd: tmp });
+    const target = path.join(tmp, skillFilePath('ctxloom-explore'));
+    fs.writeFileSync(target, '# hand-edited content', 'utf-8');
+    const result = installHarness({ cwd: tmp });
+    const explore = result.skills.find((s) => s.path.endsWith('ctxloom-explore/SKILL.md'))!;
+    expect(explore.updated).toBe(true);
+    expect(fs.readFileSync(target, 'utf-8')).toBe(
+      CTXLOOM_SKILLS.find((s) => s.name === 'ctxloom-explore')!.content,
+    );
+  });
+
+  it('dry-run does not write skill files', () => {
+    const result = installHarness({ cwd: tmp, dryRun: true });
+    expect(result.skills.every((s) => s.dryRun)).toBe(true);
+    for (const skill of CTXLOOM_SKILLS) {
+      expect(fs.existsSync(path.join(tmp, skillFilePath(skill.name)))).toBe(false);
+    }
   });
 });
 

@@ -237,3 +237,5 @@ export {
   DEFAULT_HMAC_KEY,
 } from './install/hmacBlock.js';
 export type { ExtractedBlock } from './install/hmacBlock.js';
+export { CTXLOOM_SKILLS, skillFilePath } from './install/skillTemplates.js';
+export type { SkillTemplate } from './install/skillTemplates.js';
