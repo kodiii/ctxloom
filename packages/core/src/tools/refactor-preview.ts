@@ -189,6 +189,7 @@ export function registerRefactorPreviewTool(registry: ToolRegistry, ctx: ServerC
 
       if (!hasBudgetArgs(args)) return full;
       const result = await enforceBudget({
+        ctx,
         full,
         args: readBudgetArgs(args),
         toolName: 'ctx_refactor_preview',

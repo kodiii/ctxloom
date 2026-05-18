@@ -135,6 +135,7 @@ export function registerContextPacketTool(registry: ToolRegistry, ctx: ServerCon
       };
 
       const result = await enforceBudget({
+        ctx,
         full,
         args: readBudgetArgs(args),
         toolName: 'ctx_get_context_packet',

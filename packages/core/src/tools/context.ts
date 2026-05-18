@@ -7,6 +7,7 @@ import type { RuleManager } from './ruleManager.js';
 import type { GitOverlayStore } from '../git/GitOverlayStore.js';
 import type { RepoRegistry } from './cross-repo-search.js';
 import type { ProjectStateManager } from '../server/ProjectStateManager.js';
+import type { TelemetrySink } from '../budget/eventCollector.js';
 
 /**
  * ServerContext — handed to every tool's registration callback.
@@ -50,4 +51,22 @@ export interface ServerContext {
 
   /** Live multi-project state map. Used by ctx_status and observability tooling. */
   stateManager: ProjectStateManager;
+
+  /**
+   * Process-level telemetry transport. Selected once at server boot and
+   * threaded into every `enforceBudget` call via `ctx`. When unset, the
+   * budget surface falls through to the default `diskSink` (writes
+   * JSONL to ~/.ctxloom/telemetry/). When set, every instrumented tool
+   * routes its `mcp.budget.exceeded` + `mcp.fallback.used` events
+   * through this sink — letting the boot site pick a Sentry / OTLP /
+   * dashboard ring-buffer / in-memory test sink without touching the
+   * 12 tool call sites.
+   *
+   * Closes #141 from the Phase B A/B dogfood gate: pre-fix, the
+   * injectable sink abstraction only reached the test suite because
+   * every tool registrar called `enforceBudget({...})` without an
+   * `opts.sink`, so production was hard-coded to `diskSink`. With this
+   * field, observability backends become a one-line boot wire.
+   */
+  telemetrySink?: TelemetrySink;
 }

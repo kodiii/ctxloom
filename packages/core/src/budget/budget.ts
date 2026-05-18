@@ -202,8 +202,24 @@ export interface EnforceBudgetOptions {
    * in-memory sink to assert event emission without touching
    * ~/.ctxloom/telemetry/. Web dashboard / Sentry / OTLP exporters
    * are the other natural use case. Defaults to `diskSink`.
+   *
+   * Resolution precedence (highest first):
+   *   1. opts.sink — per-call override (tests, special cases)
+   *   2. opts.ctx?.telemetrySink — process-level boot wiring
+   *   3. diskSink — default disk-JSONL persistence
    */
   sink?: TelemetrySink;
+  /**
+   * Structural slice of `ServerContext` — declared structurally
+   * (not as `ServerContext` proper) to avoid a circular import
+   * between `packages/core/src/budget/` and `packages/core/src/tools/`.
+   * Tool registrars pass the full `ServerContext` here; budget code
+   * only reads `.telemetrySink`.
+   *
+   * Closes #141 from the Phase B A/B dogfood gate: lets the boot site
+   * pick the telemetry transport ONCE for all 12+ instrumented tools.
+   */
+  ctx?: { telemetrySink?: TelemetrySink };
 }
 
 export interface BudgetedResult {
@@ -238,7 +254,11 @@ export async function enforceBudget(opts: EnforceBudgetOptions): Promise<Budgete
   // Default to the disk-JSONL sink. Tests inject a mem sink to
   // assert event emission without disk I/O; alternate transports
   // (dashboard / Sentry / OTLP) can plug in here too.
-  const sink: TelemetrySink = opts.sink ?? diskSink;
+  // Sink resolution precedence (highest first):
+  //   1. opts.sink            — per-call override (tests, special cases)
+  //   2. opts.ctx.telemetrySink — process-level boot wiring (issue #141)
+  //   3. diskSink              — default disk-JSONL persistence
+  const sink: TelemetrySink = opts.sink ?? opts.ctx?.telemetrySink ?? diskSink;
 
   // Pre-compute the full-response token count once — used by every
   // downstream branch for the meta envelope.

@@ -83,6 +83,7 @@ export function registerDefinitionTool(registry: ToolRegistry, ctx: ServerContex
       // already structural metadata (signatures only, no bodies), so
       // there's no meaningful lighter form between "full" and "sliced".
       const result = await enforceBudget({
+        ctx,
         full,
         args: readBudgetArgs(args),
         toolName: 'ctx_get_definition',

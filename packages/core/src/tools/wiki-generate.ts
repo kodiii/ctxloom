@@ -115,6 +115,7 @@ export function registerWikiGenerateTool(registry: ToolRegistry, ctx: ServerCont
       // (counts only). Already-explicitly-minimal callers fall through
       // to truncation since there's no lighter form below minimal.
       const budgetResult = await enforceBudget({
+        ctx,
         full,
         args: readBudgetArgs(args),
         toolName: 'ctx_wiki_generate',

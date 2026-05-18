@@ -120,6 +120,7 @@ export function registerSearchTool(registry: ToolRegistry, ctx: ServerContext): 
         renderResults(parsed.query, ranked, false);
 
       const result = await enforceBudget({
+        ctx,
         full,
         args: readBudgetArgs(args),
         toolName: 'ctx_search',

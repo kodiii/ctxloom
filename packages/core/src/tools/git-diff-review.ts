@@ -136,6 +136,7 @@ export function registerGitDiffReviewTool(registry: ToolRegistry, ctx: ServerCon
       const maybeBudget = async (full: string, skeletonProducer?: () => Promise<string | null>): Promise<string> => {
         if (!hasBudgetArgs(args)) return full;
         const result = await enforceBudget({
+          ctx,
           full,
           args: readBudgetArgs(args),
           toolName: 'ctx_git_diff_review',
