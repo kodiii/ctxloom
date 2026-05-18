@@ -35,8 +35,19 @@ import {
   type PerSpecialistSummary,
   type TelemetryRow,
 } from '../src/telemetry/schema.js';
+// Relative cross-package import (rather than `@ctxloom/core/utils/stats`)
+// because @ctxloom/core's `exports` field only exposes the root entry.
+// The two-up `../../..` resolves to the repo root, then into the
+// workspace package. Same shape as how the pr-bot tests reach into
+// `../../../packages/core/...`.
+import { percentile } from '../../../packages/core/src/utils/stats.js';
 
 export type { DogfoodSummary, PerSpecialistSummary, AggregateSummary };
+// Re-export so existing tests/consumers that import percentile from
+// aggregate-telemetry keep working. ARCH-135-2 dogfood finding (PR
+// #135) consolidated the previous duplicate; the function now lives
+// in packages/core/src/utils/stats.ts.
+export { percentile };
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = join(__dirname, '..', '..', '..');
@@ -44,31 +55,9 @@ const DATA_DIR = join(REPO_ROOT, 'apps', 'pr-bot', 'data');
 const IN_FILE = join(DATA_DIR, 'dogfood-telemetry.jsonl');
 const OUT_FILE = join(DATA_DIR, 'dogfood-summary.json');
 
-/**
- * Compute the p-th percentile of a number array using nearest-rank
- * (no interpolation — the value returned is always a real element of
- * the input). `p` is in [0, 1].
- *
- * Contract:
- *   - Empty input → null
- *   - Single element → that element
- *   - Does NOT mutate the input array (uses sorted copy)
- *   - p = 0 → minimum
- *   - p = 1 → maximum
- *
- * This is the load-bearing math for Phase B (#106) per-tool default
- * budgets. Test coverage in tests/telemetry-aggregate.test.ts is
- * mandatory; an off-by-one or sort-mutation bug here silently
- * corrupts every downstream budget.
- *
- * @public Exported for unit testing.
- */
-export function percentile(values: number[], p: number): number | null {
-  if (values.length === 0) return null;
-  const sorted = [...values].sort((a, b) => a - b);
-  const idx = Math.floor((sorted.length - 1) * p);
-  return sorted[idx];
-}
+// percentile() was historically declared here. Consolidated in PR
+// #135 dogfood follow-up (ARCH-135-2) to packages/core/src/utils/stats.ts
+// and re-exported above for backward-compat with existing test imports.
 
 function loadRows(): TelemetryRow[] {
   const text = readFileSync(IN_FILE, 'utf8');

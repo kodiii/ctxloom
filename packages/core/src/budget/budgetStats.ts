@@ -15,21 +15,14 @@
  * only disk touch surface in this module's pipeline.
  */
 import type { PersistedEvent } from './eventCollector.js';
+import { percentile } from '../utils/stats.js';
 
-/**
- * Compute the p-th percentile of a number array (nearest-rank, no
- * interpolation). Same shape as
- * apps/pr-bot/scripts/aggregate-telemetry.ts:percentile() — the
- * canonical p75 math across both telemetry pipelines.
- *
- * @public
- */
-export function percentile(values: number[], p: number): number | null {
-  if (values.length === 0) return null;
-  const sorted = [...values].sort((a, b) => a - b);
-  const idx = Math.floor((sorted.length - 1) * p);
-  return sorted[idx];
-}
+// Re-export so existing tests/consumers that import percentile from
+// budgetStats keep working without ceremony. ARCH-135-2 dogfood
+// finding (PR #135) consolidated the previous duplicate
+// implementation; the function now lives in ../utils/stats.ts and
+// is shared with apps/pr-bot/scripts/aggregate-telemetry.ts.
+export { percentile };
 
 /** One row of the "fallback distribution per tool" table. */
 export interface FallbackRow {
