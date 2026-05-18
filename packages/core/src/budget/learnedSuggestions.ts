@@ -251,13 +251,50 @@ function safeReadEvents(windowDays: number): PersistedEvent[] {
  * that need per-user caches should construct `learnSuggestionsFromTelemetry`
  * directly instead.
  *
+ * Caching policy (v1.5.0 dogfood H1 fix): the cache stores the UNFILTERED
+ * set of rules (all transitions ≥ minSamples, no allowlist applied).
+ * The allowlist + per-source-tool clamp are applied at READ time inside
+ * `suggestNext()` so the same cached payload serves callers with
+ * different allowlists. Pre-fix the cache silently honored the FIRST
+ * caller's opts and ignored subsequent ones — a real correctness bug
+ * because `enforceBudget → suggestNext(toolName)` passes no allowlist
+ * (poisoning the cache) before `suggestNext` itself passes one (which
+ * was then ignored).
+ *
  * @public
  */
 export function getLearnedRules(opts: LearnSuggestionsOptions = {}): LearnedRules {
   if (_cache && _cache.expiresAt > Date.now()) {
-    return _cache.rules;
+    // Apply caller's allowlist on the cached (unfiltered) payload.
+    return filterRulesByAllowlist(_cache.rules, opts.registeredTools);
   }
-  const rules = learnSuggestionsFromTelemetry(opts);
-  _cache = { rules, expiresAt: Date.now() + CACHE_TTL_MS };
-  return rules;
+  // Mine unfiltered, then store unfiltered. Pass through every other
+  // opt (windowDays, sessionGapMs, minSamples, events) so the
+  // expensive aggregation still respects them.
+  const unfilteredRules = learnSuggestionsFromTelemetry({
+    ...opts,
+    registeredTools: undefined,
+  });
+  _cache = { rules: unfilteredRules, expiresAt: Date.now() + CACHE_TTL_MS };
+  return filterRulesByAllowlist(unfilteredRules, opts.registeredTools);
+}
+
+/**
+ * Apply a registered-tools allowlist to a pre-computed LearnedRules
+ * map. Used by `getLearnedRules` to layer the per-caller allowlist on
+ * top of the shared cache. Returns the input unchanged when no
+ * allowlist is provided.
+ */
+function filterRulesByAllowlist(
+  rules: LearnedRules,
+  allowlist: ReadonlySet<string> | undefined,
+): LearnedRules {
+  if (!allowlist) return rules;
+  const out: LearnedRules = {};
+  for (const [from, suggestions] of Object.entries(rules)) {
+    if (!allowlist.has(from)) continue;
+    const kept = suggestions.filter((s) => allowlist.has(s.tool));
+    if (kept.length > 0) out[from] = kept;
+  }
+  return out;
 }
