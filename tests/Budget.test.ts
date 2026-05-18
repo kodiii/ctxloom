@@ -471,13 +471,139 @@ describe('TelemetrySink injection', () => {
     });
   });
 
-  it('defaults to diskSink when no sink is passed', () => {
-    // Sanity: the default export exists and is the sink used when
-    // the optional 2nd arg is omitted. Doesn't assert disk writes
-    // (that's covered in the "emitTelemetry" block above with a
-    // scoped CTXLOOM_TELEMETRY_DIR).
-    expect(diskSink).toBeDefined();
-    expect(typeof diskSink.append).toBe('function');
+  it('defaults to diskSink when no sink is passed (proven via spy)', () => {
+    // Strengthens the previous shape-only assertion (PR #139 dogfood L4):
+    // proving that emitTelemetry with NO 2nd arg actually invokes
+    // diskSink.append, not just that diskSink exists. Replaces the
+    // append fn for the duration of the test and asserts the spy
+    // fires — a regression that flipped the default parameter to
+    // `null` or a no-op sink would now fail this test.
+    const captured: Array<Record<string, unknown>> = [];
+    const originalAppend = diskSink.append;
+    (diskSink as { append: TelemetrySink['append'] }).append = (event) => {
+      captured.push(event);
+    };
+    const originalLevel = process.env.CTXLOOM_TELEMETRY_LEVEL;
+    process.env.CTXLOOM_TELEMETRY_LEVEL = 'full';
+    try {
+      // No 2nd arg — must fall through to diskSink.
+      emitTelemetry({ event: 'mcp.budget.exceeded', tool: 'ctx_get_file', ratio: 2 });
+    } finally {
+      (diskSink as { append: TelemetrySink['append'] }).append = originalAppend;
+      if (originalLevel === undefined) delete process.env.CTXLOOM_TELEMETRY_LEVEL;
+      else process.env.CTXLOOM_TELEMETRY_LEVEL = originalLevel;
+    }
+
+    expect(captured).toHaveLength(1);
+    expect(captured[0]).toMatchObject({ event: 'mcp.budget.exceeded', tool: 'ctx_get_file' });
+  });
+
+  it('swallows errors from a sink whose append() throws (M1)', async () => {
+    // PR #139 dogfood M1: the `TelemetrySink.append` JSDoc states
+    // sink errors MUST be swallowed — telemetry is observability,
+    // not correctness. Pre-fix, only diskSink honored this (via
+    // appendEvent's try/catch); a third-party sink (Sentry / OTLP /
+    // dashboard) that threw would propagate up through emitTelemetry
+    // → enforceBudget and fault the tool call. The fix wraps
+    // sink.append() in budget.ts's emitTelemetry so the invariant
+    // holds for ANY sink shape, not just diskSink's implementation
+    // detail. This test pins that contract.
+    const throwingSink: TelemetrySink = {
+      append: () => {
+        throw new Error('sink_explosion');
+      },
+    };
+
+    const originalLevel = process.env.CTXLOOM_TELEMETRY_LEVEL;
+    process.env.CTXLOOM_TELEMETRY_LEVEL = 'full';
+    try {
+      // Direct emitTelemetry call: must NOT throw.
+      expect(() => {
+        emitTelemetry({ event: 'mcp.budget.exceeded', tool: 'ctx_get_file', ratio: 2 }, throwingSink);
+      }).not.toThrow();
+
+      // End-to-end through enforceBudget: tool call must still
+      // resolve to a valid BudgetedResult even though every
+      // sink.append() in the fallback ladder explodes.
+      const result = await enforceBudget({
+        full: 'x'.repeat(10_000),
+        args: { max_response_tokens: 100 },
+        toolName: 'ctx_get_file',
+        skeletonProducer: async () => 'class Foo {}',
+        sink: throwingSink,
+      });
+      expect(result).toBeDefined();
+      expect(result.meta.fallback_reason).toBe('budget_exceeded');
+    } finally {
+      if (originalLevel === undefined) delete process.env.CTXLOOM_TELEMETRY_LEVEL;
+      else process.env.CTXLOOM_TELEMETRY_LEVEL = originalLevel;
+    }
+  });
+
+  it('event payloads honor the privacy contract — no raw text leaks (L3)', async () => {
+    // PR #139 dogfood L3: now that sinks are pluggable to external
+    // transports (Sentry / OTLP / Datadog), the privacy contract —
+    // "events contain only event name + tool name + token counts +
+    // mode/reason enums, NEVER source content / file paths / queries"
+    // — must be pinned as a tripwire. Pre-test, the contract lived
+    // only in the eventCollector.ts header comment. A regression
+    // that bolted `full` or `skeleton` text onto an event would
+    // ship undetected.
+    const SECRET_MARKER = 'API_KEY_PLEASE_DO_NOT_LEAK_4f9c2a1e';
+    const captured: Array<Record<string, unknown>> = [];
+    const memSink: TelemetrySink = {
+      append: (event) => {
+        captured.push(event);
+      },
+    };
+
+    const originalLevel = process.env.CTXLOOM_TELEMETRY_LEVEL;
+    process.env.CTXLOOM_TELEMETRY_LEVEL = 'full';
+    try {
+      // Construct a payload whose `full` text contains a recognizable
+      // sentinel. If ANY emission site ever copies request content
+      // into the event payload, the serialized event will include
+      // the marker and the assertion below will fail.
+      await enforceBudget({
+        full: `prefix ${SECRET_MARKER} suffix `.repeat(500),
+        args: { max_response_tokens: 50 },
+        toolName: 'ctx_get_file',
+        skeletonProducer: async () => `skeleton ${SECRET_MARKER}`,
+        sink: memSink,
+      });
+    } finally {
+      if (originalLevel === undefined) delete process.env.CTXLOOM_TELEMETRY_LEVEL;
+      else process.env.CTXLOOM_TELEMETRY_LEVEL = originalLevel;
+    }
+
+    expect(captured.length).toBeGreaterThan(0);
+
+    // Structural allowlist: known-safe event keys. Any new key on a
+    // future event would force this test to be updated AND inspected
+    // for PII risk before passing. That's the point.
+    const ALLOWED_KEYS = new Set([
+      'event',           // 'mcp.budget.exceeded' | 'mcp.fallback.used'
+      'tool',            // 'ctx_get_file' etc.
+      'original_tokens',
+      'budget',
+      'ratio',
+      'fallback_reason', // 'budget_exceeded' | 'skeleton_failed'
+      'mode',            // 'skeleton' | 'truncated' | 'full'
+    ]);
+
+    for (const evt of captured) {
+      // Sentinel check — serialize the entire event and grep for
+      // the marker. Catches deep / nested leaks the key-allowlist
+      // wouldn't see.
+      const serialized = JSON.stringify(evt);
+      expect(serialized).not.toContain(SECRET_MARKER);
+
+      // Allowlist check — pins the event shape so adding a new key
+      // requires an explicit decision (and updating this test).
+      for (const key of Object.keys(evt)) {
+        expect(ALLOWED_KEYS.has(key)).toBe(true);
+      }
+    }
   });
 
   it('enforceBudget threads opts.sink through to over-budget telemetry', async () => {
