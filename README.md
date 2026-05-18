@@ -82,6 +82,21 @@ ctxloom index          # builds vector + graph + git overlay
 
 `ctxloom init` is the piece that pins ctxloom to **this** project. Without it, MCP clients (notably Claude Code) launch the global MCP server with cwd inherited from wherever the IDE was first opened — and **do not relaunch on project switch** — so a single Claude Code session ends up serving graph queries from the wrong codebase. The `.mcp.json` produced by `init` carries an explicit `CTXLOOM_ROOT` and short-circuits that ambiguity.
 
+Beyond `.mcp.json` + `.gitignore`, `ctxloom init` also writes the **agent-harness layer** (v1.4.0+): HMAC-signed rule blocks in `CLAUDE.md` / `AGENTS.md` / `GEMINI.md`, Claude Code hooks under `.claude/hooks/`, and six pre-packaged Claude Code skills under `.claude/skills/ctxloom-*/`. These tell the agent to prefer the ctxloom MCP tools over `Grep`/`Read` automatically; you don't have to remember the rule.
+
+**Cross-agent hosts (v1.5.0+):** add `--host=<id>` to install rules for additional agent hosts beyond Claude Code:
+
+```bash
+ctxloom init --host=cursor         # writes .cursorrules
+ctxloom init --host=aider          # writes CONVENTIONS.md
+ctxloom init --host=copilot        # writes .github/copilot-instructions.md
+ctxloom init --host=windsurf       # writes .windsurfrules
+ctxloom init --host=cursor,aider   # comma-separated → multiple hosts
+ctxloom init --host=all            # writes every supported host
+```
+
+Unknown host ids drop with a warning, not a hard failure. Re-running `ctxloom init` is idempotent — content matches → no-op; tampered blocks → refuse to clobber without `--force`.
+
 After `init` + `index`, reopen your AI tool in the project directory. Your assistant now has full structural context.
 
 ### License commands
