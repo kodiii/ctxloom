@@ -5,6 +5,72 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
 ---
 
+## [1.3.1] — 2026-05-18
+
+Patch release. Closes the dogfood follow-up cohort surfaced by PR #135's
+multi-agent review and the Phase B A/B gate. Two real user-facing bug
+fixes; everything else is internal hardening with zero behavior change
+on the default code path.
+
+### Fixed
+
+- **`ctxloom budget-stats` no longer blocked by the license gate** (#138).
+  The CLI integration test added in TEST-135-3 discovered the diagnostic
+  command was being routed through `ctxloomLicenseGate` despite being a
+  purely local read-only operation (parses JSONL under
+  `~/.ctxloom/telemetry/`). Added to `LICENSE_GATE_BYPASS_COMMANDS`
+  alongside `status` / `--help` / `trial` / `activate`. Users in
+  license-recovery scenarios (expired / revoked / network-failing
+  validate) can now inspect telemetry exactly when it matters most.
+- **`CTXLOOM_TELEMETRY_DIR` env path sanitized** (#146 → closes #142).
+  Pre-fix, `telemetryDir()` returned the raw env value verbatim, so an
+  operator typo (`/etc/foo`) or a relative path silently created
+  directories under unintended roots. Now rejects values containing
+  `..` or non-absolute paths with a one-time `logger.warn`, falling back
+  to the home default. Defense in depth.
+- **First `appendFileSync` failure now surfaces a single warn** (#146 →
+  closes #143). EACCES / ENOSPC / EROFS / misconfigured-dir errors were
+  swallowed silently — operator got zero signal that telemetry
+  persistence was broken. Now the first failure emits one
+  `logger.warn` with the error message; subsequent failures stay
+  silent (no log flooding). MCP server still never faults on telemetry
+  errors.
+- **`readEvents` drops malformed-timestamp events** (#146 → closes #144).
+  `new Date('not-a-date').getTime()` is `NaN`, and `NaN < x || NaN > x`
+  are both false — so corrupted timestamps silently passed the boundary
+  filter and contaminated `budget-stats` percentile calculations. One-
+  line `Number.isFinite` guard before the boundary check.
+
+### Changed (internal — no user-visible behavior change)
+
+- **Injectable `TelemetrySink`** (#139 → closes ARCH-135-1 scope).
+  Refactored `emitTelemetry(event, sink = diskSink)` and added
+  `EnforceBudgetOptions.sink` so callers can swap the default disk-JSONL
+  transport for in-memory / Sentry / OTLP / dashboard ring-buffer sinks.
+  Default behavior identical.
+- **`TelemetrySink` contract hardened** (#140 → closes M1/L3/L4 from #139
+  dogfood). `emitTelemetry` now wraps `sink.append(event)` in
+  `try/catch` so third-party sinks that throw cannot fault the tool
+  call. Privacy contract pinned as a regression test (sentinel-grep +
+  key allowlist). The default-sink test strengthened from shape-only to
+  spy-based.
+- **`ServerContext.telemetrySink`** (#145 → closes #141).
+  Process-level transport, picked once at boot. `enforceBudget` resolves
+  `opts.sink ?? opts.ctx?.telemetrySink ?? diskSink`. Wiring a non-disk
+  sink (Sentry breadcrumbs, OTLP, dashboard) is now a one-line change at
+  the boot site instead of touching all 12 instrumented tool registrars.
+
+### Dogfood notes
+
+- Phase B A/B dogfood gate (Part 2 of #107) ran on PR #139 — provisional
+  pass after #140 + #145 + #146 closed the four cross-branch findings.
+  See issues #141 / #142 / #143 / #144 (all closed by this release).
+- Remaining Phase B work: per-tool `DEFAULT_MAX_RESPONSE_TOKENS` tuning
+  from real-world p75 (calendar-gated, ~2w usage window). Will land in
+  a future patch as data accumulates.
+
+---
+
 ## [1.3.0] — 2026-05-17
 
 Coordinated release marking **Phase B complete**: skeleton-first
