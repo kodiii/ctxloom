@@ -239,3 +239,14 @@ export {
 export type { ExtractedBlock } from './install/hmacBlock.js';
 export { CTXLOOM_SKILLS, skillFilePath } from './install/skillTemplates.js';
 export type { SkillTemplate } from './install/skillTemplates.js';
+
+// ─── Task-tool budget (Phase 4a) ──────────────────────────────────────
+export {
+  TaskBudgetTracker,
+  getTaskBudgetTracker,
+  applyOverBudgetOverrides,
+  emitTaskBudgetBreached,
+  OVER_BUDGET_ARG_OVERRIDES,
+  __resetTaskBudgetTrackerForTests,
+} from './budget/taskBudget.js';
+export type { TaskBudgetDecision } from './budget/taskBudget.js';
