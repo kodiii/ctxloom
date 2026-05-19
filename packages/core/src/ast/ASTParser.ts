@@ -346,6 +346,56 @@ export class ASTParser {
           return; // Don't recurse into import nodes
         }
 
+        // ─── CommonJS require() calls ────────────────────────────────────
+        // ES6 import_statement above handles `import X from './foo'`. But
+        // pure CommonJS projects — express, most pre-2020 Node libs — use
+        // `require('./foo')` instead and never emit an import_statement
+        // node. Without this case, those projects produce a dependency
+        // graph with 0 edges and the blast-radius tool collapses to
+        // "just the seed file" because there's nothing to traverse.
+        //
+        // Mirrors the Ruby require pattern below (see the `case 'call'`
+        // branch later in the walker). Only literal-string arguments are
+        // resolvable; dynamic `require(varName)` is statically invisible
+        // and intentionally skipped.
+        //
+        // Patterns matched:
+        //   require('./path')
+        //   require('../path')
+        //   require('./path.json')       — JSON files emit edges too
+        // Patterns NOT matched:
+        //   require(varName)             — dynamic, can't resolve
+        //   require.resolve('./path')    — returns path string, not a load
+        //   import('./path')             — dynamic ESM, separate concern
+        case 'call_expression': {
+          const fnNode =
+            node.childForFieldName?.('function')
+            ?? node.children.find(c => c?.type === 'identifier');
+          if (fnNode?.text === 'require') {
+            const argsNode =
+              node.childForFieldName?.('arguments')
+              ?? node.children.find(c => c?.type === 'arguments');
+            // The first argument must be a literal string for static resolution.
+            const firstArg = argsNode?.children.find(c => c?.type === 'string');
+            if (firstArg) {
+              const spec = firstArg.text.replace(/^['"`]|['"`]$/g, '');
+              if (spec.length > 0) {
+                nodes.push({
+                  type: 'import',
+                  name: spec,
+                  source: spec,
+                  startLine: node.startPosition.row + 1,
+                  endLine: node.endPosition.row + 1,
+                });
+              }
+            }
+          }
+          // Fall through — call expressions can contain other nodes we care
+          // about (e.g. arrow_function arguments), so we let the walker
+          // continue into children. Don't add to processedIds.
+          break;
+        }
+
         // ─── Export statements (export function, export default) ────────
         case 'export_statement': {
           const hasDefault = node.children.some(c => c?.type === 'default');
@@ -502,6 +552,13 @@ export class ASTParser {
                   startLine: declarator.startPosition.row + 1,
                   endLine: declarator.endPosition.row + 1,
                 });
+              } else if (valueNode.type === 'call_expression') {
+                // `const x = require('./y')` — walk the call so the
+                // call_expression case below can emit an import node
+                // for CommonJS require() detection. Without this the
+                // lexical_declaration case used to swallow the value
+                // entirely, dropping every const-bound require().
+                walk(valueNode);
               }
             }
           }
