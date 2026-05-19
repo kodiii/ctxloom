@@ -43,6 +43,8 @@
     "lint": "tsc --noEmit",
     "postinstall": "node dist/setup/postinstall.js || true",
     "bench:repos": "tsx benchmarks/benchmark-public-repos.ts",
+    "bench:spike": "tsx scripts/bench/eval.ts spike",
+    "bench:full": "tsx scripts/bench/eval.ts full",
     "e2e:corpus": "node e2e-corpus/run.mjs"
   },
   "keywords": [
