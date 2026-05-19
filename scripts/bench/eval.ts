@@ -26,7 +26,7 @@ import { execFileSync } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { SPIKE_CORPUS, FULL_CORPUS, GATE } from './corpus.js';
-import { fetchGroundTruth } from './groundTruth.js';
+import { fetchGroundTruth, isSourceFile } from './groundTruth.js';
 import { ensureWorktree } from './repoCheckout.js';
 import { indexRepo, blastRadius } from './predict.js';
 import { computeMetrics, avg } from './metrics.js';
@@ -82,8 +82,18 @@ async function runRepo(entry: CorpusEntry): Promise<RepoReport> {
     const prediction = await blastRadius(worktree, gt.entryPoint, prNumber);
     console.error(`    predicted files: ${prediction.predictedFiles.length}`);
 
-    const metrics = computeMetrics(prNumber, gt.groundTruthFiles, prediction.predictedFiles);
-    console.error(`    F1=${metrics.f1.toFixed(2)} P=${metrics.precision.toFixed(2)} R=${metrics.recall.toFixed(2)}`);
+    const metrics = computeMetrics(
+      prNumber,
+      gt.groundTruthFiles,
+      prediction.predictedFiles,
+      isSourceFile,
+    );
+    console.error(
+      `    F1=${metrics.f1.toFixed(2)} P=${metrics.precision.toFixed(2)} ` +
+      `R=${metrics.recall.toFixed(2)} ` +
+      `sourceR=${metrics.sourceRecall.toFixed(2)} ` +
+      `(${metrics.sourceTruePositives}/${metrics.sourceGroundTruthCount} source)`,
+    );
 
     // Token metrics placeholder — TODO wire scripts/bench/tokens.ts
     perPr.push({
@@ -100,6 +110,7 @@ async function runRepo(entry: CorpusEntry): Promise<RepoReport> {
     avgF1: avg(perPr.map((p) => p.f1)),
     avgPrecision: avg(perPr.map((p) => p.precision)),
     avgRecall: avg(perPr.map((p) => p.recall)),
+    avgSourceRecall: avg(perPr.map((p) => p.sourceRecall)),
     avgNaiveTokens: avg(perPr.map((p) => p.naiveTokens)),
     avgGraphTokens: avg(perPr.map((p) => p.graphTokens)),
     avgReduction: avg(perPr.map((p) => p.reduction)),
@@ -157,6 +168,7 @@ async function main(): Promise<void> {
       avgF1: avg(allPrs.map((p) => p.f1)),
       avgPrecision: avg(allPrs.map((p) => p.precision)),
       avgRecall: avg(allPrs.map((p) => p.recall)),
+      avgSourceRecall: avg(allPrs.map((p) => p.sourceRecall)),
       avgReduction: avg(allPrs.map((p) => p.reduction)),
     },
     repos,

@@ -37,7 +37,14 @@ const SOURCE_EXTENSIONS = new Set([
   '.swift', '.php', '.dart', '.c', '.cpp', '.h',
 ]);
 
-function isSourceFile(filepath: string): boolean {
+/**
+ * Exported because metrics.ts uses it to compute source-file-only
+ * recall (separate from total-file recall). Many real PRs include
+ * docs / config / changelog entries in their ground truth that the
+ * graph cannot possibly predict — counting those as false negatives
+ * understates true graph quality.
+ */
+export function isSourceFile(filepath: string): boolean {
   const lastDot = filepath.lastIndexOf('.');
   if (lastDot < 0) return false;
   return SOURCE_EXTENSIONS.has(filepath.slice(lastDot).toLowerCase());
