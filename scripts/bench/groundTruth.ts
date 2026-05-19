@@ -43,6 +43,40 @@ function isSourceFile(filepath: string): boolean {
   return SOURCE_EXTENSIONS.has(filepath.slice(lastDot).toLowerCase());
 }
 
+/**
+ * Detect test files for entry-point selection.
+ *
+ * Test files are typically not imported by other code (the test
+ * runner discovers them) — so blast radius from a test file
+ * predicts an empty set. The methodology rule: prefer non-test
+ * source as the entry point. A real reviewer starts from the
+ * lib file being changed, not the test that verifies the change.
+ *
+ * PRs adding features almost always have more test-line changes
+ * than source-line changes (good engineering — comprehensive
+ * coverage). The naive "most-changed source file" picker
+ * systematically targets the test as a result, producing
+ * empty-set blast radius and tanked recall.
+ *
+ * Heuristic covers conventions across JS/TS/Python/Go/etc. False
+ * positives are benign (we just don't pick them as entry). False
+ * negatives mean we accidentally pick a test — the bug this fixes.
+ */
+function isTestFile(filepath: string): boolean {
+  return (
+    // Top-level test directories
+    /^(test|tests|__tests__|spec)\//.test(filepath)
+    // Nested test directories
+    || /\/(test|tests|__tests__|spec)\//.test(filepath)
+    // Filename conventions: foo.test.ts, foo.spec.js
+    || /(?:\.|_)(test|spec)[.]/.test(filepath)
+    // Python pytest convention: test_foo.py
+    || /(?:^|\/)test_[a-zA-Z0-9_]+\.py$/.test(filepath)
+    // Go convention: foo_test.go
+    || /_test\.(go|rs)$/.test(filepath)
+  );
+}
+
 /** Filter heuristics matching the methodology doc. */
 const BINARY_EXTENSIONS = new Set([
   '.png', '.jpg', '.jpeg', '.gif', '.ico', '.webp', '.svg',
@@ -110,18 +144,35 @@ export function fetchGroundTruth(repo: string, prNumber: number): GroundTruth {
   }
 
   // Entry-point = source file with most lines changed; ties broken
-  // alphabetically for determinism. Restricting to source files (not
-  // just non-binary) means a PR with one large History.md change and
-  // a small lib/foo.js change picks lib/foo.js — which is what an
-  // agent reviewer would intuitively start from.
-  const sortedSourceByImpact = [...data.files]
-    .filter((f) => isSourceFile(f.path))
-    .sort((a, b) => {
+  // alphabetically for determinism.
+  //
+  // Two-tier preference:
+  //   1. Non-test source files (lib/, src/, etc.) — what a reviewer
+  //      would intuitively start from. Tests aren't imported by
+  //      anything, so starting blast radius from a test predicts an
+  //      empty set and tanks recall.
+  //   2. Fall back to test files only if every source file in the
+  //      PR is a test (rare — usually means a test-only PR, which
+  //      our methodology gate may also reject downstream).
+  //
+  // Empirical: all three spike PRs (express#6903, express#6525,
+  // fastapi#15030) picked a test file under the naive "most-changed
+  // source" rule, because PRs adding features typically have more
+  // test-line changes than source-line changes. The fix:
+  // pre-partition by isTestFile() and pick from non-tests first.
+  const sortByImpact = (files: GhPrFile[]): GhPrFile[] =>
+    [...files].sort((a, b) => {
       const diff = (b.additions + b.deletions) - (a.additions + a.deletions);
       if (diff !== 0) return diff;
       return a.path.localeCompare(b.path);
     });
-  const entryPoint = sortedSourceByImpact[0].path;
+
+  const allSourceFiles = data.files.filter((f) => isSourceFile(f.path));
+  const nonTestSource = allSourceFiles.filter((f) => !isTestFile(f.path));
+  const sortedCandidates = nonTestSource.length > 0
+    ? sortByImpact(nonTestSource)
+    : sortByImpact(allSourceFiles);
+  const entryPoint = sortedCandidates[0].path;
 
   // baseRefOid is the parent of the PR head before merge — the
   // "pre-PR state" we want to index.
