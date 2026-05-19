@@ -24,6 +24,7 @@
  */
 import { execFileSync } from 'node:child_process';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { SPIKE_CORPUS, FULL_CORPUS, GATE } from './corpus.js';
 import { fetchGroundTruth } from './groundTruth.js';
 import { ensureWorktree } from './repoCheckout.js';
@@ -31,6 +32,13 @@ import { indexRepo, blastRadius } from './predict.js';
 import { computeMetrics, avg } from './metrics.js';
 import { writeReport } from './report.js';
 import type { BenchReport, RepoReport, CorpusEntry, Metrics, TokenMetrics } from './types.js';
+
+// ESM has no __dirname / __filename. Without these the spike runs to
+// completion, computes correct F1 numbers per PR, then crashes during
+// report-write — losing the data. The package is "type": "module" so
+// this file runs as ESM under tsx.
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 type Stage = 'spike' | 'full';
 
