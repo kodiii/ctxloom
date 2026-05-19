@@ -94,12 +94,29 @@ export function resolveImport(
 
 function extractPythonImports(content: string): RawImport[] {
   const results: RawImport[] = [];
+  let m: RegExpExecArray | null;
 
   // Relative: `from .foo import bar` or `from ..pkg.mod import x`
   const relFrom = /^from\s+(\.+[\w.]*)\s+import/gm;
-  let m: RegExpExecArray | null;
   while ((m = relFrom.exec(content)) !== null) {
     results.push({ specifier: m[1], isRelative: true });
+  }
+
+  // Absolute from-imports: `from fastapi.routing import APIRouter`
+  // (no leading dot — distinguished by negative lookahead in the
+  // character class for the first character of the specifier).
+  const absFrom = /^from\s+([A-Za-z_][\w.]*)\s+import/gm;
+  while ((m = absFrom.exec(content)) !== null) {
+    results.push({ specifier: m[1], isRelative: false });
+  }
+
+  // Direct imports: `import package` or `import package.module`.
+  // Matches the FIRST identifier on the line — multi-import statements
+  // (`import a, b, c`) only contribute the first; rare in practice and
+  // the AST path catches them all when grammar is loaded.
+  const directImport = /^import\s+([A-Za-z_][\w.]*)/gm;
+  while ((m = directImport.exec(content)) !== null) {
+    results.push({ specifier: m[1], isRelative: false });
   }
 
   return results;
@@ -111,28 +128,60 @@ function resolvePythonImport(
   raw: RawImport,
   rootDir: string,
 ): string | null {
-  // Count leading dots: `.` = same package, `..` = parent, etc.
   const dotsMatch = raw.specifier.match(/^(\.+)/);
-  const dots = dotsMatch?.[1] ?? '.';
-  const modulePart = raw.specifier.slice(dots.length); // after the dots
 
-  // Traverse up by (dots.length - 1) levels from the file's directory
-  let baseDir = fromDir;
-  for (let i = 1; i < dots.length; i++) {
-    baseDir = path.dirname(baseDir);
+  if (dotsMatch) {
+    // ── Relative import: `from .foo import bar` or `from ..pkg.mod import x`
+    const dots = dotsMatch[1];
+    const modulePart = raw.specifier.slice(dots.length); // after the dots
+
+    // Traverse up by (dots.length - 1) levels from the file's directory.
+    let baseDir = fromDir;
+    for (let i = 1; i < dots.length; i++) {
+      baseDir = path.dirname(baseDir);
+    }
+
+    const modulePath = modulePart.replace(/\./g, path.sep);
+    const candidates = modulePath
+      ? [
+          path.join(baseDir, modulePath + '.py'),
+          path.join(baseDir, modulePath, '__init__.py'),
+        ]
+      : [
+          path.join(fromDir, '__init__.py'),
+          fromAbs, // self — skip below
+        ];
+
+    for (const c of candidates) {
+      if (c !== fromAbs && fs.existsSync(c)) {
+        return path.relative(rootDir, c);
+      }
+    }
+
+    return null;
   }
 
-  const modulePath = modulePart.replace(/\./g, path.sep);
-
-  const candidates = modulePath
-    ? [
-        path.join(baseDir, modulePath + '.py'),
-        path.join(baseDir, modulePath, '__init__.py'),
-      ]
-    : [
-        path.join(fromDir, '__init__.py'),
-        fromAbs, // self — skip below
-      ];
+  // ── Absolute import: `from fastapi.routing import APIRouter` or
+  //    `import fastapi.routing`. Pre-fix this whole branch was missing —
+  //    resolvePythonImport assumed leading dots, then sliced(1) ate the
+  //    first character of the specifier ('fastapi.routing' → 'astapi.routing').
+  //    Result: every absolute Python import silently failed to resolve.
+  //    Surfaced by the v1.6.0 bench spike on fastapi: 140 edges in a
+  //    2464-file repo (vs ~120 in express's 155 files).
+  //
+  // Most Python projects use absolute imports rooted at either the repo
+  // root (`<package>/__init__.py`) or a `src/<package>/__init__.py`
+  // layout. We probe both. Site-packages / stdlib references resolve
+  // to null (correctly — they're not in this repo's graph).
+  const modulePath = raw.specifier.replace(/\./g, path.sep);
+  const candidates = [
+    // <repoRoot>/<package>/foo.py  or  <repoRoot>/<package>/foo/__init__.py
+    path.join(rootDir, modulePath + '.py'),
+    path.join(rootDir, modulePath, '__init__.py'),
+    // src/ layout (common for Python apps that follow PEP 518 src-layout)
+    path.join(rootDir, 'src', modulePath + '.py'),
+    path.join(rootDir, 'src', modulePath, '__init__.py'),
+  ];
 
   for (const c of candidates) {
     if (c !== fromAbs && fs.existsSync(c)) {

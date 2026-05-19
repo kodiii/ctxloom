@@ -22,16 +22,45 @@ describe('extractImports()', () => {
       expect(result[0].isRelative).toBe(true);
     });
 
-    it('should ignore absolute imports', () => {
-      const result = extractImports('src/foo.py', 'import os\nfrom pathlib import Path\n');
-      expect(result).toHaveLength(0);
+    /**
+     * Updated to reflect the v1.6.0-spike Python-resolver fix:
+     * extractImports now emits BOTH relative and absolute Python
+     * imports. The resolver downstream filters out stdlib/site-packages
+     * (returns null when no file in the repo matches) — so extraction
+     * and resolution are now correctly separated.
+     *
+     * Pre-fix behavior was "ignore everything that isn't relative",
+     * which silently dropped every absolute import in real Python
+     * codebases (fastapi, django, flask, etc. are 95%+ absolute).
+     */
+    it('should extract absolute from-imports', () => {
+      const result = extractImports('src/foo.py', 'from fastapi.routing import APIRouter\n');
+      expect(result).toHaveLength(1);
+      expect(result[0].specifier).toBe('fastapi.routing');
+      expect(result[0].isRelative).toBe(false);
     });
 
-    it('should handle multiple relative imports', () => {
-      const content = 'from .models import User\nfrom ..db import session\nimport sys\n';
-      const result = extractImports('app/views.py', content);
+    it('should extract bare import statements', () => {
+      const result = extractImports('src/foo.py', 'import os\nimport fastapi.responses\n');
       expect(result).toHaveLength(2);
-      expect(result.map(r => r.specifier)).toEqual(['.models', '..db']);
+      expect(result.map((r) => r.specifier)).toEqual(['os', 'fastapi.responses']);
+      expect(result.every((r) => r.isRelative === false)).toBe(true);
+    });
+
+    it('should handle a realistic mix of relative + absolute imports', () => {
+      const content = [
+        'from .models import User',
+        'from ..db import session',
+        'import sys',
+        'from fastapi.routing import APIRouter',
+      ].join('\n') + '\n';
+      const result = extractImports('app/views.py', content);
+      // Two relative + one absolute from + one bare import = 4
+      expect(result).toHaveLength(4);
+      const relSpecs = result.filter((r) => r.isRelative).map((r) => r.specifier);
+      const absSpecs = result.filter((r) => !r.isRelative).map((r) => r.specifier);
+      expect(relSpecs.sort()).toEqual(['..db', '.models']);
+      expect(absSpecs.sort()).toEqual(['fastapi.routing', 'sys']);
     });
   });
 
@@ -157,6 +186,96 @@ describe('resolveImport()', () => {
       const fromAbs = path.join(tempDir, 'src', 'foo.py');
       const result = resolveImport(fromAbs, { specifier: '.nonexistent', isRelative: true }, tempDir);
       expect(result).toBeNull();
+    });
+
+    /**
+     * Regression coverage for the v1.6.0 bench-spike finding:
+     * absolute Python imports were silently broken because the
+     * resolver assumed every specifier started with a leading dot,
+     * sliced(1) the first character off non-dot specifiers, and
+     * looked up paths like 'astapi.routing' (was 'fastapi.routing').
+     *
+     * 95%+ of real-world Python project imports are absolute. This
+     * bug crippled the graph for every Python user — surfaced only
+     * because the bench measured against PR ground truth.
+     */
+    it('should resolve absolute from-import: `from pkg.mod import X`', () => {
+      fs.mkdirSync(path.join(tempDir, 'fastapi'), { recursive: true });
+      fs.writeFileSync(path.join(tempDir, 'fastapi', 'routing.py'), '');
+      fs.writeFileSync(path.join(tempDir, 'fastapi', '__init__.py'), '');
+      fs.writeFileSync(path.join(tempDir, 'app.py'), '');
+
+      const fromAbs = path.join(tempDir, 'app.py');
+      const result = resolveImport(
+        fromAbs,
+        { specifier: 'fastapi.routing', isRelative: false },
+        tempDir,
+      );
+      expect(result).toBe(path.join('fastapi', 'routing.py'));
+    });
+
+    it('should resolve absolute package import to __init__.py', () => {
+      fs.mkdirSync(path.join(tempDir, 'fastapi'), { recursive: true });
+      fs.writeFileSync(path.join(tempDir, 'fastapi', '__init__.py'), '');
+      fs.writeFileSync(path.join(tempDir, 'app.py'), '');
+
+      const fromAbs = path.join(tempDir, 'app.py');
+      const result = resolveImport(
+        fromAbs,
+        { specifier: 'fastapi', isRelative: false },
+        tempDir,
+      );
+      expect(result).toBe(path.join('fastapi', '__init__.py'));
+    });
+
+    it('should resolve absolute import in src/ layout (PEP 518)', () => {
+      fs.mkdirSync(path.join(tempDir, 'src', 'mypkg'), { recursive: true });
+      fs.writeFileSync(path.join(tempDir, 'src', 'mypkg', 'core.py'), '');
+      fs.writeFileSync(path.join(tempDir, 'src', 'mypkg', '__init__.py'), '');
+      fs.writeFileSync(path.join(tempDir, 'app.py'), '');
+
+      const fromAbs = path.join(tempDir, 'app.py');
+      const result = resolveImport(
+        fromAbs,
+        { specifier: 'mypkg.core', isRelative: false },
+        tempDir,
+      );
+      expect(result).toBe(path.join('src', 'mypkg', 'core.py'));
+    });
+
+    it('should return null for stdlib/site-packages (not in repo)', () => {
+      // `import os`, `import pathlib` — these resolve to nothing IN
+      // THE REPO. The resolver correctly returns null; the graph
+      // builder treats null as "no edge" (matches existing behavior).
+      fs.writeFileSync(path.join(tempDir, 'app.py'), '');
+      const fromAbs = path.join(tempDir, 'app.py');
+      expect(
+        resolveImport(fromAbs, { specifier: 'os', isRelative: false }, tempDir),
+      ).toBeNull();
+      expect(
+        resolveImport(fromAbs, { specifier: 'pathlib', isRelative: false }, tempDir),
+      ).toBeNull();
+    });
+
+    it('should not crash on first-character slice (regression: was eating chars)', () => {
+      // Pre-fix bug reproducer: 'fastapi.routing' was sliced to
+      // 'astapi.routing' because the resolver assumed the first char
+      // was a dot. Verifies the specifier is preserved.
+      fs.mkdirSync(path.join(tempDir, 'fastapi'), { recursive: true });
+      fs.writeFileSync(path.join(tempDir, 'fastapi', 'routing.py'), '');
+      // Critically — DON'T create 'astapi/routing.py'. If the bug
+      // returns, the resolver would look for that and fail (null).
+      fs.writeFileSync(path.join(tempDir, 'app.py'), '');
+
+      const fromAbs = path.join(tempDir, 'app.py');
+      const result = resolveImport(
+        fromAbs,
+        { specifier: 'fastapi.routing', isRelative: false },
+        tempDir,
+      );
+      // Must resolve to fastapi/routing.py, not null and definitely
+      // not 'astapi/routing.py' (which doesn't exist anyway).
+      expect(result).toBe(path.join('fastapi', 'routing.py'));
     });
   });
 
