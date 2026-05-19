@@ -3,11 +3,12 @@
  *
  * These tests use the test fixtures in tests/fixtures/.
  */
-import { describe, it, expect, beforeAll } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { ASTParser } from '../src/ast/ASTParser.js';
 import { Skeletonizer } from '../src/ast/Skeletonizer.js';
 import path from 'node:path';
-import { readFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -32,6 +33,109 @@ describe('ASTParser', () => {
       const nodes = await parser.parse(SAMPLE_TS);
       const imports = nodes.filter(n => n.type === 'import');
       expect(imports.length).toBeGreaterThanOrEqual(2); // fs, path, Config
+    });
+
+    /**
+     * Regression coverage for the v1.6.0 bench-spike finding: pure
+     * CommonJS projects (express and most pre-2020 Node libs) used
+     * to produce a dependency graph with zero edges because the
+     * JS walker only handled ES6 `import_statement` nodes — never
+     * `require('./path')` call expressions. Now mirrors Ruby's
+     * special-case treatment of require/require_relative/load.
+     */
+    describe('CommonJS require() imports', () => {
+      let tmpDir: string;
+
+      beforeAll(() => {
+        tmpDir = mkdtempSync(path.join(tmpdir(), 'ctxloom-cjs-test-'));
+      });
+
+      afterAll(() => {
+        rmSync(tmpDir, { recursive: true, force: true });
+      });
+
+      it('emits an import node for `require(\'./relative\')`', async () => {
+        const file = path.join(tmpDir, 'simple-require.js');
+        writeFileSync(
+          file,
+          [
+            "var express = require('./lib/express');",
+            "module.exports = express;",
+          ].join('\n'),
+        );
+
+        const nodes = await parser.parse(file);
+        const imports = nodes.filter(n => n.type === 'import');
+        expect(imports.length).toBe(1);
+        expect(imports[0].source).toBe('./lib/express');
+      });
+
+      it('emits import nodes for multiple require() calls in one file', async () => {
+        const file = path.join(tmpDir, 'multi-require.js');
+        writeFileSync(
+          file,
+          [
+            "const a = require('./a');",
+            "const b = require('../b');",
+            "const c = require('./nested/c.js');",
+            "module.exports = { a, b, c };",
+          ].join('\n'),
+        );
+
+        const nodes = await parser.parse(file);
+        const imports = nodes.filter(n => n.type === 'import');
+        const specs = imports.map(i => i.source).sort();
+        expect(specs).toEqual(['../b', './a', './nested/c.js']);
+      });
+
+      it('emits import nodes for destructured require()', async () => {
+        const file = path.join(tmpDir, 'destructure-require.js');
+        writeFileSync(
+          file,
+          [
+            "const { Router } = require('./router');",
+            "const { Map, Set } = require('./collections');",
+          ].join('\n'),
+        );
+
+        const nodes = await parser.parse(file);
+        const imports = nodes.filter(n => n.type === 'import');
+        const specs = imports.map(i => i.source).sort();
+        expect(specs).toEqual(['./collections', './router']);
+      });
+
+      it('skips dynamic require() with a variable argument (not resolvable)', async () => {
+        const file = path.join(tmpDir, 'dynamic-require.js');
+        writeFileSync(
+          file,
+          [
+            "const name = './foo';",
+            "const mod = require(name);", // dynamic — must be skipped
+            "const lit = require('./real');", // static — must emit
+          ].join('\n'),
+        );
+
+        const nodes = await parser.parse(file);
+        const imports = nodes.filter(n => n.type === 'import');
+        expect(imports.map(i => i.source)).toEqual(['./real']);
+      });
+
+      it('coexists with ES6 import_statement in the same TS file', async () => {
+        const file = path.join(tmpDir, 'mixed-imports.ts');
+        writeFileSync(
+          file,
+          [
+            "import fs from 'node:fs';",
+            "const legacyLib = require('./legacy');",
+            "export const x = 1;",
+          ].join('\n'),
+        );
+
+        const nodes = await parser.parse(file);
+        const imports = nodes.filter(n => n.type === 'import');
+        const specs = imports.map(i => i.source).sort();
+        expect(specs).toEqual(['./legacy', 'node:fs']);
+      });
     });
 
     it('should detect function declarations', async () => {
