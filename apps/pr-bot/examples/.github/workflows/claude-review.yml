@@ -132,7 +132,7 @@ jobs:
         # CHANGELOG.md is the source of truth for which MCP surface a
         # given version exposes.
         run: |
-          npm install -g ctxloom-pro@1.5.2
+          npm install -g ctxloom-pro@1.5.3
           ctxloom --version
 
       - name: Activate ctxloom license (CI ephemeral)

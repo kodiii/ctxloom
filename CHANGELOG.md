@@ -5,6 +5,145 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
 ---
 
+## [1.5.3] — 2026-05-19
+
+Patch release — silent-failure graph-quality fixes. Three bugs that
+silently degraded the dependency graph for **every existing customer
+with a Node.js (CommonJS) or Python codebase**. No API changes, no
+config changes — reinstall and the graph finds dramatically more.
+
+Empirical impact (measured via the in-development v1.6.0 bench harness):
+
+| Codebase | Graph edges before | Graph edges after | Delta |
+|---|---:|---:|---:|
+| expressjs/express (152 files) | 0 | **152** | ∞ |
+| tiangolo/fastapi (2477 files) | 140 | **1538** | **11×** |
+
+Blast-radius recall — "given a changed file, does the graph find the
+files affected by the change?" — climbed dramatically on real PRs:
+
+| Repo + PR | Recall before | Recall after |
+|---|---:|---:|
+| express #6525 (14-file PR) | 0.07 | **0.71** |
+| express #6903 (3-file PR) | 0.33 | **0.67** |
+| fastapi #15030 (23-file PR) | 0.04 | **0.43** |
+| fastapi #15022 (21-file PR) | 0.14 | **0.43** |
+
+If your project uses `require('./foo')` (any pre-2020 Node lib —
+Express, Koa, Hapi, Restify, Fastify pre-v3, Lodash, async, Jest
+pre-v25, many internal Node tools) OR absolute Python imports
+(`from fastapi.routing import APIRouter`, `from django.db import ...`,
+`from flask import ...`), you were affected. Most users probably
+attributed the degraded graph to "ctxloom doesn't find much for my
+project" — that wasn't your project, it was these bugs.
+
+### Fixed
+
+- **CommonJS `require()` calls now build dependency edges** (#163).
+  Pre-fix the JS/TS parser walked only ES6 `import_statement` AST
+  nodes; `require('./path')` was a `call_expression` with no special
+  handling, so pure CommonJS projects produced a graph with 0 edges
+  and blast radius collapsed to the seed file only. Cooperating bug:
+  the `lexical_declaration` walker case had `return` after handling
+  arrow_function, so `const x = require('./y')` got dropped entirely
+  (the const binding's call_expression value was never visited),
+  while `var x = require('./y')` worked because `variable_declaration`
+  has no walker case and falls through to default child-recursion.
+  Patterns now resolved:
+  - `require('./relative')` / `require('../relative')`
+  - `const x = require('./y')` / `let x = require('./y')`
+  - `const { Router } = require('./router')` (destructured)
+  - Mixed ES6 `import` + CommonJS `require()` in the same TS file
+  - Dynamic `require(varName)` correctly skipped (not statically resolvable)
+
+- **Resolver no longer matches directories instead of `/index.js`** (#166).
+  Pre-fix the resolver used `fs.existsSync()` which returns true for
+  both files AND directories. The extension loop's first iteration
+  used `ext=''` (intended for specifiers that already include an
+  extension) — but a bare specifier like `..` resolved to the parent
+  *directory*, which `existsSync` matched, and the loop returned the
+  directory's relative path (often the empty string) without ever
+  trying `/index.js`. Every `require('..')` from a subdirectory
+  produced a broken edge. Tests reached the seed via 3-hop chains
+  like `test/foo.js → require('..') → index.js → require('./lib/express')
+  → require('./application')`, but the chain broke at hop 1 and tests
+  appeared as orphans. Fix replaces `existsSync` with
+  `statSync().isFile()`; directories no longer shadow file
+  candidates. Extension list extended to include `.mjs`, `.cjs`,
+  `/index.tsx`, `/index.jsx`, `/index.mjs`, `/index.cjs`.
+
+- **Absolute Python imports now resolve to real files** (#168). Pre-fix
+  `resolvePythonImport()` assumed every specifier started with a
+  leading dot. For absolute imports like `fastapi.routing`:
+  1. `dotsMatch = 'fastapi.routing'.match(/^(\.+)/)` → null
+  2. Fallback: `dots = '.', dots.length = 1`
+  3. `modulePart = specifier.slice(1)` = `'astapi.routing'` ← bug ate
+     the first character
+  4. Candidate paths used `astapi/routing.py` (doesn't exist)
+  5. Every absolute import silently failed to resolve
+  Real Python projects are 95%+ absolute imports. Cooperating bug:
+  the regex extractor (used as fallback when AST grammar is
+  unavailable) only matched relative from-imports; absolute imports
+  and bare `import x` were ignored entirely. Fix branches the
+  resolver on `dotsMatch`: relative → existing logic; absolute →
+  resolve against repo root + PEP 518 `src/` layout. Extractor now
+  emits all three forms (relative from-import, absolute from-import,
+  direct `import pkg.mod`). Stdlib / site-packages references
+  correctly return null.
+
+### Tests
+
+- 1214 → 1239 root (+25 net):
+  - 5 new tests for CommonJS require() detection covering bare /
+    relative / destructured / dynamic patterns and ES6/CJS coexistence (#163)
+  - 7 new resolver tests covering directory-vs-file precedence,
+    `/index.js` fallback, `.mjs` / `.cjs` extensions, the
+    `require('..')` regression case (#166)
+  - 5 new resolver tests for Python absolute imports covering bare
+    package import, PEP 518 `src/` layout, stdlib null-return, and
+    the first-character-slice regression (#168)
+  - 4 new bench metric tests for source-file recall calibration
+  - 2 existing tests updated from "should ignore absolute imports"
+    (which pinned the bug as intended behavior) to "should extract
+    absolute imports" with the corrected expectation
+- Full project suite: **1239/1249 passing** (10 pre-existing it.todo
+  for grammar-blocked Kotlin/Swift fixtures, unchanged)
+
+### Internal — bench infrastructure (not customer-facing)
+
+The v1.6.0 bench harness that surfaced these bugs lives in
+`scripts/bench/` and `evaluate/`. Methodology documented in
+`evaluate/methodology.md`. Foundation for the upcoming v1.6.0
+published benchmark release.
+
+### Migration
+
+**Zero migration required.** Reinstall ctxloom (or `npm update -g
+ctxloom-pro`), re-run `ctxloom index` against your project, and the
+graph rebuilds with the correct edges.
+
+Existing snapshots in `.ctxloom/graph-snapshot.json` were built with
+the buggy parsers and will be regenerated on next index. Re-indexing
+takes the same amount of time as the original — no overhead.
+
+### Discovery story
+
+These bugs went undetected for months despite extensive unit and
+integration testing because they were SILENT failures. The graph
+builder completed without errors; it just produced a graph with the
+wrong edges. Users probably saw "blast radius from this file returns
+nothing much" and shrugged — attributing it to their codebase shape
+rather than recognizing a hard bug.
+
+The v1.6.0 bench harness — measuring graph predictions against real
+PR diffs from public OSS repos — was the first time we had
+ground-truth measurement of graph quality. All three bugs surfaced
+within the first measured run. This is also the broader argument for
+measurement infrastructure: silent failures only become loud when
+they're measured against external reality.
+
+---
+
 ## [1.5.2] — 2026-05-18
 
 Patch release — surfaces budget telemetry in the web dashboard.
