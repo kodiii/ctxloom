@@ -618,11 +618,45 @@ export class DependencyGraph {
   }
 
   private resolveImport(fromAbs: string, specifier: string, rootDir: string): string | null {
+    // CommonJS / TS-style relative import resolution.
+    //
+    // Why statSync().isFile() instead of existsSync(): existsSync returns
+    // true for directories too. The original loop's first iteration uses
+    // ext='' for "specifier already includes an extension" — but a bare
+    // specifier like '..' resolves to a directory. existsSync would
+    // match the directory and return the dir's relative path (often the
+    // empty string for the repo root), creating broken edges.
+    //
+    // Concrete example surfaced by the bench spike on express:
+    //   test/app.render.js: require('..')
+    //   → path.resolve('test', '..') = <repoRoot> (a directory, exists)
+    //   → without the isFile() check, edge was rootDir→'' (broken)
+    //   → with the check, falls through to /index.js
+    //   → correctly resolves to 'index.js'
+    //
+    // Order also matters: '/index.*' must come AFTER the bare extension
+    // attempts so a real file './foo.js' isn't shadowed by './foo/index.js'
+    // when both exist. The current order is correct on that count.
+    //
+    // Added .mjs and .cjs to cover modern Node modules + bench corpus repos
+    // that use them. /index.mjs is rare but cheap to include.
     const dir = path.dirname(fromAbs);
-    for (const ext of ['', '.ts', '.tsx', '.js', '.jsx', '/index.ts', '/index.js']) {
+    const extensions = [
+      '',
+      '.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs',
+      '/index.ts', '/index.tsx', '/index.js', '/index.jsx',
+      '/index.mjs', '/index.cjs',
+    ];
+    for (const ext of extensions) {
       const candidate = path.resolve(dir, specifier.replace(/\.js$/, '') + ext);
-      if (fs.existsSync(candidate)) {
-        return path.relative(rootDir, candidate);
+      try {
+        if (fs.statSync(candidate).isFile()) {
+          return path.relative(rootDir, candidate);
+        }
+      } catch {
+        // ENOENT — try next extension. (statSync throws on missing files;
+        // we use the throw as the "doesn't exist" signal rather than a
+        // separate existsSync() call to halve the syscalls.)
       }
     }
     return null;
