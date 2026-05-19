@@ -9,13 +9,26 @@ are flagged so we don't replicate their bugs.
 Verification date: 2026-05-19. Vendor docs evolve — when adding new
 hosts later, re-verify everything in this table.
 
+## Scope decision (post-review)
+
+**ctxloom v1.7.0 ships 9 validated hosts.** Tier-C (Antigravity, Qoder,
+Qwen, Copilot CLI) is **out of scope** — those audiences either don't
+overlap with ctxloom's paying user base or will add MCP entries manually
+when needed. Shipping unvalidated adapters for the sake of a "15 hosts"
+marketing claim is breadth chasing at the cost of trust signals; we'd
+rather say "9 hosts, all validated against real installs" than
+"15 hosts, 4 untested."
+
+Tier-C entries remain in this doc as a future-options register, marked
+clearly. They are NOT to be implemented in v1.7.0.
+
 ## Verification tier legend
 
 | Tier | Meaning |
 |---|---|
-| **A** | Vendor's own current docs explicitly state the path + schema. Safe to ship without an `experimental` flag. |
-| **B** | Confirmed via real GitHub-search examples or upstream source code, but vendor docs missing/sparse. Ship with a TODO comment but no `experimental` flag. |
-| **C** | Sourced only from `code-review-graph`'s empirical PLATFORMS dict — we couldn't independently verify. Ship behind `experimental: true` until a maintainer or user validates against a real install. |
+| **A** | Vendor's own current docs explicitly state the path + schema. Ship in v1.7.0. |
+| **B** | Confirmed via real GitHub-search examples or upstream source code, but vendor docs missing/sparse. Ship in v1.7.0 with a TODO comment. |
+| **C** | Sourced only from `code-review-graph`'s empirical PLATFORMS dict — we couldn't independently verify. **Deferred. NOT shipping in v1.7.0.** Track separately if a paying customer asks for one. |
 
 ## Bugs found in code-review-graph's PLATFORMS dict (do NOT copy)
 
@@ -29,7 +42,7 @@ are stale or incorrect for current host versions:
 
 Lesson: verifying first was worth the half-day cost. Two hosts would have shipped broken.
 
-## Registry — 15 hosts
+## Registry — 11 adapters in v1.7.0 covering 10 AI products, 4 deferred
 
 | # | id | Display | Tier | MCP config path | Schema key | Format | Detection | Vendor doc |
 |---|---|---|---|---|---|---|---|---|
@@ -44,10 +57,22 @@ Lesson: verifying first was worth the half-day cost. Two hosts would have shippe
 | 9 | `copilot-vscode` | GitHub Copilot (VS Code) | A | `<repo>/.vscode/mcp.json` | **`servers`** (not `mcpServers`) | JSON object | `~/.vscode/` exists OR VS Code on PATH | docs.github.com/.../extending-copilot-chat-with-mcp |
 | 10 | `continue` | Continue | **A (corrected)** | **Per-server YAML in `.continue/mcpServers/<name>.yaml`** (workspace) — NOT what code-review-graph's dict says | each YAML file has its own root, `mcpServers:` followed by `- name:` array entry | YAML | `~/.continue/` exists OR Continue VS Code extension installed | [docs.continue.dev/customize/deep-dives/mcp](https://docs.continue.dev/customize/deep-dives/mcp) |
 | 11 | `opencode` | OpenCode | **A (corrected)** | `<repo>/opencode.json` or `<repo>/opencode.jsonc` | **`mcp`** (NOT `mcpServers`) | JSON object | `opencode` on PATH OR `opencode.json` exists in repo | [opencode.ai/docs/mcp-servers](https://opencode.ai/docs/mcp-servers/) |
-| 12 | `qwen` | Qwen Code | C — **experimental** | `~/.qwen/settings.json` (assumed — vendor docs don't document MCP) | `mcpServers` (assumed) | JSON object (assumed) | `~/.qwen/` exists | code-review-graph empirical only |
-| 13 | `qoder` | Qoder | C — **experimental** | `<repo>/.qoder/mcp.json` (assumed) | `mcpServers` (assumed) | JSON object | `~/.qoder/` exists | code-review-graph empirical only |
-| 14 | `antigravity` | Google Antigravity | C — **experimental** | `~/.gemini/antigravity/mcp_config.json` (Gemini variant) | `mcpServers` | JSON object | `~/.gemini/antigravity/` exists | code-review-graph empirical only |
-| 15 | `copilot-cli` | GitHub Copilot CLI | C — **experimental** | `~/.copilot/mcp-config.json` (assumed) | `servers` (assumed, mirrors VS Code) | JSON object | `~/.copilot/` exists OR `gh copilot` available | docs link present but page unfetched |
+### Deferred (NOT shipping in v1.7.0)
+
+The four entries below are tracked here for completeness only. Each was
+considered, then dropped because the audience overlap with ctxloom's
+paying user base is too thin to justify shipping an unvalidated adapter.
+
+| # | id | Display | Why deferred | Speculative config (don't trust) |
+|---|---|---|---|---|
+| D1 | `qwen` | Qwen Code | Alibaba terminal tool; geographic / audience mismatch | `~/.qwen/settings.json`, `mcpServers` |
+| D2 | `qoder` | Qoder | Chinese AI IDE; geographic / audience mismatch | `<repo>/.qoder/mcp.json`, `mcpServers` |
+| D3 | `antigravity` | Google Antigravity | Invite-only preview product; ~zero adoption today | `~/.gemini/antigravity/mcp_config.json`, `mcpServers` |
+| D4 | `copilot-cli` | GitHub Copilot CLI | Niche even within Copilot users; covered by VS Code adapter for primary use case | `~/.copilot/mcp-config.json`, `servers` |
+
+**Re-evaluation trigger:** add a deferred host to v1.x.y when a paying
+customer explicitly requests it. Before then, "ctxloom doesn't ship X
+yet — add it manually via the host's MCP config" is the right answer.
 
 ## Notes on tier-A hosts
 
@@ -96,30 +121,19 @@ env:
 Schema key is `mcp`, not `mcpServers`. The file is `opencode.json` at repo root
 (not `.opencode.json`). Also accepts `opencode.jsonc` (with comments).
 
-## Notes on tier-C hosts
+## Why no `--include-experimental` flag
 
-### All four (Qwen, Qoder, Antigravity, Copilot CLI)
+An earlier draft proposed shipping all 15 hosts with tier-C behind
+a `ctxloom init --auto --include-experimental` flag. Dropped because:
 
-We have not validated these against a real install. We're shipping with the
-config paths sourced from `code-review-graph`'s empirical PLATFORMS dict
-because they had access to the products and we don't (yet).
+- Trust signal: "9 validated > 13 sort-of-validated" for a paid product
+- Maintenance: every experimental adapter is a future bug report we can't
+  reproduce ourselves
+- Audience: zero overlap with current ctxloom buyer profile
 
-Behavior:
-
-1. Adapter ships with `experimental: true`
-2. `ctxloom init --auto` skips experimental hosts by default
-3. User opts in with `ctxloom init --auto --include-experimental`
-4. CLI prints a warning when an experimental adapter is invoked:
-
-   ```
-   ⚠ Installing experimental adapter for <host-name>.
-     Config paths are sourced from code-review-graph's empirical
-     registry and have not been validated against a current install
-     of this host. Report bugs at github.com/kodiii/ctxloom/issues.
-   ```
-
-5. Promote to tier-B (and drop the flag) once we or a contributor
-   confirms the adapter actually works against a real install.
+A deferred host is added the same way any other feature is: when a
+real customer asks for it, in a normal patch release with proper
+validation against their setup.
 
 ## Detection model — match code-review-graph's simplicity
 
@@ -155,19 +169,25 @@ We can revisit if real users complain. Ship simple first.
 - **Skills** — only Claude Code currently. Cursor's "rules" are not
   equivalent. Out of scope.
 
-## Open questions to resolve in Phase 1
+## Decisions locked for v1.7.0 implementation
 
-1. **Detection precedence** — what if a user has both Claude Desktop and
-   Claude Code? Write to both, since they're different products with
-   different config files. Document explicitly.
-2. **Project-local vs user-global Cursor** — code-review-graph only writes
-   to project-local. We should match for consistency (avoids polluting
-   user's global config with project-specific paths in `CTXLOOM_ROOT`).
-3. **What if user already has an `mcpServers.ctxloom` entry with a
-   different `CTXLOOM_ROOT`?** — Same as today's `.mcp.json` logic:
-   compare to canonical, update if different, no-op if same, refuse
-   on HMAC drift unless `--force`.
-4. **Codex CLI TOML — should we hand-edit or use a parser?** — Use a
-   parser. Hand-editing TOML inside an existing user-owned config is
-   too risky (comments, formatting, key ordering). Adds one dep to
-   `@ctxloom/core`; acceptable.
+1. **Detection precedence** — Claude Desktop and Claude Code are different
+   products with different config files; write to both when both are
+   detected. Document explicitly in the install summary output.
+2. **Project-local vs user-global Cursor** — write to project-local
+   (`<repo>/.cursor/mcp.json`) only. Avoids polluting user's global
+   config with project-specific `CTXLOOM_ROOT` paths.
+3. **Drift detection for JSON entries** — separate state file at
+   `~/.ctxloom/install-state.json`, NOT inline HMAC sentinels (JSON
+   has no comments). The state file stores the canonical hash of
+   each entry we wrote, keyed by `(host_id, project_root)`. On
+   re-install: compute current entry hash, compare to recorded hash,
+   refuse to overwrite if they diverge unless `--force`.
+4. **Codex CLI TOML** — use a parser. Hand-editing TOML inside an
+   existing user-owned config is too risky (comments, formatting,
+   key ordering). `smol-toml` (16kb) preferred over `@iarna/toml`
+   (60kb) for bundle size.
+5. **Continue YAML** — use `yaml` package (Node has no built-in).
+   Write one file per server at `.continue/mcpServers/ctxloom.yaml`,
+   not a merge into a shared file. Sidesteps the "shared YAML with
+   user content" problem entirely.
