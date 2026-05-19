@@ -72,9 +72,9 @@ async function runRepo(entry: CorpusEntry): Promise<RepoReport> {
     const gt = fetchGroundTruth(entry.repo, prNumber);
     console.error(`    ground-truth files: ${gt.groundTruthFiles.length}`);
     console.error(`    entry point: ${gt.entryPoint}`);
-    console.error(`    parent SHA: ${gt.parentSha.slice(0, 7)}`);
+    console.error(`    eval SHA (post-merge): ${gt.evalSha.slice(0, 7)}`);
 
-    const worktree = ensureWorktree(entry.repo, prNumber, gt.parentSha);
+    const worktree = ensureWorktree(entry.repo, prNumber, gt.evalSha);
     console.error(`  PR #${prNumber}: indexing ${worktree}...`);
     indexRepo(worktree);
 

@@ -96,8 +96,8 @@ function isBinary(filepath: string): boolean {
  *
  * Returns:
  *  - groundTruthFiles: paths the PR actually changed (binary-filtered)
- *  - entryPoint: most-changed file (TIE-BREAKER: alphabetical for determinism)
- *  - parentSha: what to checkout for "pre-PR state"
+ *  - entryPoint: most-changed non-test source file (alphabetical tie-break)
+ *  - evalSha: the merge commit (post-PR state) — see types.ts for why
  */
 export function fetchGroundTruth(repo: string, prNumber: number): GroundTruth {
   const raw = execFileSync(
@@ -174,9 +174,33 @@ export function fetchGroundTruth(repo: string, prNumber: number): GroundTruth {
     : sortByImpact(allSourceFiles);
   const entryPoint = sortedCandidates[0].path;
 
-  // baseRefOid is the parent of the PR head before merge — the
-  // "pre-PR state" we want to index.
-  const parentSha = data.baseRefOid;
+  // Index the merge commit (post-PR state), not baseRefOid (pre-PR).
+  //
+  // Pre-fix: baseRefOid = parent of PR head before merge → for PRs
+  // that ADD new files (fastapi #15030 created fastapi/sse.py), the
+  // entry-point file didn't exist in the graph and blast radius
+  // collapsed to predicted=1.
+  //
+  // Post-fix: mergeCommit.oid = the commit that integrated the PR's
+  // changes into main. A real reviewer reads THIS state — they have
+  // the new code in front of them and ask "what does it touch?"
+  //
+  // Defensive fallback: GitHub returns mergeCommit=null for very old
+  // PRs or rebases-without-merge-commit edge cases. We've already
+  // gated on state==='MERGED' above so this is rare, but if it
+  // happens, fall back to baseRefOid + warn rather than crash.
+  let evalSha: string;
+  if (data.mergeCommit?.oid) {
+    evalSha = data.mergeCommit.oid;
+  } else {
+    // eslint-disable-next-line no-console -- bench output goes to stderr
+    console.error(
+      `  WARN: PR ${repo}#${prNumber} merged without a merge commit OID — ` +
+      `using baseRefOid as fallback. Recall numbers may be artificially low ` +
+      `for new-file PRs.`,
+    );
+    evalSha = data.baseRefOid;
+  }
 
-  return { prNumber, groundTruthFiles, entryPoint, parentSha };
+  return { prNumber, groundTruthFiles, entryPoint, evalSha };
 }

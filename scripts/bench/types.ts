@@ -42,11 +42,29 @@ export interface GroundTruth {
    */
   entryPoint: string;
   /**
-   * The commit SHA *before* the PR landed — what the graph indexes.
-   * Anything after this commit is "future knowledge" we'd be cheating
-   * with.
+   * The commit SHA the bench indexes against. Post-fix this is the
+   * **merge commit** (post-PR state), not the parent.
+   *
+   * Why post-merge:
+   *
+   * A real reviewer reads the post-merge codebase to assess impact —
+   * "given this code, what's affected?" — not "pretend none of this
+   * exists and ask the old graph." For PRs that ADD new files (most
+   * feature PRs), indexing the parent leaves the new files
+   * nonexistent in the graph, and blast radius from them collapses
+   * to the seed only.
+   *
+   * Concrete: fastapi #15030 created fastapi/sse.py. Indexing the
+   * parent gave predicted=1, recall=0.04 because sse.py had no
+   * importers in the pre-PR graph. Indexing the merge commit, sse.py
+   * exists, its importers (the new SSE tests + applications.py
+   * re-export) are reachable, recall climbs.
+   *
+   * For modified-only PRs the choice doesn't matter much — the
+   * entry-point file exists in both states. Picking the post-merge
+   * SHA uniformly is the methodology-consistent move.
    */
-  parentSha: string;
+  evalSha: string;
 }
 
 /** Output of `ctx_blast_radius` for one PR. */
