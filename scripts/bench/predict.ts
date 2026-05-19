@@ -48,15 +48,34 @@ export function indexRepo(repoPath: string): void {
  * Compute blast radius from the entry point against the indexed graph.
  *
  * Returns the union of:
- *   - the entry point itself (technically also "predicted to be affected")
- *   - direct importers (1-hop)
- *   - transitive importers (up to depth=3)
+ *   - the entry point itself (always a TP if it's in ground truth)
+ *   - direct importers (1-hop) only
  *
- * Excludes the historical-coupling section because that depends on git
- * overlay, which the bench corpus doesn't reliably have at every parent
- * SHA. The published methodology pins this as a deliberate choice — the
- * bench measures the static call-graph blast radius, not the historical
- * coupling overlay.
+ * Depth=1 calibration: was depth=3 in the original spike, which on a
+ * hub file like lib/response.js (express) or fastapi/routing.py
+ * (fastapi) reached 25-66% of the codebase and crashed precision to
+ * 0.01-0.10. Empirical pattern from the v1.6.0 spike:
+ *
+ *   - depth=3 express #6525: predicted 103 of 155 files, P=0.10
+ *   - depth=3 fastapi #15022: predicted 652 of 2464 files, P=0.01
+ *
+ * Depth=3 over-predicts on hub files because everything is reachable
+ * from a hub at depth 3 in a connected codebase. Depth=1 keeps the
+ * prediction tight to files that DIRECTLY import the seed — the set
+ * a reviewer would intuitively inspect first.
+ *
+ * Recall trade-off: we lose 2-hop and 3-hop importers from the
+ * prediction set. Tests that reach the seed through index.js →
+ * lib/express.js → lib/seed.js (the express CommonJS chain) drop
+ * out. So recall on small repos like express may dip slightly; on
+ * larger codebases like fastapi the noise reduction should
+ * dominate.
+ *
+ * Excludes the historical-coupling section because that depends on
+ * git overlay quality, which the bench corpus doesn't reliably have
+ * at every merge SHA. Published methodology pins this as a
+ * deliberate choice — bench measures static call-graph blast radius,
+ * not coupling overlay.
  */
 export async function blastRadius(
   repoPath: string,
@@ -75,12 +94,13 @@ export async function blastRadius(
   const report = getImpactRadius({
     graph,
     changedFiles: [entryPoint],
-    depth: 3,
+    depth: 1,
   });
 
-  // Union: the entry point + everything blast-radius identified.
-  // De-dupe in case the graph somehow lists the seed file as its own
-  // importer (it shouldn't, but defensive).
+  // Union: the entry point + direct importers only. With depth=1
+  // above, transitiveImporters is empty by definition; we leave the
+  // spread for shape-stability in case future calibration revisits
+  // depth (debug-friendly — easier to see the shape change in diffs).
   const predicted = new Set<string>([
     ...report.seedFiles,
     ...report.directImporters,
