@@ -54,7 +54,7 @@ function getCtxloomSha(): string {
  * Token measurements are placeholder (zeros) — wired in a follow-up
  * commit alongside `scripts/bench/tokens.ts`.
  */
-function runRepo(entry: CorpusEntry): RepoReport {
+async function runRepo(entry: CorpusEntry): Promise<RepoReport> {
   // eslint-disable-next-line no-console -- bench output goes to stderr
   console.error(`\n=== ${entry.repo} (${entry.prs.length} PRs) ===`);
   const perPr: Array<Metrics & TokenMetrics> = [];
@@ -71,7 +71,7 @@ function runRepo(entry: CorpusEntry): RepoReport {
     indexRepo(worktree);
 
     console.error(`  PR #${prNumber}: computing blast radius from ${gt.entryPoint}...`);
-    const prediction = blastRadius(worktree, gt.entryPoint, prNumber);
+    const prediction = await blastRadius(worktree, gt.entryPoint, prNumber);
     console.error(`    predicted files: ${prediction.predictedFiles.length}`);
 
     const metrics = computeMetrics(prNumber, gt.groundTruthFiles, prediction.predictedFiles);
@@ -131,7 +131,12 @@ async function main(): Promise<void> {
 
   console.error(`Running ${stage} bench on ${corpus.length} repos.`);
 
-  const repos = corpus.map(runRepo);
+  // Serial — concurrent indexing would compete for CPU and the disk
+  // state is shared per repo (.ctxloom/snapshots in the worktree).
+  const repos: RepoReport[] = [];
+  for (const entry of corpus) {
+    repos.push(await runRepo(entry));
+  }
   const allPrs = repos.flatMap((r) => r.perPr);
 
   const report: BenchReport = {

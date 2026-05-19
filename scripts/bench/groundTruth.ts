@@ -24,6 +24,23 @@ interface GhPrView {
   baseRefOid: string;
   /** Parent commit of the PR head — what we'd checkout to simulate "before". */
   mergeCommit: { oid: string } | null;
+  state: 'OPEN' | 'CLOSED' | 'MERGED';
+  mergedAt: string | null;
+}
+
+/** Extensions we treat as "source" — used to enforce the methodology rule
+ *  that PRs touch ≥ 2 source files. Markdown/JSON/yaml are configuration
+ *  or docs and don't exercise the import graph. */
+const SOURCE_EXTENSIONS = new Set([
+  '.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs', '.vue',
+  '.py', '.rs', '.go', '.java', '.cs', '.rb', '.kt', '.kts',
+  '.swift', '.php', '.dart', '.c', '.cpp', '.h',
+]);
+
+function isSourceFile(filepath: string): boolean {
+  const lastDot = filepath.lastIndexOf('.');
+  if (lastDot < 0) return false;
+  return SOURCE_EXTENSIONS.has(filepath.slice(lastDot).toLowerCase());
 }
 
 /** Filter heuristics matching the methodology doc. */
@@ -54,11 +71,22 @@ export function fetchGroundTruth(repo: string, prNumber: number): GroundTruth {
     [
       'pr', 'view', String(prNumber),
       '--repo', repo,
-      '--json', 'files,baseRefOid,mergeCommit',
+      '--json', 'files,baseRefOid,mergeCommit,state,mergedAt',
     ],
     { encoding: 'utf8' },
   );
   const data = JSON.parse(raw) as GhPrView;
+
+  // Methodology gate: refuse to evaluate against PRs that violate
+  // the selection rules. Failing fast here beats silently producing
+  // junk numbers (which is what happened on the first spike run
+  // when I'd guessed PR numbers without checking).
+  if (data.state !== 'MERGED' || data.mergedAt === null) {
+    throw new Error(
+      `PR ${repo}#${prNumber} is ${data.state} (not MERGED). ` +
+      `Methodology rule violated. Replace this PR in scripts/bench/corpus.ts.`,
+    );
+  }
 
   const groundTruthFiles = data.files
     .map((f) => f.path)
@@ -71,16 +99,29 @@ export function fetchGroundTruth(repo: string, prNumber: number): GroundTruth {
     );
   }
 
-  // Entry-point = max(additions + deletions); ties broken alphabetically
-  // so the bench is fully deterministic.
-  const sortedByImpact = [...data.files]
-    .filter((f) => !isBinary(f.path))
+  const sourceFiles = groundTruthFiles.filter(isSourceFile);
+  if (sourceFiles.length < 2) {
+    throw new Error(
+      `PR ${repo}#${prNumber} touches only ${sourceFiles.length} source file(s). ` +
+      `Methodology rule (≥2 source files) violated. ` +
+      `Files: ${groundTruthFiles.join(', ')}. ` +
+      `Replace this PR in scripts/bench/corpus.ts.`,
+    );
+  }
+
+  // Entry-point = source file with most lines changed; ties broken
+  // alphabetically for determinism. Restricting to source files (not
+  // just non-binary) means a PR with one large History.md change and
+  // a small lib/foo.js change picks lib/foo.js — which is what an
+  // agent reviewer would intuitively start from.
+  const sortedSourceByImpact = [...data.files]
+    .filter((f) => isSourceFile(f.path))
     .sort((a, b) => {
       const diff = (b.additions + b.deletions) - (a.additions + a.deletions);
       if (diff !== 0) return diff;
       return a.path.localeCompare(b.path);
     });
-  const entryPoint = sortedByImpact[0].path;
+  const entryPoint = sortedSourceByImpact[0].path;
 
   // baseRefOid is the parent of the PR head before merge — the
   // "pre-PR state" we want to index.

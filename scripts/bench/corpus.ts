@@ -39,27 +39,46 @@ import type { CorpusEntry } from './types.js';
  *  - Both are small (fast iteration during gate debugging)
  *  - Different languages (JS + Python) exercise both graph engines
  *  - High public familiarity; if F1 looks bad reviewers can intuit why
+ *
+ * Each PR satisfies the locked selection rules: merged, ≥2 source
+ * files, not a dependency bump, recent enough that the parent SHA
+ * is on a current branch structure (not pre-rewrite history).
+ *
+ * Verified via `gh pr view <N>` 2026-05-19:
+ *
+ *   express#6903: lib/application.js + test/app.render.js + History.md
+ *     "feat: Allow passing null or undefined as the value for
+ *      options in app.render" — real feature work, has tests
+ *   express#6525: 14 files spanning lib/response.js, lib/utils.js,
+ *     and 11 test files. "chore: enforce explicit Buffer import"
+ *     — broad lint-rule rollout; good stress test for blast radius
+ *     from lib/response.js as entry point.
+ *   fastapi#15030: 4 fastapi/ files + tests. "Add support for
+ *     Server Sent Events" — real feature, multi-file impact.
+ *   fastapi#15022: 3 fastapi/ files + tests. "Add support for
+ *     streaming JSON Lines" — another real feature.
  */
 export const SPIKE_CORPUS: CorpusEntry[] = [
-  { name: 'express', repo: 'expressjs/express',    prs: [5840, 5523] },
-  { name: 'fastapi', repo: 'tiangolo/fastapi',     prs: [10500, 10891] },
+  { name: 'express', repo: 'expressjs/express', prs: [6903, 6525] },
+  { name: 'fastapi', repo: 'tiangolo/fastapi',  prs: [15030, 15022] },
 ];
 
 /**
  * Full corpus — runs only if SPIKE_CORPUS passes the gate.
- * Matches code-review-graph's reference set verbatim.
  *
- * NOTE: PR numbers are placeholders pending PR selection during
- * bench execution. The methodology rules above MUST be applied
- * to pick real PRs; do not blindly use these numbers.
+ * NOTE: PR numbers below are placeholders. Before running the full
+ * bench, every one must be verified to satisfy the methodology
+ * rules (merged, multi-source-file, non-dependency, with tests
+ * where possible). The express + fastapi entries are the validated
+ * spike PRs; the rest need selection during full-bench setup.
  */
 export const FULL_CORPUS: CorpusEntry[] = [
-  { name: 'express', repo: 'expressjs/express',    prs: [5840, 5523, 5712] },
-  { name: 'fastapi', repo: 'tiangolo/fastapi',     prs: [10500, 10891, 11200] },
-  { name: 'flask',   repo: 'pallets/flask',        prs: [5345, 5298, 5410] },
-  { name: 'gin',     repo: 'gin-gonic/gin',        prs: [3892, 3950, 4010] },
-  { name: 'httpx',   repo: 'encode/httpx',         prs: [3120, 3200, 3145] },
-  { name: 'nextjs',  repo: 'vercel/next.js',       prs: [72400, 72500, 72600] },
+  { name: 'express', repo: 'expressjs/express', prs: [6903, 6525, 6903] }, // TODO add 3rd
+  { name: 'fastapi', repo: 'tiangolo/fastapi',  prs: [15030, 15022, 14978] },
+  // TODO: select + verify flask, gin, httpx, nextjs PRs before bench:full.
+  // Each must satisfy ALL methodology rules. Don't blindly fill with
+  // guesses — the spike caught my last guesses and that should stay
+  // a lesson.
 ];
 
 /** Gate thresholds — locked here so they can't be moved at runtime. */
