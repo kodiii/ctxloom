@@ -87,6 +87,24 @@ export interface Metrics {
   precision: number;
   recall: number;
   f1: number;
+  /**
+   * Source-file-only counts and recall — separate denominator that
+   * excludes unindexable ground-truth files (Markdown, YAML, JSON,
+   * lockfiles, etc.). The graph can't possibly predict those, so
+   * counting them as false negatives understates real graph quality.
+   *
+   * Example from the v1.6.0 spike: express #6903's ground truth was
+   * {History.md, lib/application.js, test/app.render.js}. Total
+   * recall = 2/3 = 0.67. Source-file recall = 2/2 = 1.00. The graph
+   * found everything it could find; the missing file was a changelog
+   * entry that doesn't appear in any dependency graph in principle.
+   *
+   * Reporting both lets reviewers see the structural ceiling
+   * separately from the graph-quality ceiling.
+   */
+  sourceGroundTruthCount: number;
+  sourceTruePositives: number;
+  sourceRecall: number;
 }
 
 /** Token-reduction metrics for one PR. */
@@ -114,6 +132,9 @@ export interface RepoReport {
   avgF1: number;
   avgPrecision: number;
   avgRecall: number;
+  /** Mean of per-PR sourceRecall — graph-quality signal with the
+   *  structural-ceiling noise of unindexable GT files removed. */
+  avgSourceRecall: number;
   avgNaiveTokens: number;
   avgGraphTokens: number;
   avgReduction: number;
@@ -136,6 +157,8 @@ export interface BenchReport {
     avgF1: number;
     avgPrecision: number;
     avgRecall: number;
+    /** Mean source-file recall — see RepoReport.avgSourceRecall. */
+    avgSourceRecall: number;
     avgReduction: number;
   };
   /** Per-repo breakdown. */

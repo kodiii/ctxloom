@@ -26,11 +26,34 @@
  */
 import type { Metrics } from './types.js';
 
-/** Pure metric calculation. No I/O. No side effects. Easy to test. */
+/**
+ * Pure metric calculation. No I/O. No side effects. Easy to test.
+ *
+ * Computes the standard {TP, FP, FN, P, R, F1} against the full
+ * ground truth AND a separate {sourceTruePositives, sourceRecall}
+ * filtered through `isSourcePredicate`.
+ *
+ * Why two recall numbers: PRs often include unindexable files in
+ * their diff — Markdown changelogs, YAML config, lockfiles, etc.
+ * The graph can't possibly predict those, so counting them as
+ * false negatives understates real graph quality. Reporting both
+ * the total recall AND the source-file-only recall makes the
+ * structural ceiling distinguishable from the graph-quality ceiling.
+ *
+ * Empirical example from the v1.6.0 spike: express #6903's ground
+ * truth was {History.md, lib/application.js, test/app.render.js}.
+ * Total recall = 2/3 = 0.67. Source-file recall = 2/2 = 1.00. The
+ * graph found everything it could find; the missed file was a
+ * changelog entry no dependency graph could predict.
+ *
+ * `isSourcePredicate` is INJECTED (not imported) so this module
+ * stays pure — no fs/path dependency, trivial unit testing.
+ */
 export function computeMetrics(
   prNumber: number,
   groundTruth: readonly string[],
   predicted: readonly string[],
+  isSourcePredicate: (filepath: string) => boolean,
 ): Metrics {
   const truthSet = new Set(groundTruth);
   const predictedSet = new Set(predicted);
@@ -47,6 +70,17 @@ export function computeMetrics(
   const recall = truthSet.size === 0 ? 1 : truePositives / truthSet.size;
   const f1 = precision + recall === 0 ? 0 : (2 * precision * recall) / (precision + recall);
 
+  // Source-file-only recall. Denominator drops unindexable GT files;
+  // numerator counts only TPs that are source files.
+  const sourceTruth = [...truthSet].filter(isSourcePredicate);
+  const sourceGroundTruthCount = sourceTruth.length;
+  let sourceTruePositives = 0;
+  for (const file of sourceTruth) {
+    if (predictedSet.has(file)) sourceTruePositives++;
+  }
+  const sourceRecall =
+    sourceGroundTruthCount === 0 ? 1 : sourceTruePositives / sourceGroundTruthCount;
+
   return {
     prNumber,
     truePositives,
@@ -55,6 +89,9 @@ export function computeMetrics(
     precision,
     recall,
     f1,
+    sourceGroundTruthCount,
+    sourceTruePositives,
+    sourceRecall,
   };
 }
 

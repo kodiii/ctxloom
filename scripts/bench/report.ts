@@ -36,22 +36,28 @@ export function renderMarkdown(report: BenchReport): string {
 
   lines.push('## Overall');
   lines.push('');
-  lines.push('| Repos | PRs | Avg F1 | Avg Precision | Avg Recall | Avg Reduction |');
-  lines.push('|------:|----:|-------:|--------------:|-----------:|--------------:|');
+  lines.push('| Repos | PRs | Avg F1 | Avg Precision | Avg Recall | Avg Source Recall | Avg Reduction |');
+  lines.push('|------:|----:|-------:|--------------:|-----------:|------------------:|--------------:|');
   lines.push(
     `| ${report.overall.repoCount} ` +
     `| ${report.overall.prCount} ` +
     `| ${report.overall.avgF1.toFixed(2)} ` +
     `| ${report.overall.avgPrecision.toFixed(2)} ` +
     `| ${report.overall.avgRecall.toFixed(2)} ` +
+    `| ${report.overall.avgSourceRecall.toFixed(2)} ` +
     `| ${report.overall.avgReduction.toFixed(1)}× |`,
+  );
+  lines.push('');
+  lines.push(
+    '> **Source Recall** = recall computed against only the indexable (source-file) ' +
+    'subset of each PR\'s ground truth — see [methodology](../methodology.md#source-recall).',
   );
   lines.push('');
 
   lines.push('## Per-repo');
   lines.push('');
-  lines.push('| Repo | PRs | Avg F1 | Precision | Recall | Avg Reduction |');
-  lines.push('|------|----:|-------:|----------:|-------:|--------------:|');
+  lines.push('| Repo | PRs | Avg F1 | Precision | Recall | Source Recall | Avg Reduction |');
+  lines.push('|------|----:|-------:|----------:|-------:|--------------:|--------------:|');
   for (const repo of report.repos) {
     lines.push(
       `| \`${repo.name}\` ` +
@@ -59,6 +65,7 @@ export function renderMarkdown(report: BenchReport): string {
       `| ${repo.avgF1.toFixed(2)} ` +
       `| ${repo.avgPrecision.toFixed(2)} ` +
       `| ${repo.avgRecall.toFixed(2)} ` +
+      `| ${repo.avgSourceRecall.toFixed(2)} ` +
       `| ${repo.avgReduction.toFixed(1)}× |`,
     );
   }
@@ -71,8 +78,8 @@ export function renderMarkdown(report: BenchReport): string {
   for (const repo of report.repos) {
     lines.push(`### ${repo.name}`);
     lines.push('');
-    lines.push('| PR | TP | FP | FN | Precision | Recall | F1 | Naive tok | Graph tok | Reduction |');
-    lines.push('|---:|---:|---:|---:|----------:|-------:|---:|----------:|----------:|----------:|');
+    lines.push('| PR | TP | FP | FN | Precision | Recall | F1 | Src TP/GT | Src Recall | Naive tok | Graph tok | Reduction |');
+    lines.push('|---:|---:|---:|---:|----------:|-------:|---:|----------:|-----------:|----------:|----------:|----------:|');
     for (const pr of repo.perPr) {
       lines.push(
         `| #${pr.prNumber} ` +
@@ -82,6 +89,8 @@ export function renderMarkdown(report: BenchReport): string {
         `| ${pr.precision.toFixed(2)} ` +
         `| ${pr.recall.toFixed(2)} ` +
         `| ${pr.f1.toFixed(2)} ` +
+        `| ${pr.sourceTruePositives}/${pr.sourceGroundTruthCount} ` +
+        `| ${pr.sourceRecall.toFixed(2)} ` +
         `| ${pr.naiveTokens.toLocaleString()} ` +
         `| ${pr.graphTokens.toLocaleString()} ` +
         `| ${pr.reduction.toFixed(1)}× |`,
