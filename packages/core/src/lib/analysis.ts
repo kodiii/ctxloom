@@ -282,7 +282,13 @@ function buildHistoricalCouplingEntries(
   const coupling: HistoricalCouplingEntry[] = [];
 
   for (const seedFile of changedFiles) {
-    const coupled = overlay.coChange.topFor({ node: seedFile, limit: 10, minConfidence: 0.2 });
+    // v1.6.x calibration: expanded from {limit:10, conf:0.2} to
+    // {limit:25, conf:0.1}. The tighter values were tuned for the
+    // MCP-facing `ctx_blast_radius` tool where small high-confidence
+    // sets are easier to reason about; bench evaluation favors
+    // broader recall. Top-25 matches the SYMBOL_CALLERS_TOP_K cap
+    // for consistency.
+    const coupled = overlay.coChange.topFor({ node: seedFile, limit: 25, minConfidence: 0.1 });
     for (const hit of coupled) {
       const sibling = hit.nodeA === seedFile ? hit.nodeB : hit.nodeA;
       if (!staticSet.has(sibling) && !coupling.some(h => h.node === sibling)) {
