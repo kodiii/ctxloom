@@ -28,7 +28,7 @@ import { fileURLToPath } from 'node:url';
 import { SPIKE_CORPUS, FULL_CORPUS, GATE } from './corpus.js';
 import { fetchGroundTruth, isSourceFile } from './groundTruth.js';
 import { ensureWorktree } from './repoCheckout.js';
-import { indexRepo, blastRadius } from './predict.js';
+import { indexRepo, blastRadius, buildOverlay } from './predict.js';
 import { computeMetrics, avg } from './metrics.js';
 import { writeReport } from './report.js';
 import type { BenchReport, RepoReport, CorpusEntry, Metrics, TokenMetrics } from './types.js';
@@ -78,8 +78,18 @@ async function runRepo(entry: CorpusEntry): Promise<RepoReport> {
     console.error(`  PR #${prNumber}: indexing ${worktree}...`);
     indexRepo(worktree);
 
+    // Build / load the git overlay for this worktree. The overlay
+    // tracks co-change pairs from the git history — the signal that
+    // surfaces behavioral test↔lib relationships the static graph
+    // misses (e.g. fastapi streaming tests modified together with
+    // routing.py but never importing APIRouter directly).
+    console.error(`  PR #${prNumber}: building git overlay (co-change signal)...`);
+    const overlayStart = Date.now();
+    const overlay = await buildOverlay(worktree);
+    console.error(`    overlay ${overlay ? 'ready' : 'unavailable'} · ${((Date.now() - overlayStart) / 1000).toFixed(1)}s`);
+
     console.error(`  PR #${prNumber}: computing blast radius from ${gt.entryPoint}...`);
-    const prediction = await blastRadius(worktree, gt.entryPoint, prNumber);
+    const prediction = await blastRadius(worktree, gt.entryPoint, prNumber, overlay);
     console.error(`    predicted files: ${prediction.predictedFiles.length}`);
 
     const metrics = computeMetrics(
