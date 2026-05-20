@@ -30,14 +30,43 @@ function sanitizeFilterPath(filePath: string): string {
   return filePath.replace(/[^a-zA-Z0-9/._\- ]/g, '_');
 }
 
+export interface VectorStoreOptions {
+  /**
+   * How many upserts must occur before automatic compaction fires.
+   * Defaults to 200. Set lower in tests to exercise the compaction path
+   * with shorter run times.
+   */
+  compactEvery?: number;
+  /**
+   * Maximum age (in ms) of LanceDB versions to retain when compaction
+   * runs. Older transaction + manifest files are pruned. Defaults to
+   * 1 hour, which is long enough for crash recovery / debugging on a
+   * production MCP server while still releasing the bulk of file
+   * descriptors. Tests can pass a small value (e.g. 0) to verify the
+   * cleanup path actually prunes.
+   */
+  cleanupOlderThanMs?: number;
+}
+
 export class VectorStore {
   private dbPath: string;
   private db: Connection | null = null;
   private table: Table | null = null;
   private initialized = false;
+  /**
+   * Upserts since the last compaction. LanceDB writes 2 transactions per
+   * upsert (delete + add); without periodic compact_files() + cleanup, a
+   * long-lived MCP server accumulates tens of thousands of fragment FDs
+   * (observed: ~60k FDs / process after 18h of watcher-driven reindex).
+   */
+  private upsertsSinceCompact = 0;
+  private readonly compactEvery: number;
+  private readonly cleanupOlderThanMs: number;
 
-  constructor(dbPath?: string) {
+  constructor(dbPath?: string, options: VectorStoreOptions = {}) {
     this.dbPath = dbPath ?? path.join(process.cwd(), '.ctxloom', 'vectors.lancedb');
+    this.compactEvery = options.compactEvery ?? 200;
+    this.cleanupOlderThanMs = options.cleanupOlderThanMs ?? 60 * 60 * 1000;
   }
 
   async init(): Promise<void> {
@@ -130,6 +159,40 @@ export class VectorStore {
     };
 
     await this.table.add([record]);
+
+    this.upsertsSinceCompact++;
+    if (this.upsertsSinceCompact >= this.compactEvery) {
+      this.upsertsSinceCompact = 0;
+      await this.compact();
+    }
+  }
+
+  /**
+   * Merge fragments and prune old LanceDB versions. Idempotent and safe to
+   * call mid-flight; the Table API serializes writes internally. Called
+   * automatically every `compactEvery` upserts (default 200) to bound FD
+   * growth in long-lived MCP server processes.
+   *
+   * Uses optional-chaining so older `@lancedb/lancedb` builds without
+   * `optimize()` degrade to a no-op instead of crashing.
+   */
+  async compact(): Promise<void> {
+    if (!this.table) return;
+    try {
+      const optimizable = this.table as Table & {
+        optimize?: (opts?: { cleanupOlderThan?: Date }) => Promise<unknown>;
+      };
+      // Cleanup window is configurable — defaults to 1h, which keeps a
+      // crash-recovery buffer in production while still releasing the
+      // bulk of stale fragment / manifest / transaction FDs.
+      await optimizable.optimize?.({
+        cleanupOlderThan: new Date(Date.now() - this.cleanupOlderThanMs),
+      });
+    } catch (err) {
+      logger.warn('VectorStore.compact failed (non-fatal)', {
+        detail: err instanceof Error ? err.message : String(err),
+      });
+    }
   }
 
   /**
