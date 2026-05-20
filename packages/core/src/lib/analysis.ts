@@ -393,6 +393,15 @@ function collectImportees(
  * concerns — tests for response handling, lib siblings that share
  * utilities. Those are what a real PR's blast radius should surface.
  */
+/**
+ * Top-K cap for ranked symbol callers (v1.6.x calibration).
+ *
+ * 25 selected empirically: K=15 dropped TPs on small-PR cases
+ * (express #6903 source recall collapsed 1.00 → 0.50); K=35 added
+ * FPs without TPs. K=25 keeps the highest-scoring TPs from
+ * specificity + path-proximity ranking while shedding the long
+ * tail of incidental callers.
+ */
 const SYMBOL_CALLERS_TOP_K = 25;
 const PATH_PROXIMITY_BONUS = 1.0;
 /**
@@ -538,8 +547,23 @@ function collectSymbolCallers(
  * "similar enough" — empirically ~0.7 catches topical relatedness
  * without flooding the prediction with weakly-related files.
  */
-const SEMANTIC_TOP_K = 15;
-const SEMANTIC_DIST_THRESHOLD = 0.7;
+/**
+ * Semantic-similarity tuning (v1.6.x calibration against spike corpus):
+ *
+ *   TOP_K = 10        cap on returned entries per call (was 15).
+ *   DIST_THRESHOLD    cosine distance — LOWER = MORE similar. 0.5
+ *                     selects high-confidence topical neighbors only
+ *                     (verified empirically: 0.5 keeps test/app.js
+ *                     for lib/application.js entry while dropping
+ *                     incidentally-clustered docs/examples that
+ *                     dominate the 0.5-0.7 band).
+ *
+ * Earlier run with 0.7 / 15 inflated express #6903 predictions from
+ * 29 → 36 and tanked precision. Tighter values trade a small recall
+ * loss for a real F1 lift.
+ */
+const SEMANTIC_TOP_K = 10;
+const SEMANTIC_DIST_THRESHOLD = 0.5;
 
 /**
  * Public helper to compute the semantic-similarity arm of the impact
