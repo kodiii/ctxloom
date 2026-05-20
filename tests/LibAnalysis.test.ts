@@ -379,6 +379,111 @@ describe('getImpactRadius', () => {
     expect(augmented.totalImpacted).toBe(2); // + src/util.ts
   });
 
+  it('symbolCallers keeps specific-method callers and drops generic-method-only callers', () => {
+    // Validates the specificity-weighted ranking + min-score floor
+    // from v1.6.0. Callers of UNIQUELY-defined symbols (specificity
+    // = 1.0) pass the floor. Callers of multi-defined symbols
+    // (specificity < 1.0) are dropped unless they also call other
+    // signals.
+    const graph = new DependencyGraph();
+    graph.addSymbol('src/seed.ts', {
+      name: 'unique',
+      type: 'function',
+      signature: 'function unique()',
+      startLine: 1,
+      endLine: 1,
+    });
+    graph.addSymbol('src/seed.ts', {
+      name: 'common',
+      type: 'function',
+      signature: 'function common()',
+      startLine: 2,
+      endLine: 2,
+    });
+    for (let i = 0; i < 4; i++) {
+      graph.addSymbol(`src/other-${i}.ts`, {
+        name: 'common',
+        type: 'function',
+        signature: 'function common()',
+        startLine: 1,
+        endLine: 1,
+      });
+    }
+    const cg = graph.getCallGraphIndex();
+    cg.addEdge({
+      callerFile: 'src/caller-unique.ts',
+      callerSymbol: '',
+      calleeSymbol: 'unique',
+      confidence: 'extracted',
+    });
+    cg.addEdge({
+      callerFile: 'src/caller-common.ts',
+      callerSymbol: '',
+      calleeSymbol: 'common',
+      confidence: 'extracted',
+    });
+
+    const result = getImpactRadius({
+      graph,
+      changedFiles: ['src/seed.ts'],
+      includeSymbolCallers: true,
+    });
+
+    // Unique-caller scores 1.0 (specificity = 1/1) → passes floor.
+    expect(result.symbolCallers).toContain('src/caller-unique.ts');
+    // Common-caller scores 0.2 (specificity = 1/5) → dropped by floor.
+    expect(result.symbolCallers).not.toContain('src/caller-common.ts');
+  });
+
+  it('symbolCallers path-proximity bonus rescues low-specificity callers', () => {
+    // Path-proximity bonus: a caller whose path contains the seed's
+    // basename or 3-char prefix gets +1.0. This rescues callers that
+    // would otherwise fall under the min-score floor — common for
+    // test files calling a single low-specificity symbol of a hub.
+    const graph = new DependencyGraph();
+    // 'send' is defined in 5 places → specificity = 0.2.
+    graph.addSymbol('lib/response.js', {
+      name: 'send',
+      type: 'function',
+      signature: 'function send()',
+      startLine: 1,
+      endLine: 1,
+    });
+    for (let i = 0; i < 4; i++) {
+      graph.addSymbol(`other-${i}.js`, {
+        name: 'send',
+        type: 'function',
+        signature: 'function send()',
+        startLine: 1,
+        endLine: 1,
+      });
+    }
+    const cg = graph.getCallGraphIndex();
+    cg.addEdge({
+      callerFile: 'test/res.send.js',
+      callerSymbol: '',
+      calleeSymbol: 'send',
+      confidence: 'extracted',
+    });
+    cg.addEdge({
+      callerFile: 'benchmarks/middleware.js',
+      callerSymbol: '',
+      calleeSymbol: 'send',
+      confidence: 'extracted',
+    });
+
+    const result = getImpactRadius({
+      graph,
+      changedFiles: ['lib/response.js'],
+      includeSymbolCallers: true,
+    });
+
+    // test/res.send.js: 0.2 (specificity) + 1.0 (path match "res") = 1.2 → passes floor.
+    expect(result.symbolCallers).toContain('test/res.send.js');
+    // benchmarks/middleware.js: 0.2 (specificity), no proximity → 0.2 → dropped.
+    expect(result.symbolCallers).not.toContain('benchmarks/middleware.js');
+  });
+
   it('symbolCallers caps the result at the top-K ranked callers', () => {
     // Verifies the ranking truncation — without it, a hub file with
     // 100+ callers of a generic method would dump all callers into the

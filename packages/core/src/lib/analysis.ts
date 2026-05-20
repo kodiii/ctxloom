@@ -327,19 +327,95 @@ function collectImportees(
  * cross-module relationships — e.g. tests that call `res.send()` go
  * through the package main entry, not via `require('./response')`.
  *
- * Symbol names alone are ambiguous (multiple files can define `init`),
- * so we cross-check with the symbol index: a caller is only attributed
- * if the symbol is actually defined in one of the seed files.
+ * Ranking signals (v1.6.0 calibration, see bench/methodology.md):
  *
- * Ranking: a hub file like express's `lib/response.js` exports ~20
- * methods that get called from ~100 files across the repo. Returning
- * ALL 100 callers crashes precision. We rank by how many DISTINCT
- * symbols from the seed each caller invokes — a file calling 10 of
- * response.js's methods is clearly response-related; one calling
- * `send()` once may be testing something else. Top-K cap defaults
- * to 25 (≈ typical PR size).
+ *   1. Per-symbol SPECIFICITY weight = 1 / (number of definitions).
+ *      Generic methods like `set`/`use` (defined in many places) score
+ *      low; specific methods like `sendStatus`/`render` (defined once)
+ *      score high. Filters generic noise; rewards callers that hit the
+ *      seed's UNIQUE API surface.
+ *
+ *   2. PATH-PROXIMITY bonus. A caller whose path contains the seed's
+ *      basename or short prefix (test/res.send.js for lib/response.js)
+ *      gets +1.0. Captures the universal test-naming convention without
+ *      needing to know the actual test runner.
+ *
+ *   3. Top-K truncation. After ranking by score = (1) + (2), keep only
+ *      the top SYMBOL_CALLERS_TOP_K=25 callers. Tiebreak alphabetically.
+ *
+ * Why this matters: a hub file like express's `lib/response.js` is
+ * called from ~100 files. Returning all 100 crashes precision (saw
+ * F1=0.02 P=0.02 on bench before ranking landed). With specificity +
+ * path-proximity, ~20 of those 100 actually correlate with the file's
+ * concerns — tests for response handling, lib siblings that share
+ * utilities. Those are what a real PR's blast radius should surface.
  */
 const SYMBOL_CALLERS_TOP_K = 25;
+const PATH_PROXIMITY_BONUS = 1.0;
+/**
+ * Minimum ranking score for a caller to enter the prediction set.
+ *
+ * Drops "incidental callers" — files that happen to call exactly one
+ * generic seed symbol once, with no path-name relationship to the
+ * seed. Without this floor, leaf-file or small-PR entries (express
+ * #6903, GT=3) over-predict because top-K=25 keeps the floor of the
+ * distribution.
+ *
+ * 1.0 = "at least one specific-method call (specificity weight 1.0
+ * means the symbol is defined in exactly one place)" OR "any positive
+ * specificity + path-name match" OR "multiple medium-specificity
+ * symbols". Tuned against the spike corpus — see bench/methodology.md.
+ *
+ * Callers below this threshold are single-incidental-call cases (e.g.
+ * one call to a generic symbol like `set`/`use`/`get` defined in many
+ * files at once, with no path-name relation to the seed). Those add
+ * noise without recall.
+ */
+const SYMBOL_CALLERS_MIN_SCORE = 1.0;
+
+/**
+ * Path-proximity scorer for symbolCallers ranking.
+ *
+ * Returns PATH_PROXIMITY_BONUS if the caller's path contains the seed
+ * file's basename (without extension) OR the basename's first ≥3
+ * characters, surrounded by separator/word-boundary characters.
+ *
+ * Examples:
+ *   entry = "lib/response.js" → tokens = {response, res}
+ *   "test/res.send.js"            → bonus (matches "res")
+ *   "test/response.test.js"       → bonus (matches "response")
+ *   "test/req.params.js"          → no bonus
+ *   "benchmarks/middleware.js"    → no bonus
+ *
+ * Tokens shorter than 3 chars are skipped to avoid spurious matches.
+ */
+function pathProximityScore(callerFile: string, seedFile: string): number {
+  const lastSlash = seedFile.lastIndexOf('/');
+  const lastDot = seedFile.lastIndexOf('.');
+  const stem = seedFile.slice(
+    lastSlash + 1,
+    lastDot > lastSlash ? lastDot : seedFile.length,
+  );
+  if (stem.length < 3) return 0;
+
+  // Short prefix: half the stem length, min 3 chars. For "response"
+  // this is "resp"; for "application" it's "appli"; for "view" it
+  // would be "view" itself (4 chars, half=2 floor→2 below 3 so use 3).
+  // We deliberately under-include the prefix (3 chars only) to catch
+  // common abbreviations like "res", "req", "app".
+  const shortPrefix = stem.slice(0, 3);
+  const tokens = stem === shortPrefix ? [stem] : [stem, shortPrefix];
+
+  const caller = callerFile.toLowerCase();
+  for (const t of tokens) {
+    const token = t.toLowerCase();
+    // Word-boundary on either side: start-of-path, separator chars,
+    // or end-of-string. Avoid matching "respond" when looking for "res".
+    const re = new RegExp(`(?:^|[/_.\\-])${token}(?:[/_.\\-]|$)`);
+    if (re.test(caller)) return PATH_PROXIMITY_BONUS;
+  }
+  return 0;
+}
 
 function collectSymbolCallers(
   changedFiles: readonly string[],
@@ -348,8 +424,10 @@ function collectSymbolCallers(
   const changedSet = new Set(changedFiles);
   const callGraph = graph.getCallGraphIndex();
 
-  // Count how many DISTINCT seed-defined symbols each caller invokes.
+  // For each candidate caller, sum its specificity-weighted score and
+  // add the path-proximity bonus exactly once.
   const callerScores = new Map<string, number>();
+  const callersWithProximityApplied = new Set<string>();
 
   for (const file of changedFiles) {
     const symbols = graph.lookupSymbolsByFile(file);
@@ -360,23 +438,45 @@ function collectSymbolCallers(
       const definedInSeed = defs.some((d) => changedSet.has(d.filePath));
       if (!definedInSeed) continue;
 
-      // De-dup per-symbol callers so we count "files that call this
-      // symbol" once, not "every call site".
+      // Specificity weight: rare symbols carry more signal than common
+      // ones. Pseudo-IDF — bounded in (0, 1].
+      const specificity = 1 / defs.length;
+
+      // De-dup per-symbol callers so a file that calls this symbol N
+      // times counts as ONE +specificity contribution.
       const seenForSym = new Set<string>();
       for (const caller of callGraph.getCallers(sym)) {
         if (changedSet.has(caller.file)) continue;
         if (seenForSym.has(caller.file)) continue;
         seenForSym.add(caller.file);
-        callerScores.set(caller.file, (callerScores.get(caller.file) ?? 0) + 1);
+
+        const prev = callerScores.get(caller.file) ?? 0;
+        const next = prev + specificity;
+        callerScores.set(caller.file, next);
       }
+    }
+
+    // Apply path-proximity ONCE per caller (additive bonus, not per-
+    // symbol). Computed after the symbol pass so we already know which
+    // callers exist.
+    for (const callerFile of callerScores.keys()) {
+      if (callersWithProximityApplied.has(callerFile)) continue;
+      const bonus = pathProximityScore(callerFile, file);
+      if (bonus > 0) {
+        callerScores.set(callerFile, (callerScores.get(callerFile) ?? 0) + bonus);
+      }
+      callersWithProximityApplied.add(callerFile);
     }
   }
 
-  // Sort by score descending; tie-break by path for determinism.
-  const ranked = Array.from(callerScores.entries()).sort((a, b) => {
-    if (b[1] !== a[1]) return b[1] - a[1];
-    return a[0].localeCompare(b[0]);
-  });
+  // Drop callers below the score floor (incidental one-method calls
+  // with no name-match signal). Then sort + truncate to top-K.
+  const ranked = Array.from(callerScores.entries())
+    .filter(([, score]) => score >= SYMBOL_CALLERS_MIN_SCORE)
+    .sort((a, b) => {
+      if (b[1] !== a[1]) return b[1] - a[1];
+      return a[0].localeCompare(b[0]);
+    });
 
   return new Set(ranked.slice(0, SYMBOL_CALLERS_TOP_K).map(([file]) => file));
 }
