@@ -28,7 +28,7 @@ import { fileURLToPath } from 'node:url';
 import { SPIKE_CORPUS, FULL_CORPUS, GATE } from './corpus.js';
 import { fetchGroundTruth, isSourceFile } from './groundTruth.js';
 import { ensureWorktree } from './repoCheckout.js';
-import { indexRepo, blastRadius, buildOverlay } from './predict.js';
+import { indexRepo, blastRadius, buildOverlay, buildVectorStore } from './predict.js';
 import { computeMetrics, avg } from './metrics.js';
 import { writeReport } from './report.js';
 import type { BenchReport, RepoReport, CorpusEntry, Metrics, TokenMetrics } from './types.js';
@@ -88,8 +88,13 @@ async function runRepo(entry: CorpusEntry): Promise<RepoReport> {
     const overlay = await buildOverlay(worktree);
     console.error(`    overlay ${overlay ? 'ready' : 'unavailable'} · ${((Date.now() - overlayStart) / 1000).toFixed(1)}s`);
 
+    console.error(`  PR #${prNumber}: opening vector store (semantic signal)...`);
+    const vsStart = Date.now();
+    const vectorStore = await buildVectorStore(worktree);
+    console.error(`    vector store ${vectorStore ? 'ready' : 'unavailable'} · ${((Date.now() - vsStart) / 1000).toFixed(1)}s`);
+
     console.error(`  PR #${prNumber}: computing blast radius from ${gt.entryPoint}...`);
-    const prediction = await blastRadius(worktree, gt.entryPoint, prNumber, overlay);
+    const prediction = await blastRadius(worktree, gt.entryPoint, prNumber, overlay, vectorStore);
     console.error(`    predicted files: ${prediction.predictedFiles.length}`);
 
     const metrics = computeMetrics(

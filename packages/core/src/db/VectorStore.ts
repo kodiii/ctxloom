@@ -99,10 +99,20 @@ export class VectorStore {
 
     // Lazy: only consumers that actually open a vector store pay the
     // cost of loading LanceDB's platform-specific native binding.
+    //
+    // ESM/CJS interop: under vitest the dynamic import resolves to a
+    // module with a `default` property; under `npx tsx` (used by the
+    // bench harness) it resolves to a namespace object where `connect`
+    // is a direct property. Handle both shapes so the same VectorStore
+    // class works in tests + bench + production.
     const lancedb = await import('@lancedb/lancedb');
+    const lanceModule = (lancedb as { default?: unknown }).default ?? lancedb;
+    const lance = lanceModule as {
+      connect: (p: string) => Promise<Connection>;
+    };
     const { makeArrowTable } = lancedb;
 
-    this.db = await lancedb.default.connect(this.dbPath);
+    this.db = await lance.connect(this.dbPath);
 
     // Create or open table
     const existingTables = await this.db.tableNames();
@@ -224,6 +234,47 @@ export class VectorStore {
       logger.warn('VectorStore.compact failed (non-fatal)', {
         detail: err instanceof Error ? err.message : String(err),
       });
+    }
+  }
+
+  /**
+   * Retrieve the stored embedding for a known file. Returns null if the
+   * file isn't indexed. Used by blast-radius semantic-similarity search
+   * (v1.6.x) to find files semantically related to a seed without
+   * re-embedding the seed at query time.
+   */
+  async findEmbeddingByPath(filePath: string): Promise<number[] | null> {
+    if (!this.table) throw new Error('VectorStore not initialized. Call init() first.');
+
+    try {
+      const safe = sanitizeFilterPath(filePath);
+      // LanceDB Table.query() returns a builder. We filter by exact
+      // filePath match and limit to one row.
+      const rows = await this.table
+        .query()
+        .where(`filePath = '${safe}'`)
+        .limit(1)
+        .toArray();
+      const first = rows[0] as Record<string, unknown> | undefined;
+      if (!first) return null;
+      // The vector column is named `vector` per the schema in init().
+      // LanceDB returns it as a Float32Array or number[]; normalize to
+      // number[] so downstream search() accepts it.
+      const vec = first.vector;
+      if (vec === null || vec === undefined) return null;
+      if (Array.isArray(vec)) return vec as number[];
+      if (vec instanceof Float32Array) return Array.from(vec);
+      // Some bindings return as a typed array — try a permissive coerce.
+      if (typeof (vec as { length?: number }).length === 'number') {
+        return Array.from(vec as ArrayLike<number>);
+      }
+      return null;
+    } catch (err) {
+      logger.warn('VectorStore.findEmbeddingByPath failed', {
+        detail: err instanceof Error ? err.message : String(err),
+        filePath,
+      });
+      return null;
     }
   }
 
