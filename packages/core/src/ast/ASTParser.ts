@@ -83,7 +83,7 @@ export interface CallSite {
 }
 
 export interface ParsedNode {
-  type: 'function' | 'class' | 'interface' | 'import' | 'export_default' | 'arrow_function';
+  type: 'function' | 'class' | 'interface' | 'import' | 'export_default' | 'arrow_function' | 'method';
   name: string;
   signature?: string;
   methods?: string[];
@@ -324,6 +324,22 @@ export class ASTParser {
     // Track processed node IDs to prevent duplicates from export_statement
     const processedIds = new Set<number>();
 
+    // Used by the assignment_expression case to walk chained patterns
+    // (a = b = function() {}) and credit each LHS as a method symbol.
+    const hasCallableRight = (n: TreeSitter.Node): boolean => {
+      const right = n.childForFieldName?.('right')
+        ?? n.children[n.children.length - 1];
+      if (!right) return false;
+      if (
+        right.type === 'function'
+        || right.type === 'function_expression'
+        || right.type === 'arrow_function'
+        || right.type === 'function_declaration'
+      ) return true;
+      if (right.type === 'assignment_expression') return hasCallableRight(right);
+      return false;
+    };
+
     const walk = (node: TreeSitter.Node) => {
       // Skip if already processed (prevents duplicates from export_statement)
       if (processedIds.has(node.id)) return;
@@ -530,6 +546,79 @@ export class ASTParser {
               endLine: node.endPosition.row + 1,
             });
           }
+          processedIds.add(node.id);
+          return;
+        }
+
+        // ─── Prototype / object method assignments ──────────────────────
+        // CommonJS libraries (and pre-class-syntax ES) attach their public
+        // API via assignment expressions:
+        //
+        //   res.send = function send(body) { ... }
+        //   res.json = function (obj) { ... }
+        //   res.contentType = res.type = function (type) { ... }    // chained
+        //   exports.foo = function foo() { ... }
+        //   MyClass.prototype.bar = function () { ... }
+        //
+        // Without this case, none of those names enter the symbol index,
+        // so `lookupSymbolsByFile()` returns empty for libraries like
+        // express, and any downstream tool that wants to attribute callers
+        // to a file (blast-radius symbolCallers, ctx_get_definition, etc.)
+        // falls flat. The call graph itself already records callers of
+        // `send`/`json`/etc. — this case bridges the gap so we can match
+        // them back to the file that defines them.
+        //
+        // Heuristic:
+        //   - left  = member_expression  → use the FINAL property as symbol
+        //   - right = function | arrow_function | function_expression
+        //   - right = assignment_expression → recurse for chained pattern
+        // Anything else (constants, identifiers being aliased) is skipped
+        // intentionally — those aren't callable API surface.
+        case 'assignment_expression': {
+          const left = node.childForFieldName?.('left')
+            ?? node.children.find(c =>
+              c?.type === 'member_expression' || c?.type === 'identifier',
+            );
+          const right = node.childForFieldName?.('right')
+            ?? node.children[node.children.length - 1];
+
+          if (left?.type === 'member_expression' && right) {
+            const prop =
+              left.childForFieldName?.('property')
+              ?? left.children[left.children.length - 1];
+            const propName = prop?.text;
+
+            // Recurse the right side first so chained assignments
+            // (a = b = function() {}) attribute the inner targets too.
+            if (right.type === 'assignment_expression') {
+              walk(right);
+            }
+
+            const rightIsCallable =
+              right.type === 'function'
+              || right.type === 'function_expression'
+              || right.type === 'arrow_function'
+              || right.type === 'function_declaration'
+              // Chained: the OUTER assignment's right is another
+              // assignment_expression — we still want to credit the outer
+              // property as a method if the chain bottoms out in a fn.
+              || (right.type === 'assignment_expression'
+                  && hasCallableRight(right));
+
+            if (propName && rightIsCallable && /^[a-zA-Z_$][a-zA-Z0-9_$]*$/.test(propName)) {
+              const sig = lines[node.startPosition.row] ?? '';
+              nodes.push({
+                type: 'method',
+                name: propName,
+                signature: sig.trim().slice(0, 200),
+                startLine: node.startPosition.row + 1,
+                endLine: node.endPosition.row + 1,
+              });
+            }
+          }
+
+          // Don't recurse — we either handled it or it's not a pattern
+          // we care about.
           processedIds.add(node.id);
           return;
         }

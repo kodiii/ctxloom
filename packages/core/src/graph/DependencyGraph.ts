@@ -149,7 +149,7 @@ export class DependencyGraph {
 
           // Symbol indexing for all AST-parsed languages
           for (const node of nodes) {
-            if (node.type === 'function' || node.type === 'class' || node.type === 'interface') {
+            if (node.type === 'function' || node.type === 'class' || node.type === 'interface' || node.type === 'method') {
               const existing = this.symbolIndex.get(node.name) ?? [];
               existing.push({
                 filePath: relPath,
@@ -442,7 +442,7 @@ export class DependencyGraph {
 
         // 3. Rebuild symbol index entries from this file
         for (const node of nodes) {
-          if (node.type === 'function' || node.type === 'class' || node.type === 'interface') {
+          if (node.type === 'function' || node.type === 'class' || node.type === 'interface' || node.type === 'method') {
             const existing = this.symbolIndex.get(node.name) ?? [];
             existing.push({
               filePath: relPath,

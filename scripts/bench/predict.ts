@@ -47,35 +47,35 @@ export function indexRepo(repoPath: string): void {
 /**
  * Compute blast radius from the entry point against the indexed graph.
  *
- * Returns the union of:
- *   - the entry point itself (always a TP if it's in ground truth)
- *   - direct importers (1-hop) only
+ * Returns the union of FOUR signals:
+ *   1. The entry point itself (always a TP if it's in ground truth)
+ *   2. Direct importers (1-hop inbound)
+ *   3. Direct importees (1-hop outbound — files the entry depends on)
+ *   4. Symbol callers (files calling any symbol exported by the entry)
  *
- * Depth=1 calibration: was depth=3 in the original spike, which on a
- * hub file like lib/response.js (express) or fastapi/routing.py
- * (fastapi) reached 25-66% of the codebase and crashed precision to
- * 0.01-0.10. Empirical pattern from the v1.6.0 spike:
+ * Depth=1 calibration history: depth=3 over-predicted on hub files
+ * (P=0.01-0.10). Switching to depth=1 collapsed recall to 0.07 because
+ * many PR files reach the entry only transitively (or through the
+ * package main, not directly). The augmentation with importees +
+ * symbol callers brings recall back without sacrificing precision.
  *
- *   - depth=3 express #6525: predicted 103 of 155 files, P=0.10
- *   - depth=3 fastapi #15022: predicted 652 of 2464 files, P=0.01
+ * Empirical pattern that motivates each signal:
  *
- * Depth=3 over-predicts on hub files because everything is reachable
- * from a hub at depth 3 in a connected codebase. Depth=1 keeps the
- * prediction tight to files that DIRECTLY import the seed — the set
- * a reviewer would intuitively inspect first.
+ *   - Express #6525 touches 14 files. Only 1 directly imports
+ *     lib/response.js (lib/express.js — the package entry). So
+ *     `directImporters` finds 1 of 13 source TPs. But:
+ *     * lib/utils.js (which response.js IMPORTS) is in the PR ✓
+ *       captured by `directImportees`
+ *     * test/res.* files don't `require('../lib/response')` — they
+ *       `require('..')` (package entry) and call `res.send()`.
+ *       captured by `symbolCallers` via call-graph lookup of `send`.
  *
- * Recall trade-off: we lose 2-hop and 3-hop importers from the
- * prediction set. Tests that reach the seed through index.js →
- * lib/express.js → lib/seed.js (the express CommonJS chain) drop
- * out. So recall on small repos like express may dip slightly; on
- * larger codebases like fastapi the noise reduction should
- * dominate.
+ *   - Fastapi #15030 adds a NEW file fastapi/sse.py. It has 0 inbound
+ *     importers (nothing imports it yet — it's new). But it imports
+ *     several existing modules, captured by `directImportees`.
  *
- * Excludes the historical-coupling section because that depends on
- * git overlay quality, which the bench corpus doesn't reliably have
- * at every merge SHA. Published methodology pins this as a
- * deliberate choice — bench measures static call-graph blast radius,
- * not coupling overlay.
+ * Historical coupling deliberately excluded — methodology measures
+ * static graph quality, not git overlay quality. See methodology.md.
  */
 export async function blastRadius(
   repoPath: string,
@@ -95,16 +95,19 @@ export async function blastRadius(
     graph,
     changedFiles: [entryPoint],
     depth: 1,
+    includeImportees: true,
+    includeSymbolCallers: true,
   });
 
-  // Union: the entry point + direct importers only. With depth=1
-  // above, transitiveImporters is empty by definition; we leave the
-  // spread for shape-stability in case future calibration revisits
-  // depth (debug-friendly — easier to see the shape change in diffs).
+  // Union of four signals: seed + direct importers + direct importees
+  // + symbol callers. `transitiveImporters` is empty at depth=1 (we
+  // keep the spread for shape-stability if depth ever changes).
   const predicted = new Set<string>([
     ...report.seedFiles,
     ...report.directImporters,
     ...report.transitiveImporters,
+    ...report.directImportees,
+    ...report.symbolCallers,
   ]);
 
   return {
