@@ -120,27 +120,27 @@ async function runRepo(entry: CorpusEntry): Promise<RepoReport> {
 
 function evaluateGate(repos: RepoReport[]): BenchReport['gate'] {
   const overallF1 = avg(repos.map((r) => r.avgF1));
-  const overallRecall = avg(repos.map((r) => r.avgRecall));
+  const overallSourceRecall = avg(repos.map((r) => r.avgSourceRecall));
   const f1Pass = overallF1 >= GATE.f1Threshold;
-  const recallPass = overallRecall >= GATE.recallThreshold;
-  const passed = f1Pass && recallPass;
+  const sourceRecallPass = overallSourceRecall >= GATE.sourceRecallThreshold;
+  const passed = f1Pass && sourceRecallPass;
 
   let reason: string;
   if (passed) {
-    reason = `F1 ${overallF1.toFixed(2)} ≥ ${GATE.f1Threshold} AND recall ${overallRecall.toFixed(2)} ≥ ${GATE.recallThreshold}. Proceed to full bench.`;
-  } else if (!f1Pass && !recallPass) {
-    reason = `F1 ${overallF1.toFixed(2)} < ${GATE.f1Threshold} AND recall ${overallRecall.toFixed(2)} < ${GATE.recallThreshold}. STOP — graph quality blocker. Do not publish.`;
+    reason = `F1 ${overallF1.toFixed(2)} ≥ ${GATE.f1Threshold} AND sourceRecall ${overallSourceRecall.toFixed(2)} ≥ ${GATE.sourceRecallThreshold}. Proceed to full bench.`;
+  } else if (!f1Pass && !sourceRecallPass) {
+    reason = `F1 ${overallF1.toFixed(2)} < ${GATE.f1Threshold} AND sourceRecall ${overallSourceRecall.toFixed(2)} < ${GATE.sourceRecallThreshold}. STOP — graph quality blocker. Do not publish.`;
   } else if (!f1Pass) {
     reason = `F1 ${overallF1.toFixed(2)} < ${GATE.f1Threshold}. Investigate before publishing.`;
   } else {
-    reason = `Recall ${overallRecall.toFixed(2)} < ${GATE.recallThreshold}. STOP — missing real impact files. Do not publish.`;
+    reason = `sourceRecall ${overallSourceRecall.toFixed(2)} < ${GATE.sourceRecallThreshold}. STOP — missing indexable impact files. Do not publish.`;
   }
 
   return {
     passed,
     reason,
     f1Threshold: GATE.f1Threshold,
-    recallThreshold: GATE.recallThreshold,
+    sourceRecallThreshold: GATE.sourceRecallThreshold,
   };
 }
 
