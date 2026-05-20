@@ -528,16 +528,20 @@ export class DependencyGraph {
       symbolIndex: Object.fromEntries(this.symbolIndex.entries()),
     };
 
-    // L-3: Atomic write via temp file + rename to prevent partial reads
+    // L-3: Atomic write via temp file + rename to prevent partial reads.
+    // Per-PID suffix avoids ENOENT races when multiple ctxloom MCP
+    // servers run against the same repo (e.g. multiple Claude Code
+    // windows on the same project). rename(2) is atomic so last-writer-
+    // wins on the final file is the desired semantic for a cache.
     const snapshotPath = this.getSnapshotPath();
-    const tmpPath = snapshotPath + '.tmp';
+    const tmpPath = `${snapshotPath}.${process.pid}.tmp`;
     fs.writeFileSync(tmpPath, JSON.stringify(data, null, 2));
     fs.renameSync(tmpPath, snapshotPath);
 
     // Save call graph snapshot alongside import graph snapshot
     const callData = this.callGraphIndex.toJSON();
     const callPath = path.join(this.snapshotDir, 'call-graph-snapshot.json');
-    const callTmp = callPath + '.tmp';
+    const callTmp = `${callPath}.${process.pid}.tmp`;
     fs.writeFileSync(callTmp, JSON.stringify(callData));
     fs.renameSync(callTmp, callPath);
   }

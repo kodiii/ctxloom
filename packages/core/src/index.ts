@@ -78,8 +78,14 @@ export { Skeletonizer } from './ast/Skeletonizer.js';
 export { generateEmbedding, collectFiles, indexDirectory, EMBEDDING_DIMENSION } from './indexer/embedder.js';
 
 // ─── Database ────────────────────────────────────────────────────────────────
-export type { VectorSearchResult } from './db/VectorStore.js';
+export type { VectorSearchResult, VectorStoreOptions } from './db/VectorStore.js';
 export { VectorStore } from './db/VectorStore.js';
+export type {
+  VectorsCleanupOptions,
+  VectorsCleanupReport,
+  VectorsCleanupCounts,
+} from './db/vectorsCleanup.js';
+export { cleanupVectors, inspectVectorsDb } from './db/vectorsCleanup.js';
 
 // ─── Grammars ────────────────────────────────────────────────────────────────
 export type { GrammarEntry } from './grammars/grammar-manifest.js';

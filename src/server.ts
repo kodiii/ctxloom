@@ -604,10 +604,40 @@ export async function startServer(opts: ServerOptions = {}): Promise<void> {
 
     watcher.start();
     logger.info('File watcher active');
-    process.on('SIGINT', () => { if (overlayRefreshTimer) clearTimeout(overlayRefreshTimer); watcher.stop(); process.exit(0); });
-    process.on('SIGTERM', () => { if (overlayRefreshTimer) clearTimeout(overlayRefreshTimer); watcher.stop(); process.exit(0); });
+    const shutdown = (signal: NodeJS.Signals): void => {
+      // Force-exit guard: if a graceful shutdown step deadlocks (observed
+      // in production when LanceDB flush blocks under FD pressure), exit
+      // anyway within 5s so MCP hosts can respawn the server. `.unref()`
+      // means the timer doesn't keep the event loop alive if shutdown
+      // completes cleanly.
+      const forceExit = setTimeout(() => {
+        logger.warn('Shutdown timeout reached, force-exiting', { signal });
+        process.exit(1);
+      }, 5000);
+      forceExit.unref();
+      try {
+        if (overlayRefreshTimer) clearTimeout(overlayRefreshTimer);
+        watcher.stop();
+      } catch (err) {
+        logger.warn('Shutdown step failed (non-fatal)', {
+          signal,
+          detail: err instanceof Error ? err.message : String(err),
+        });
+      }
+      process.exit(0);
+    };
+    process.on('SIGINT', () => shutdown('SIGINT'));
+    process.on('SIGTERM', () => shutdown('SIGTERM'));
   } else {
-    process.on('SIGINT', () => process.exit(0));
-    process.on('SIGTERM', () => process.exit(0));
+    const shutdown = (signal: NodeJS.Signals): void => {
+      const forceExit = setTimeout(() => {
+        logger.warn('Shutdown timeout reached, force-exiting', { signal });
+        process.exit(1);
+      }, 5000);
+      forceExit.unref();
+      process.exit(0);
+    };
+    process.on('SIGINT', () => shutdown('SIGINT'));
+    process.on('SIGTERM', () => shutdown('SIGTERM'));
   }
 }

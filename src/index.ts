@@ -64,6 +64,7 @@ import {
 } from '@ctxloom/core';
 import type { CandidateActivity } from '@ctxloom/core';
 import type { CodeownersRule } from '@ctxloom/core';
+import { cleanupVectors, inspectVectorsDb } from '@ctxloom/core';
 import { execSync } from 'node:child_process';
 import * as readline from 'node:readline';
 import os from 'node:os';
@@ -788,6 +789,98 @@ async function main(): Promise<void> {
       break;
     }
 
+    case 'vectors-cleanup': {
+      // One-shot cleanup of accumulated LanceDB version state. Mainly
+      // useful when upgrading from a pre-1.5.5 ctxloom — see PR #173.
+      // The on-disk debris (~20-30k transaction + manifest files in
+      // active projects) gets mmap'd by every new ctxloom MCP server
+      // and holds 30-60k file descriptors hostage system-wide.
+      const root = process.cwd();
+      const dryRun = hasFlag('--dry-run');
+      const force = hasFlag('--force');
+
+      const before = inspectVectorsDb(root);
+      if (before.txn + before.manifest + before.lance === 0) {
+        process.stdout.write(`  ${fmtSuccess('No vectors.lancedb to clean up — nothing to do.')}\n`);
+        break;
+      }
+
+      const mb = (before.totalBytes / (1024 * 1024)).toFixed(1);
+      process.stdout.write(fmtHeader('Vectors cleanup'));
+      process.stdout.write(`  ${style.dim('Root:')} ${root}\n`);
+      process.stdout.write(`  ${style.dim('On-disk state:')}\n`);
+      process.stdout.write(`    ${style.bold(String(before.txn).padStart(6))} .txn files\n`);
+      process.stdout.write(`    ${style.bold(String(before.manifest).padStart(6))} .manifest files\n`);
+      process.stdout.write(`    ${style.bold(String(before.lance).padStart(6))} .lance fragments\n`);
+      process.stdout.write(`    ${style.bold(mb.padStart(6))} MB total\n\n`);
+
+      // Refuse to run if a ctxloom MCP server has the directory open.
+      // `lsof +D` walks all open FDs under the directory; exit code 1
+      // means "no matches", anything else (incl. 0 with matches) we
+      // treat as active. Best-effort: if lsof is unavailable, we skip
+      // the check and rely on --force as the escape hatch.
+      const activePids: number[] = [];
+      if (!force) {
+        try {
+          const dbPath = `${root}/.ctxloom/vectors.lancedb`;
+          const out = execSync(`lsof +D "${dbPath}" -F p 2>/dev/null || true`, {
+            encoding: 'utf-8',
+          });
+          for (const line of out.split('\n')) {
+            if (line.startsWith('p')) {
+              const pid = parseInt(line.slice(1), 10);
+              if (Number.isFinite(pid) && pid !== process.pid) activePids.push(pid);
+            }
+          }
+        } catch {
+          // lsof unavailable or denied — fall through (user can --force).
+        }
+      }
+
+      if (activePids.length > 0) {
+        const uniq = [...new Set(activePids)];
+        process.stdout.write(
+          `  ${fmtWarn(`Refusing to clean — ${uniq.length} process(es) have files open:`)}\n`,
+        );
+        for (const pid of uniq) {
+          process.stdout.write(`    PID ${pid}\n`);
+        }
+        process.stdout.write(
+          `\n  ${style.dim('Stop those ctxloom MCP servers first (close Claude Code windows or `kill <pid>`),')}\n`,
+        );
+        process.stdout.write(
+          `  ${style.dim('then re-run. Use --force to override (not recommended — may corrupt the DB).')}\n`,
+        );
+        process.exitCode = 1;
+        break;
+      }
+
+      const result = cleanupVectors({ rootDir: root, dryRun }, force ? [] : activePids);
+      if (!result.cleaned) {
+        process.stdout.write(`  ${fmtWarn(`Cleanup skipped: ${result.reason ?? 'unknown'}`)}\n`);
+        break;
+      }
+
+      if (dryRun) {
+        process.stdout.write(
+          `  ${fmtSuccess(`Dry run — would have freed ${mb} MB across ${before.txn + before.manifest + before.lance} files.`)}\n`,
+        );
+        process.stdout.write(`  ${style.dim('Re-run without --dry-run to actually clean up.')}\n`);
+      } else {
+        process.stdout.write(`  ${fmtSuccess(`Cleanup complete — freed ${mb} MB.`)}\n`);
+        if (result.backupPath) {
+          process.stdout.write(`  ${style.dim(`Backup: ${result.backupPath}`)}\n`);
+          process.stdout.write(
+            `  ${style.dim('Delete the backup with `rm -rf` once you confirm the next index works.')}\n`,
+          );
+        }
+        process.stdout.write(
+          `\n  ${style.dim('Next ctxloom run will rebuild embeddings (~30-60s on a mid-sized repo).')}\n`,
+        );
+      }
+      break;
+    }
+
     case 'budget-stats': {
       // Aggregate persisted Phase B budget events from
       // ~/.ctxloom/telemetry/ over a sliding window. Inputs:
@@ -1114,6 +1207,9 @@ Usage:
   ctxloom rules check --json       Output violations as JSON
   ctxloom rules check --use-snapshot  Fast mode: use existing graph snapshot
   ctxloom rules check --limit=N   Show first N violations (default 50, 0=unlimited)
+  ctxloom vectors-cleanup      Clear accumulated LanceDB version state to free FDs
+                                (use --dry-run to preview, --force to skip the
+                                 active-process safety check)
   ctxloom --version            Print installed version and exit
   ctxloom --help               Show this help
 
