@@ -198,6 +198,24 @@ export interface ImpactReport {
   seedFiles: string[];
   directImporters: string[];
   transitiveImporters: string[];
+  /**
+   * Files that the seed files DIRECTLY IMPORT (outbound edges).
+   * Populated only when `includeImportees: true`.
+   *
+   * Captures the common PR pattern of co-modifying a file and its
+   * dependencies — e.g. adding a method to `lib/response.js` that
+   * touches helpers in `lib/utils.js`.
+   */
+  directImportees: string[];
+  /**
+   * Files that contain call-sites against symbols defined in the
+   * seed files. Populated only when `includeSymbolCallers: true`.
+   *
+   * Captures cross-module dependencies that file-level imports miss
+   * — e.g. tests calling `res.send()` through the package main entry
+   * rather than `require('../lib/response')` directly.
+   */
+  symbolCallers: string[];
   historicalCoupling: HistoricalCouplingEntry[];
   totalImpacted: number;
 }
@@ -207,6 +225,22 @@ export interface ImpactInput {
   overlay?: GitOverlayStore;
   changedFiles: string[];
   depth?: number;
+  /**
+   * Include direct importees of the seed files in the prediction
+   * (files the seed depends on, not just files that depend on the seed).
+   * Default false — preserves legacy behavior for `ctx_blast_radius`.
+   */
+  includeImportees?: boolean;
+  /**
+   * Include files that contain call-sites against symbols defined in
+   * the seed files. Uses the pre-built call-graph index. Default
+   * false — preserves legacy behavior for `ctx_blast_radius`.
+   *
+   * Particularly impactful for hub files whose exported API is called
+   * from many other modules via a re-export / package main, where the
+   * static import graph collapses to just the package entry.
+   */
+  includeSymbolCallers?: boolean;
 }
 
 function traverseImporters(
@@ -268,8 +302,94 @@ function buildHistoricalCouplingEntries(
   return coupling;
 }
 
+/**
+ * Collect direct importees of seed files — files that the seed
+ * directly imports (outbound forward edges). Excludes seeds themselves
+ * to avoid double-counting.
+ */
+function collectImportees(
+  changedFiles: readonly string[],
+  graph: DependencyGraph,
+): Set<string> {
+  const changedSet = new Set(changedFiles);
+  const importees = new Set<string>();
+  for (const file of changedFiles) {
+    for (const imp of graph.getImports(file)) {
+      if (!changedSet.has(imp)) importees.add(imp);
+    }
+  }
+  return importees;
+}
+
+/**
+ * Collect files that contain call-sites against symbols defined in the
+ * seed files. Bridges the gap where the file-level import graph misses
+ * cross-module relationships — e.g. tests that call `res.send()` go
+ * through the package main entry, not via `require('./response')`.
+ *
+ * Symbol names alone are ambiguous (multiple files can define `init`),
+ * so we cross-check with the symbol index: a caller is only attributed
+ * if the symbol is actually defined in one of the seed files.
+ *
+ * Ranking: a hub file like express's `lib/response.js` exports ~20
+ * methods that get called from ~100 files across the repo. Returning
+ * ALL 100 callers crashes precision. We rank by how many DISTINCT
+ * symbols from the seed each caller invokes — a file calling 10 of
+ * response.js's methods is clearly response-related; one calling
+ * `send()` once may be testing something else. Top-K cap defaults
+ * to 25 (≈ typical PR size).
+ */
+const SYMBOL_CALLERS_TOP_K = 25;
+
+function collectSymbolCallers(
+  changedFiles: readonly string[],
+  graph: DependencyGraph,
+): Set<string> {
+  const changedSet = new Set(changedFiles);
+  const callGraph = graph.getCallGraphIndex();
+
+  // Count how many DISTINCT seed-defined symbols each caller invokes.
+  const callerScores = new Map<string, number>();
+
+  for (const file of changedFiles) {
+    const symbols = graph.lookupSymbolsByFile(file);
+    for (const sym of symbols) {
+      // Confirm this symbol resolves to ONE of the seed files (avoids
+      // attributing callers of an unrelated identically-named symbol).
+      const defs = graph.lookupSymbol(sym);
+      const definedInSeed = defs.some((d) => changedSet.has(d.filePath));
+      if (!definedInSeed) continue;
+
+      // De-dup per-symbol callers so we count "files that call this
+      // symbol" once, not "every call site".
+      const seenForSym = new Set<string>();
+      for (const caller of callGraph.getCallers(sym)) {
+        if (changedSet.has(caller.file)) continue;
+        if (seenForSym.has(caller.file)) continue;
+        seenForSym.add(caller.file);
+        callerScores.set(caller.file, (callerScores.get(caller.file) ?? 0) + 1);
+      }
+    }
+  }
+
+  // Sort by score descending; tie-break by path for determinism.
+  const ranked = Array.from(callerScores.entries()).sort((a, b) => {
+    if (b[1] !== a[1]) return b[1] - a[1];
+    return a[0].localeCompare(b[0]);
+  });
+
+  return new Set(ranked.slice(0, SYMBOL_CALLERS_TOP_K).map(([file]) => file));
+}
+
 export function getImpactRadius(input: ImpactInput): ImpactReport {
-  const { graph, overlay, changedFiles, depth = 3 } = input;
+  const {
+    graph,
+    overlay,
+    changedFiles,
+    depth = 3,
+    includeImportees = false,
+    includeSymbolCallers = false,
+  } = input;
 
   const { directImporters, allReachable } = traverseImporters(changedFiles, graph, depth);
 
@@ -278,10 +398,22 @@ export function getImpactRadius(input: ImpactInput): ImpactReport {
     if (!directImporters.has(file)) transitiveImporters.push(file);
   }
 
+  const importeesSet = includeImportees
+    ? collectImportees(changedFiles, graph)
+    : new Set<string>();
+  const directImportees = Array.from(importeesSet);
+
+  const symbolCallersSet = includeSymbolCallers
+    ? collectSymbolCallers(changedFiles, graph)
+    : new Set<string>();
+  const symbolCallers = Array.from(symbolCallersSet);
+
   const staticSet = new Set<string>([
     ...changedFiles,
     ...directImporters,
     ...transitiveImporters,
+    ...directImportees,
+    ...symbolCallers,
   ]);
 
   const historicalCoupling =
@@ -289,12 +421,15 @@ export function getImpactRadius(input: ImpactInput): ImpactReport {
       ? buildHistoricalCouplingEntries(changedFiles, staticSet, overlay)
       : [];
 
-  const totalImpacted = directImporters.size + transitiveImporters.length;
+  const totalImpacted =
+    directImporters.size + transitiveImporters.length + directImportees.length + symbolCallers.length;
 
   return {
     seedFiles: [...changedFiles],
     directImporters: Array.from(directImporters),
     transitiveImporters,
+    directImportees,
+    symbolCallers,
     historicalCoupling,
     totalImpacted,
   };

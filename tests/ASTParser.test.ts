@@ -7,8 +7,8 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { ASTParser } from '../src/ast/ASTParser.js';
 import { Skeletonizer } from '../src/ast/Skeletonizer.js';
 import path from 'node:path';
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import fs, { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import os, { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -185,6 +185,82 @@ describe('ASTParser', () => {
         expect(node.startLine).toBeGreaterThan(0);
         expect(node.endLine).toBeGreaterThanOrEqual(node.startLine);
       }
+    });
+
+    // ─── Prototype-assignment symbol extraction (v1.6.0) ──────────────
+    // CommonJS libraries (express, most pre-2020 Node code) attach their
+    // public API via `res.send = function send(...)` patterns. Before this
+    // case landed in the AST walker, those names were entirely missing
+    // from the symbol index → ctxloom's blast-radius prediction couldn't
+    // attribute callers of `send()` to lib/response.js. Documented at
+    // length in ASTParser.ts case 'assignment_expression'.
+    describe('prototype/object method assignments (CommonJS API surface)', () => {
+      const tmpDir = path.join(os.tmpdir(), 'ctxloom-ast-assign-tests');
+      const SAMPLE_PROTOTYPE_JS = path.join(tmpDir, 'sample-prototype.js');
+
+      beforeAll(() => {
+        fs.mkdirSync(tmpDir, { recursive: true });
+        fs.writeFileSync(
+          SAMPLE_PROTOTYPE_JS,
+          [
+            "var res = exports = module.exports = {};",
+            "",
+            "res.send = function send(body) { return body; };",
+            "res.json = function (obj) { return JSON.stringify(obj); };",
+            "res.redirect = function redirect(url) { return url; };",
+            "// chained assignment — both names should be credited",
+            "res.contentType =",
+            "res.type = function contentType(type) { return type; };",
+            "// pure arrow function form",
+            "res.cookie = (name, value) => ({ name, value });",
+            "",
+            "// patterns that should NOT be picked up as methods",
+            "res.MAX_AGE = 3600;                       // not a function",
+            "res.copy = res.send;                      // alias to another value",
+          ].join('\n'),
+          'utf-8',
+        );
+      });
+
+      afterAll(() => {
+        fs.rmSync(tmpDir, { recursive: true, force: true });
+      });
+
+      it('extracts function-valued prototype assignments as method symbols', async () => {
+        const nodes = await parser.parse(SAMPLE_PROTOTYPE_JS);
+        const methods = nodes.filter(n => n.type === 'method').map(n => n.name);
+
+        expect(methods).toContain('send');
+        expect(methods).toContain('json');
+        expect(methods).toContain('redirect');
+        expect(methods).toContain('cookie');
+      });
+
+      it('credits both names in chained assignments (`a = b = function(){}`)', async () => {
+        const nodes = await parser.parse(SAMPLE_PROTOTYPE_JS);
+        const methods = nodes.filter(n => n.type === 'method').map(n => n.name);
+
+        expect(methods).toContain('contentType');
+        expect(methods).toContain('type');
+      });
+
+      it('does not pick up non-function assignments as methods', async () => {
+        const nodes = await parser.parse(SAMPLE_PROTOTYPE_JS);
+        const methods = nodes.filter(n => n.type === 'method').map(n => n.name);
+
+        // res.MAX_AGE = 3600 — constant, not callable
+        expect(methods).not.toContain('MAX_AGE');
+        // res.copy = res.send — alias to identifier, not a fresh function
+        expect(methods).not.toContain('copy');
+      });
+
+      it('attaches line numbers to extracted method symbols', async () => {
+        const nodes = await parser.parse(SAMPLE_PROTOTYPE_JS);
+        const send = nodes.find(n => n.type === 'method' && n.name === 'send');
+        expect(send).toBeDefined();
+        expect(send!.startLine).toBeGreaterThan(0);
+        expect(send!.endLine).toBeGreaterThanOrEqual(send!.startLine);
+      });
     });
   });
 

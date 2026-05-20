@@ -308,4 +308,112 @@ describe('getImpactRadius', () => {
       result.directImporters.length + result.transitiveImporters.length,
     );
   });
+
+  // ─── New v1.6.0 prediction signals ──────────────────────────────────
+
+  it('directImportees is empty by default (legacy behavior preserved)', () => {
+    const graph = makeGraph();
+    const result = getImpactRadius({ graph, changedFiles: ['src/b.ts'] });
+
+    expect(result.directImportees).toEqual([]);
+  });
+
+  it('symbolCallers is empty by default (legacy behavior preserved)', () => {
+    const graph = makeGraph();
+    const result = getImpactRadius({ graph, changedFiles: ['src/b.ts'] });
+
+    expect(result.symbolCallers).toEqual([]);
+  });
+
+  it('directImportees lists files the seed depends on when includeImportees=true', () => {
+    const graph = new DependencyGraph();
+    // seed = src/main.ts; main → util1.ts, util2.ts
+    graph.addEdge('src/main.ts', 'src/util1.ts');
+    graph.addEdge('src/main.ts', 'src/util2.ts');
+    // Add an importer so we can still verify inbound arm is unaffected
+    graph.addEdge('src/caller.ts', 'src/main.ts');
+
+    const result = getImpactRadius({
+      graph,
+      changedFiles: ['src/main.ts'],
+      includeImportees: true,
+    });
+
+    expect(result.directImportees).toContain('src/util1.ts');
+    expect(result.directImportees).toContain('src/util2.ts');
+    expect(result.directImporters).toContain('src/caller.ts');
+    expect(result.directImportees).not.toContain('src/main.ts');
+  });
+
+  it('directImportees excludes seed files themselves', () => {
+    const graph = new DependencyGraph();
+    // Two seed files that import each other (cycle)
+    graph.addEdge('src/a.ts', 'src/b.ts');
+    graph.addEdge('src/b.ts', 'src/a.ts');
+    graph.addEdge('src/a.ts', 'src/util.ts');
+
+    const result = getImpactRadius({
+      graph,
+      changedFiles: ['src/a.ts', 'src/b.ts'],
+      includeImportees: true,
+    });
+
+    expect(result.directImportees).toContain('src/util.ts');
+    expect(result.directImportees).not.toContain('src/a.ts');
+    expect(result.directImportees).not.toContain('src/b.ts');
+  });
+
+  it('totalImpacted accumulates all four signals', () => {
+    const graph = new DependencyGraph();
+    graph.addEdge('src/main.ts', 'src/util.ts');     // importee
+    graph.addEdge('src/caller.ts', 'src/main.ts');   // importer
+
+    const baseline = getImpactRadius({ graph, changedFiles: ['src/main.ts'] });
+    expect(baseline.totalImpacted).toBe(1); // just src/caller.ts
+
+    const augmented = getImpactRadius({
+      graph,
+      changedFiles: ['src/main.ts'],
+      includeImportees: true,
+    });
+    expect(augmented.totalImpacted).toBe(2); // + src/util.ts
+  });
+
+  it('symbolCallers caps the result at the top-K ranked callers', () => {
+    // Verifies the ranking truncation — without it, a hub file with
+    // 100+ callers of a generic method would dump all callers into the
+    // prediction and crash precision.
+    const graph = new DependencyGraph();
+    // Register many files in the graph by adding any edge that
+    // references them. They don't import the seed.
+    for (let i = 0; i < 50; i++) {
+      graph.addEdge(`src/caller${i}.ts`, 'src/somewhere-else.ts');
+    }
+    // Manually wire each caller to call 'doStuff', defined in seed.
+    graph.addSymbol('src/seed.ts', {
+      name: 'doStuff',
+      type: 'function',
+      signature: 'function doStuff()',
+      startLine: 1,
+      endLine: 3,
+    });
+    const callGraph = graph.getCallGraphIndex();
+    for (let i = 0; i < 50; i++) {
+      callGraph.addEdge({
+        callerFile: `src/caller${i}.ts`,
+        callerSymbol: '',
+        calleeSymbol: 'doStuff',
+        confidence: 'extracted',
+      });
+    }
+
+    const result = getImpactRadius({
+      graph,
+      changedFiles: ['src/seed.ts'],
+      includeSymbolCallers: true,
+    });
+
+    // Top-K cap is 25 by current calibration.
+    expect(result.symbolCallers.length).toBeLessThanOrEqual(25);
+  });
 });
