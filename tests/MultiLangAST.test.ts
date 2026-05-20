@@ -63,6 +63,105 @@ describe('DependencyGraph — multi-language import resolution', () => {
     expect(files).toContain('lib.rs');
   });
 
+  // ─── Re-export tracing (v1.6.x) ───────────────────────────────────────
+  it('Python: traces re-exports through a barrel __init__.py', async () => {
+    // Simulates the fastapi pattern:
+    //   fastapi/__init__.py     →  from .routing import APIRouter
+    //   tests/test_routing.py   →  from fastapi import APIRouter
+    //
+    // Without re-export tracing, tests/test_routing.py has an edge to
+    // fastapi/__init__.py but no edge to fastapi/routing.py — so a
+    // blast-radius query against routing.py never finds the tests.
+    //
+    // With re-export tracing, a parallel edge tests/test_routing.py →
+    // fastapi/routing.py is added.
+    fs.mkdirSync(path.join(tmpDir, 'fastapi'), { recursive: true });
+    fs.mkdirSync(path.join(tmpDir, 'tests'), { recursive: true });
+    fs.writeFileSync(
+      path.join(tmpDir, 'fastapi', '__init__.py'),
+      'from .routing import APIRouter\n',
+    );
+    fs.writeFileSync(
+      path.join(tmpDir, 'fastapi', 'routing.py'),
+      'class APIRouter:\n    def add_route(self): pass\n',
+    );
+    fs.writeFileSync(
+      path.join(tmpDir, 'tests', 'test_routing.py'),
+      'from fastapi import APIRouter\n\ndef test_it():\n    APIRouter()\n',
+    );
+
+    const parser = new ASTParser();
+    await parser.init();
+    const graph = new DependencyGraph();
+    graph.setParser(parser);
+    await graph.buildFromDirectory(tmpDir);
+
+    // The classic edge through the barrel still exists.
+    expect(graph.getImports('tests/test_routing.py')).toContain('fastapi/__init__.py');
+    // The new re-export parallel edge — this is what enables a blast
+    // radius from routing.py to find the test.
+    expect(graph.getImports('tests/test_routing.py')).toContain('fastapi/routing.py');
+    // And conversely, importers of routing.py include the test.
+    expect(graph.getImporters('fastapi/routing.py')).toContain('tests/test_routing.py');
+  });
+
+  it('Python: aliased imports use the alias name for re-export lookup', async () => {
+    // `from .routing import APIRouter as Router`  →  re-exports under
+    // local name "Router". Downstream `from pkg import Router` chains
+    // correctly through the alias.
+    fs.mkdirSync(path.join(tmpDir, 'pkg'), { recursive: true });
+    fs.writeFileSync(
+      path.join(tmpDir, 'pkg', '__init__.py'),
+      'from .routing import APIRouter as Router\n',
+    );
+    fs.writeFileSync(
+      path.join(tmpDir, 'pkg', 'routing.py'),
+      'class APIRouter: pass\n',
+    );
+    fs.writeFileSync(
+      path.join(tmpDir, 'user.py'),
+      'from pkg import Router\n',
+    );
+
+    const parser = new ASTParser();
+    await parser.init();
+    const graph = new DependencyGraph();
+    graph.setParser(parser);
+    await graph.buildFromDirectory(tmpDir);
+
+    expect(graph.getImports('user.py')).toContain('pkg/routing.py');
+  });
+
+  it('Python: imports of non-re-exported names do NOT add false parallel edges', async () => {
+    // If user.py imports `from pkg import unknown`, and pkg/__init__.py
+    // does NOT re-export `unknown`, we should not invent an edge.
+    fs.mkdirSync(path.join(tmpDir, 'pkg'), { recursive: true });
+    fs.writeFileSync(
+      path.join(tmpDir, 'pkg', '__init__.py'),
+      'from .routing import APIRouter\n',
+    );
+    fs.writeFileSync(
+      path.join(tmpDir, 'pkg', 'routing.py'),
+      'class APIRouter: pass\n',
+    );
+    fs.writeFileSync(
+      path.join(tmpDir, 'user.py'),
+      'from pkg import APIRouter, unknown\n',
+    );
+
+    const parser = new ASTParser();
+    await parser.init();
+    const graph = new DependencyGraph();
+    graph.setParser(parser);
+    await graph.buildFromDirectory(tmpDir);
+
+    // APIRouter chains correctly...
+    expect(graph.getImports('user.py')).toContain('pkg/routing.py');
+    // ...but no spurious edges to other files for the unknown name.
+    const imports = graph.getImports('user.py');
+    expect(imports.filter(f => f === 'pkg/routing.py')).toHaveLength(1);
+  });
+
   it('retains a no-import Rust file in allFiles() after updateFile', async () => {
     fs.writeFileSync(path.join(tmpDir, 'lib.rs'), 'fn hello() {}\n');
 

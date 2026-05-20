@@ -89,6 +89,18 @@ export interface ParsedNode {
   methods?: string[];
   methodRanges?: MethodRange[];
   source?: string;
+  /**
+   * For named imports (`from X import Y, Z` / `import { Y, Z } from 'X'`),
+   * the LOCAL names brought into scope. For aliased imports
+   * (`from X import Y as Z`) this is the alias (Z), since that's what
+   * subsequent files would import to chain through a re-export barrel.
+   *
+   * Empty / undefined for bare module imports (`import X` / `import './X'`).
+   * Consumed by DependencyGraph's re-export tracing to add parallel
+   * edges from importer → actual symbol-defining file when the
+   * import target is a barrel.
+   */
+  importedNames?: string[];
   startLine: number;
   endLine: number;
 }
@@ -742,11 +754,55 @@ export class ASTParser {
           return;
         }
         case 'import_from_statement': {
+          // The first dotted_name / relative_import is the SOURCE module.
+          // Subsequent dotted_name / aliased_import children (positioned
+          // AFTER the "import" keyword) are the imported names.
+          //
+          // For `from .routing import APIRouter, Body as B`:
+          //   source = ".routing"
+          //   importedNames = ["APIRouter", "B"]
+          //
+          // We capture the LOCAL name (alias if present) so re-export
+          // tracing chains work: a downstream file doing
+          // `from <pkg> import B` will look up B in the re-export map.
           const moduleNode = node.children.find(c => c?.type === 'dotted_name' || c?.type === 'relative_import');
+          const sourceText = moduleNode?.text ?? '';
+
+          const importedNames: string[] = [];
+          // Walk children AFTER the source module to collect the import list.
+          // tree-sitter-python flattens this — there's no parent 'import_list'
+          // node; the names appear as direct siblings.
+          let pastImportKeyword = false;
+          for (const child of node.children) {
+            if (!child) continue;
+            // The "import" keyword is at child.type === 'import'. After
+            // we see it, subsequent named children are imports.
+            if (child.text === 'import' && (child.type === 'import' || child.children.length === 0)) {
+              pastImportKeyword = true;
+              continue;
+            }
+            if (!pastImportKeyword) continue;
+            // Skip the wildcard form (`from X import *`) — no names to track.
+            if (child.type === 'wildcard_import') continue;
+            if (child.type === 'dotted_name') {
+              importedNames.push(child.text);
+            } else if (child.type === 'aliased_import') {
+              // Field 'alias' if present, otherwise field 'name'.
+              const alias = child.childForFieldName?.('alias');
+              const aliasName = alias?.text;
+              if (aliasName) importedNames.push(aliasName);
+              else {
+                const name = child.childForFieldName?.('name')?.text;
+                if (name) importedNames.push(name);
+              }
+            }
+          }
+
           nodes.push({
             type: 'import',
-            name: moduleNode?.text ?? '',
-            source: moduleNode?.text ?? '',
+            name: sourceText,
+            source: sourceText,
+            importedNames: importedNames.length > 0 ? importedNames : undefined,
             startLine: node.startPosition.row + 1,
             endLine: node.endPosition.row + 1,
           });

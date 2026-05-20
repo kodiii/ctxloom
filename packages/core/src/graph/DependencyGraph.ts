@@ -50,6 +50,37 @@ export class DependencyGraph {
 
   private callGraphIndex = new CallGraphIndex();
 
+  /**
+   * Re-export tracing (v1.6.x):
+   *   reExportMap[barrelFile][symbol] = sourceFile
+   *
+   * Built during graph construction from `from .submodule import Name`
+   * statements (Python). When file C imports `from <barrel> import Name`,
+   * the import resolver consults this map and emits a parallel edge
+   * C → sourceFile so blast-radius queries against sourceFile can find
+   * C as a transitive consumer through the barrel.
+   *
+   * Concrete fastapi case:
+   *   tests/test_routing.py has `from fastapi import APIRouter`
+   *   fastapi/__init__.py has `from .routing import APIRouter`
+   *   → reExportMap['fastapi/__init__.py']['APIRouter'] = 'fastapi/routing.py'
+   *   → emit edge tests/test_routing.py → fastapi/routing.py
+   */
+  private reExportMap = new Map<string, Map<string, string>>();
+
+  /**
+   * Pending re-export queries. Populated during pass 1 (parse all
+   * files, extract their imports); resolved in pass 2 once the
+   * reExportMap is fully built. Required because file ordering would
+   * otherwise miss re-exports whose source files are parsed AFTER the
+   * consumer file.
+   */
+  private pendingReExportQueries: Array<{
+    caller: string;
+    barrel: string;
+    symbols: readonly string[];
+  }> = [];
+
   private parser: ASTParser | null = null;
   private rootDir: string = '';
   private snapshotDir: string = '';
@@ -136,7 +167,37 @@ export class DependencyGraph {
                 const specifier = imp.source ?? imp.name;
                 const isRelative = specifier.startsWith('.');
                 const resolved = resolveMultiLangImport(absPath, { specifier, isRelative }, rootDir);
-                if (resolved) this.addEdge(relPath, resolved);
+                if (resolved) {
+                  this.addEdge(relPath, resolved);
+
+                  // Re-export bookkeeping for Python (v1.6.x). Two cases:
+                  //
+                  // 1. RELATIVE import with named symbols → THIS file
+                  //    re-exports those names from the resolved sibling.
+                  //    Record in reExportMap so downstream consumers
+                  //    can trace through.
+                  //
+                  // 2. ANY import with named symbols → defer a query
+                  //    against the (eventually-built) reExportMap.
+                  //    Resolved in pass 2 after all files are parsed.
+                  if (ext === '.py' && imp.importedNames && imp.importedNames.length > 0) {
+                    if (isRelative) {
+                      let map = this.reExportMap.get(relPath);
+                      if (!map) {
+                        map = new Map();
+                        this.reExportMap.set(relPath, map);
+                      }
+                      for (const name of imp.importedNames) {
+                        map.set(name, resolved);
+                      }
+                    }
+                    this.pendingReExportQueries.push({
+                      caller: relPath,
+                      barrel: resolved,
+                      symbols: imp.importedNames,
+                    });
+                  }
+                }
               }
             } else {
               // AST grammar unavailable — fall back to regex
@@ -192,6 +253,30 @@ export class DependencyGraph {
       } catch (err) {
         logger.error('Failed to parse', { file: relPath, detail: err instanceof Error ? err.message : String(err) });
       }
+    }
+
+    // Pass 2: re-export tracing. Resolve deferred queries against the
+    // now-complete reExportMap. For each `from <barrel> import Sym` we
+    // saw during pass 1, look up the barrel's re-export of Sym and add
+    // a parallel edge consumer → real_definition_file. See
+    // reExportMap field for the fastapi example.
+    let reExportEdgesAdded = 0;
+    for (const { caller, barrel, symbols } of this.pendingReExportQueries) {
+      const map = this.reExportMap.get(barrel);
+      if (!map) continue;
+      for (const sym of symbols) {
+        const source = map.get(sym);
+        if (source && source !== caller && source !== barrel) {
+          // addEdge is idempotent (Set-backed) so duplicates are free.
+          this.addEdge(caller, source);
+          reExportEdgesAdded += 1;
+        }
+      }
+    }
+    // Free the buffer — pendingReExportQueries can be large.
+    this.pendingReExportQueries = [];
+    if (reExportEdgesAdded > 0) {
+      logger.info('Re-export tracing added parallel edges', { count: reExportEdgesAdded });
     }
 
     // Save snapshot
