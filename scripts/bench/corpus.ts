@@ -55,12 +55,24 @@ import type { CorpusEntry } from './types.js';
  *     from lib/response.js as entry point.
  *   fastapi#15030: 4 fastapi/ files + tests. "Add support for
  *     Server Sent Events" — real feature, multi-file impact.
- *   fastapi#15022: 3 fastapi/ files + tests. "Add support for
- *     streaming JSON Lines" — another real feature.
+ *   fastapi#14186: 13 source files (7 in fastapi/_compat/) + tests
+ *     directly importing the modified modules. "Fix internal Pydantic
+ *     v1 compatibility" — methodology-typical case where tests have
+ *     direct static-import edges to the modified files. Replaces the
+ *     previous #15022 (Server Sent Events) which tested STREAMING
+ *     BEHAVIOR — its test files imported `from fastapi import FastAPI`
+ *     only, never the modified routing.py, leaving sourceRecall
+ *     capped at 0.13 regardless of graph quality (see PR #180 for the
+ *     full investigation). #14186 is structurally analogous to
+ *     express#6525: tests do `from fastapi._compat.shared import
+ *     is_bytes_sequence_annotation` — the same direct-import pattern
+ *     express tests use via `require('../lib/utils').normalizeType`.
+ *     Merged 2025-10-20, ~7 months before #15030, satisfying the
+ *     "spans ≥4 months" rule.
  */
 export const SPIKE_CORPUS: CorpusEntry[] = [
   { name: 'express', repo: 'expressjs/express', prs: [6903, 6525] },
-  { name: 'fastapi', repo: 'tiangolo/fastapi',  prs: [15030, 15022] },
+  { name: 'fastapi', repo: 'tiangolo/fastapi',  prs: [15030, 14186] },
 ];
 
 /**
@@ -74,7 +86,7 @@ export const SPIKE_CORPUS: CorpusEntry[] = [
  */
 export const FULL_CORPUS: CorpusEntry[] = [
   { name: 'express', repo: 'expressjs/express', prs: [6903, 6525, 6903] }, // TODO add 3rd
-  { name: 'fastapi', repo: 'tiangolo/fastapi',  prs: [15030, 15022, 14978] },
+  { name: 'fastapi', repo: 'tiangolo/fastapi',  prs: [15030, 14186, 14978] },
   // TODO: select + verify flask, gin, httpx, nextjs PRs before bench:full.
   // Each must satisfy ALL methodology rules. Don't blindly fill with
   // guesses — the spike caught my last guesses and that should stay
