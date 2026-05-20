@@ -264,6 +264,81 @@ describe('ASTParser', () => {
     });
   });
 
+  // ─── Python call-graph extraction (v1.6.1) ──────────────────────────
+  describe('parseAllPythonCallEdges()', () => {
+    const tmpDir = path.join(os.tmpdir(), 'ctxloom-ast-py-call-tests');
+    const SAMPLE_PY = path.join(tmpDir, 'sample.py');
+
+    beforeAll(() => {
+      fs.mkdirSync(tmpDir, { recursive: true });
+      fs.writeFileSync(
+        SAMPLE_PY,
+        [
+          'from typing import Any',
+          '',
+          'def top_level() -> int:',
+          '    return helper(42)',
+          '',
+          'def helper(x: int) -> int:',
+          '    print(f"got {x}")',
+          '    return x',
+          '',
+          'class Service:',
+          '    def __init__(self, client: Any) -> None:',
+          '        self.client = client',
+          '',
+          '    def dispatch(self, msg: str) -> None:',
+          '        # method call via attribute chain',
+          '        self.client.connection.send(msg)',
+          '        # chained call: f()(x)',
+          '        get_handler()("ready")',
+        ].join('\n'),
+        'utf-8',
+      );
+    });
+
+    afterAll(() => {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    });
+
+    it('extracts simple function calls', async () => {
+      const edges = await parser.parseAllPythonCallEdges(SAMPLE_PY);
+      const helperCall = edges.find(e => e.calleeSymbol === 'helper');
+      expect(helperCall).toBeDefined();
+      expect(helperCall!.callerSymbol).toBe('top_level');
+    });
+
+    it('extracts method calls (attribute access) using rightmost name', async () => {
+      const edges = await parser.parseAllPythonCallEdges(SAMPLE_PY);
+      // self.client.connection.send(msg) → callee = "send"
+      const sendCall = edges.find(e => e.calleeSymbol === 'send');
+      expect(sendCall).toBeDefined();
+      expect(sendCall!.callerSymbol).toBe('dispatch');
+    });
+
+    it('extracts chained calls (f()(x)) — inner callee surfaced', async () => {
+      const edges = await parser.parseAllPythonCallEdges(SAMPLE_PY);
+      // get_handler()("ready") — inner function name is what we record
+      const inner = edges.find(e => e.calleeSymbol === 'get_handler');
+      expect(inner).toBeDefined();
+      expect(inner!.callerSymbol).toBe('dispatch');
+    });
+
+    it('attaches line numbers', async () => {
+      const edges = await parser.parseAllPythonCallEdges(SAMPLE_PY);
+      for (const edge of edges) {
+        expect(edge.line).toBeGreaterThan(0);
+      }
+    });
+
+    it('returns empty for non-Python sources without throwing', async () => {
+      const empty = path.join(tmpDir, 'empty.py');
+      fs.writeFileSync(empty, '', 'utf-8');
+      const edges = await parser.parseAllPythonCallEdges(empty);
+      expect(edges).toEqual([]);
+    });
+  });
+
   describe('findCallSites()', () => {
     it('should find call sites for a known function', async () => {
       const sites = await parser.findCallSites(SAMPLE_TS, 'readFileSync');

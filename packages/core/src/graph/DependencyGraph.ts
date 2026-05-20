@@ -23,6 +23,8 @@ import { CallGraphIndex } from './CallGraphIndex.js';
 
 /** Extensions handled by the TypeScript/JS AST parser. */
 const TS_EXTENSIONS = new Set(['.ts', '.tsx', '.js', '.jsx', '.mjs', '.vue']);
+/** Extensions whose call graph is extracted by the Python walker. */
+const PY_EXTENSIONS = new Set(['.py', '.ipynb']);
 /** Extensions handled by the AST parser (all 13 supported languages). */
 const AST_EXTENSIONS = new Set(['.ts', '.tsx', '.js', '.jsx', '.mjs', '.py', '.go', '.rs', '.java', '.cs', '.rb', '.kt', '.kts', '.swift', '.ipynb', '.php', '.dart']);
 
@@ -162,9 +164,18 @@ export class DependencyGraph {
             }
           }
 
-          // Call graph edges: TypeScript/JS only
+          // Call graph edges: TypeScript/JS + Python (v1.6.1).
+          // Each language has its own walker because tree-sitter node
+          // type names differ ('call_expression' for TS vs 'call' for
+          // Python). Other languages don't yet have a call-graph walker;
+          // tracked under task #2 (v1.7.0 host adapters).
           if (TS_EXTENSIONS.has(ext)) {
             const callEdges = await this.parser.parseAllCallEdges(absPath);
+            for (const edge of callEdges) {
+              this.callGraphIndex.addEdge({ callerFile: relPath, ...edge });
+            }
+          } else if (PY_EXTENSIONS.has(ext)) {
+            const callEdges = await this.parser.parseAllPythonCallEdges(absPath);
             for (const edge of callEdges) {
               this.callGraphIndex.addEdge({ callerFile: relPath, ...edge });
             }
@@ -455,9 +466,15 @@ export class DependencyGraph {
           }
         }
 
-        // Rebuild call graph edges: TypeScript/JS only (stale edges were cleared above).
+        // Rebuild call graph edges: TypeScript/JS + Python (v1.6.1).
+        // Stale edges were cleared above via removeEdgesForFile().
         if (TS_EXTENSIONS.has(ext)) {
           const callEdges = await this.parser.parseAllCallEdges(absPath);
+          for (const edge of callEdges) {
+            this.callGraphIndex.addEdge({ callerFile: relPath, ...edge });
+          }
+        } else if (PY_EXTENSIONS.has(ext)) {
+          const callEdges = await this.parser.parseAllPythonCallEdges(absPath);
           for (const edge of callEdges) {
             this.callGraphIndex.addEdge({ callerFile: relPath, ...edge });
           }
