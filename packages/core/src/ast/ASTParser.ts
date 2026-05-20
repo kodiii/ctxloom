@@ -1754,6 +1754,101 @@ export class ASTParser {
   }
 
   /**
+   * Extract all call edges in a Python (.py / .ipynb) file. Mirrors
+   * `parseAllCallEdges` but uses tree-sitter-python node types.
+   *
+   * Tree-sitter-python relevant shapes:
+   *   - call.function = identifier "foo"         → callee = "foo"
+   *   - call.function = attribute (obj.method)   → callee = "method"
+   *   - call.function = call (chained)           → recurse into inner
+   *
+   * Enclosing-context tracking follows the same pattern: track the
+   * innermost `function_definition`. Methods inside a class are also
+   * function_definitions, so the same handler covers them.
+   */
+  async parseAllPythonCallEdges(
+    filePath: string,
+  ): Promise<Array<{ callerSymbol: string; calleeSymbol: string; line: number }>> {
+    if (!this.pyLang) await this.loadPython();
+    if (!this.pyLang) return []; // grammar unavailable
+
+    const parser = this.getParser(this.pyLang);
+
+    let source: string;
+    try {
+      const raw = fs.readFileSync(filePath, 'utf-8');
+      // Notebook → extract python source; otherwise raw is the source.
+      source = filePath.endsWith('.ipynb') ? extractNotebookPythonSource(raw) : raw;
+    } catch {
+      return [];
+    }
+    if (!source.trim()) return [];
+
+    const tree = parser.parse(source);
+    if (!tree) return [];
+
+    const results: Array<{ callerSymbol: string; calleeSymbol: string; line: number }> = [];
+
+    // Extract the rightmost name from a call's function child. For
+    // `req.client.send(...)` the callee is "send". For `print(x)` it's
+    // "print". For chained `foo()(x)` we surface the inner callee only
+    // — same as the JS extractor.
+    const extractCalleeName = (fn: TreeSitter.Node): string => {
+      if (fn.type === 'identifier') return fn.text;
+      if (fn.type === 'attribute') {
+        // `attribute` has field `attribute` = the rightmost name part.
+        const right = fn.childForFieldName?.('attribute')
+          ?? fn.children[fn.children.length - 1];
+        return right?.text ?? '';
+      }
+      if (fn.type === 'call') {
+        // Chained: f()(x). The OUTER call's function is itself a call.
+        // The "callee" we want is the inner function's name.
+        const innerFn = fn.childForFieldName?.('function');
+        return innerFn ? extractCalleeName(innerFn) : '';
+      }
+      return '';
+    };
+
+    const walk = (node: TreeSitter.Node, contextStack: string[]): void => {
+      let newStack = contextStack;
+
+      if (node.type === 'function_definition') {
+        const nameNode = node.childForFieldName?.('name');
+        if (nameNode?.text) {
+          newStack = [...contextStack, nameNode.text];
+        }
+      }
+
+      if (node.type === 'call') {
+        const fn = node.childForFieldName?.('function')
+          ?? node.children.find(c => c?.type === 'identifier' || c?.type === 'attribute' || c?.type === 'call');
+        if (fn) {
+          const name = extractCalleeName(fn);
+          if (name && name.length > 0) {
+            results.push({
+              callerSymbol: newStack[newStack.length - 1] ?? '',
+              calleeSymbol: name,
+              line: node.startPosition.row + 1,
+            });
+          }
+        }
+      }
+
+      for (const child of node.children) {
+        if (child) walk(child, newStack);
+      }
+    };
+
+    try {
+      walk(tree.rootNode, []);
+      return results;
+    } finally {
+      tree.delete();
+    }
+  }
+
+  /**
    * Extract all call edges in a TypeScript/TSX file.
    * Tracks the enclosing function/method context for each call site.
    * Used to populate CallGraphIndex during indexing.
