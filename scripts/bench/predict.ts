@@ -22,8 +22,9 @@
  *   - The worktree at `repoPath` is checked out to the parent SHA
  */
 import { execFileSync } from 'node:child_process';
-import { DependencyGraph } from '@ctxloom/core';
+import { DependencyGraph, GitOverlayStore } from '@ctxloom/core';
 import { getImpactRadius } from '@ctxloom/core';
+import { logger } from '../../packages/core/src/utils/logger.js';
 import type { Prediction } from './types.js';
 
 const CTXLOOM_BIN = process.env['CTXLOOM_BIN'] ?? 'ctxloom';
@@ -47,40 +48,48 @@ export function indexRepo(repoPath: string): void {
 /**
  * Compute blast radius from the entry point against the indexed graph.
  *
- * Returns the union of FOUR signals:
+ * Returns the union of FIVE signals:
  *   1. The entry point itself (always a TP if it's in ground truth)
  *   2. Direct importers (1-hop inbound)
  *   3. Direct importees (1-hop outbound — files the entry depends on)
  *   4. Symbol callers (files calling any symbol exported by the entry)
+ *   5. Historical coupling (files that co-changed with entry in git)
  *
  * Depth=1 calibration history: depth=3 over-predicted on hub files
  * (P=0.01-0.10). Switching to depth=1 collapsed recall to 0.07 because
- * many PR files reach the entry only transitively (or through the
- * package main, not directly). The augmentation with importees +
- * symbol callers brings recall back without sacrificing precision.
+ * many PR files reach the entry only transitively. The augmentation
+ * with importees + symbol callers brings recall back without
+ * sacrificing precision.
  *
  * Empirical pattern that motivates each signal:
  *
  *   - Express #6525 touches 14 files. Only 1 directly imports
- *     lib/response.js (lib/express.js — the package entry). So
- *     `directImporters` finds 1 of 13 source TPs. But:
- *     * lib/utils.js (which response.js IMPORTS) is in the PR ✓
- *       captured by `directImportees`
- *     * test/res.* files don't `require('../lib/response')` — they
- *       `require('..')` (package entry) and call `res.send()`.
- *       captured by `symbolCallers` via call-graph lookup of `send`.
+ *     lib/response.js. The other 13 either reach it via importees
+ *     (`lib/utils.js`) or via call-graph (`res.send()` callers).
  *
- *   - Fastapi #15030 adds a NEW file fastapi/sse.py. It has 0 inbound
- *     importers (nothing imports it yet — it's new). But it imports
- *     several existing modules, captured by `directImportees`.
+ *   - Fastapi #15030 adds a NEW file `fastapi/sse.py`. It has 0
+ *     inbound importers — but several outbound importees catch the
+ *     related util files. Captured by `directImportees`.
  *
- * Historical coupling deliberately excluded — methodology measures
- * static graph quality, not git overlay quality. See methodology.md.
+ *   - Fastapi #15022 modifies `routing.py` to support streaming.
+ *     The PR's `test_stream_*.py` files DON'T import APIRouter —
+ *     they import `FastAPI` / `StreamingResponse` and test the
+ *     behavior indirectly. Static import + call graph cannot connect
+ *     them; only git co-change can: those tests were authored in the
+ *     same PR sequence as the routing.py modifications, so the
+ *     GitOverlayStore co-change index links them. Captured by
+ *     `historicalCoupling`.
+ *
+ * Historical coupling is OPT-IN per PR — the overlay must be built
+ * for the worktree. We do this once per worktree (rebuild() is the
+ * idempotent path) before evaluating any PR for that repo. Cost is
+ * ~1-2 seconds for the spike corpus repos, scaled by git history.
  */
 export async function blastRadius(
   repoPath: string,
   entryPoint: string,
   prNumber: number,
+  overlay?: GitOverlayStore,
 ): Promise<Prediction> {
   const graph = new DependencyGraph();
   const loaded = await graph.loadSnapshotOnly(repoPath);
@@ -93,25 +102,57 @@ export async function blastRadius(
 
   const report = getImpactRadius({
     graph,
+    overlay,
     changedFiles: [entryPoint],
     depth: 1,
     includeImportees: true,
     includeSymbolCallers: true,
   });
 
-  // Union of four signals: seed + direct importers + direct importees
-  // + symbol callers. `transitiveImporters` is empty at depth=1 (we
-  // keep the spread for shape-stability if depth ever changes).
+  // Union of five signals: seed + direct importers + direct importees
+  // + symbol callers + historical coupling. `transitiveImporters` is
+  // empty at depth=1; spread is kept for shape-stability.
   const predicted = new Set<string>([
     ...report.seedFiles,
     ...report.directImporters,
     ...report.transitiveImporters,
     ...report.directImportees,
     ...report.symbolCallers,
+    ...report.historicalCoupling.map((h) => h.node),
   ]);
 
   return {
     prNumber,
     predictedFiles: Array.from(predicted),
   };
+}
+
+/**
+ * Build a GitOverlayStore for the worktree. Idempotent: if a saved
+ * snapshot exists, it's loaded; otherwise we mine the git history.
+ *
+ * Caller is responsible for invoking this once per repo (not per PR)
+ * because the overlay is per-worktree, not per-checkout-SHA. The PR's
+ * indexRepo() call has already checked out the merge SHA, so this
+ * builds the overlay against that SHA's history.
+ *
+ * Returns `undefined` and logs a warning on failure so the bench can
+ * proceed without coupling data — historicalCoupling will simply be
+ * empty for that PR.
+ */
+export async function buildOverlay(repoPath: string): Promise<GitOverlayStore | undefined> {
+  try {
+    const overlay = new GitOverlayStore(repoPath);
+    const loaded = await overlay.loadSnapshot();
+    if (!loaded) {
+      await overlay.rebuild();
+    }
+    return overlay;
+  } catch (err) {
+    logger.warn('Bench: GitOverlayStore build failed, proceeding without co-change signal', {
+      repo: repoPath,
+      detail: err instanceof Error ? err.message : String(err),
+    });
+    return undefined;
+  }
 }

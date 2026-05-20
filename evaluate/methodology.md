@@ -57,10 +57,29 @@ fetch ground truth (gh pr view --json files)
   → entry_point = file with most lines changed (tie-break alphabetical)
   → parent_sha = the commit before the PR landed
 
-git worktree add <isolated dir> parent_sha
+git worktree add <isolated dir> merge_sha    # post-PR state, see "Merge commit indexing" below
 ctxloom index <isolated dir>
-ctxloom blast-radius <entry_point> --json
+build git overlay (GitOverlayStore: co-change + churn + ownership)
+ctxloom blast-radius <entry_point> --json --include-importees --include-symbol-callers --with-overlay
   → predicted_files = {files the graph says are affected}
+
+The prediction is the UNION of FIVE signals (locked here so the
+methodology can't be moved at runtime):
+
+  1. Seed file(s) — entry point itself
+  2. Direct importers (depth=1 inbound) — files that import the seed
+  3. Direct importees (depth=1 outbound) — files the seed imports
+  4. Symbol callers — files calling any symbol defined in the seed,
+     via the call-graph index. Top-25 by specificity-weighted score
+     plus path-proximity bonus; min score 1.0.
+  5. Historical coupling — files that co-changed with the seed in
+     the past N days, via the GitOverlayStore co-change index.
+     Threshold confidence 0.2; top 10 by confidence.
+
+Each signal is independently motivated; together they cover both
+structural relationships (imports + call sites) and behavioral
+relationships (git co-change). See `packages/core/src/lib/analysis.ts`
+for the algorithm.
 
 compute metrics:
   TP = |predicted ∩ ground_truth|
