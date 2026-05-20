@@ -21,6 +21,25 @@ export interface VectorSearchResult {
 }
 
 /**
+ * Shape of the return value of LanceDB's `Table.optimize()`.
+ * Documented at https://lancedb.github.io/lancedb/ — kept local so the
+ * TS compiler can validate the shape even on older `@lancedb/lancedb`
+ * builds that don't yet export this type.
+ */
+interface OptimizeResult {
+  compaction?: {
+    fragmentsRemoved?: number;
+    fragmentsAdded?: number;
+    filesRemoved?: number;
+    filesAdded?: number;
+  };
+  prune?: {
+    bytesRemoved?: number;
+    oldVersionsRemoved?: number;
+  };
+}
+
+/**
  * Sanitize a file path for use in LanceDB filter strings.
  * Allows only characters that appear in normal file paths.
  */
@@ -180,14 +199,27 @@ export class VectorStore {
     if (!this.table) return;
     try {
       const optimizable = this.table as Table & {
-        optimize?: (opts?: { cleanupOlderThan?: Date }) => Promise<unknown>;
+        optimize?: (opts?: { cleanupOlderThan?: Date }) => Promise<OptimizeResult | void>;
       };
       // Cleanup window is configurable — defaults to 1h, which keeps a
       // crash-recovery buffer in production while still releasing the
       // bulk of stale fragment / manifest / transaction FDs.
-      await optimizable.optimize?.({
+      const result = await optimizable.optimize?.({
         cleanupOlderThan: new Date(Date.now() - this.cleanupOlderThanMs),
       });
+      // Log the outcome so production telemetry can confirm whether
+      // cleanup is actually pruning. If `oldVersionsRemoved` stays 0
+      // across many compactions, LanceDB is refusing to delete versions
+      // (likely live-mmap conflict) and we need an out-of-process
+      // cleanup path — see `ctxloom vectors-cleanup` CLI.
+      if (result) {
+        logger.info('VectorStore.compact', {
+          fragmentsRemoved: result.compaction?.fragmentsRemoved ?? 0,
+          fragmentsAdded: result.compaction?.fragmentsAdded ?? 0,
+          oldVersionsRemoved: result.prune?.oldVersionsRemoved ?? 0,
+          bytesRemoved: result.prune?.bytesRemoved ?? 0,
+        });
+      }
     } catch (err) {
       logger.warn('VectorStore.compact failed (non-fatal)', {
         detail: err instanceof Error ? err.message : String(err),

@@ -62,7 +62,11 @@ export function saveNamedSnapshot(
     forwardEdges,
   };
 
-  const tmp = snapshotPath + '.tmp';
+  // Per-PID suffix avoids races when multiple ctxloom MCP servers run
+  // against the same repo (e.g. multiple Claude Code windows open on the
+  // same project). rename(2) is atomic, so last-writer-wins on the final
+  // file is fine for a snapshot cache.
+  const tmp = `${snapshotPath}.${process.pid}.tmp`;
   fs.writeFileSync(tmp, JSON.stringify(data, null, 2), 'utf-8');
   fs.renameSync(tmp, snapshotPath);
 }
