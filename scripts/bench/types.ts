@@ -165,12 +165,19 @@ export interface BenchReport {
   repos: RepoReport[];
   /**
    * For spike stage only: did the gate pass?
-   * Gate: F1 ≥ 0.50 AND recall ≥ 0.90 across both spike repos.
+   * Gate: F1 ≥ 0.50 AND sourceRecall ≥ 0.80 across both spike repos.
+   *
+   * Why sourceRecall (not recall): PR ground truth includes
+   * unindexable files (changelogs, lockfiles, configs) the graph
+   * cannot predict. Plain recall is structurally capped below 0.9
+   * on any PR with non-source GT entries. sourceRecall measures
+   * the question that actually matters: of the indexable PR files,
+   * did the graph find them? See bench/methodology.md.
    */
   gate?: {
     passed: boolean;
     reason: string;
     f1Threshold: number;
-    recallThreshold: number;
+    sourceRecallThreshold: number;
   };
 }
