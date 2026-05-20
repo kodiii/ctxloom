@@ -167,7 +167,8 @@ export type {
   ImpactReport,
   ImpactInput,
 } from './lib/analysis.js';
-export { detectChanges, getImpactRadius } from './lib/analysis.js';
+export { detectChanges, getImpactRadius, computeSemanticSimilar } from './lib/analysis.js';
+export type { SemanticSimilarEntry, VectorStoreLike } from './lib/analysis.js';
 
 // ─── License ─────────────────────────────────────────────────────────────────
 export {

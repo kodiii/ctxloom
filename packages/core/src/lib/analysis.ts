@@ -194,6 +194,11 @@ export interface HistoricalCouplingEntry {
   evidence: string;
 }
 
+export interface SemanticSimilarEntry {
+  node: string;
+  score: number;
+}
+
 export interface ImpactReport {
   seedFiles: string[];
   directImporters: string[];
@@ -216,8 +221,34 @@ export interface ImpactReport {
    * rather than `require('../lib/response')` directly.
    */
   symbolCallers: string[];
+  /**
+   * Files semantically similar to the seed, as measured by LanceDB
+   * embedding cosine distance. ALWAYS empty when returned from
+   * `getImpactRadius` directly — semantic similarity requires async
+   * I/O and getImpactRadius stays sync. Callers that want this signal
+   * must call `computeSemanticSimilar()` separately and merge.
+   *
+   * Captures behavioral / topical relationships that pure structural
+   * signals miss — e.g. test files testing a feature without
+   * importing the lib that implements it.
+   */
+  semanticSimilar: SemanticSimilarEntry[];
   historicalCoupling: HistoricalCouplingEntry[];
   totalImpacted: number;
+}
+
+/**
+ * Forward declaration for VectorStore — kept loose-typed to avoid a
+ * hard dependency on @lancedb/lancedb in consumers that only need
+ * structural impact analysis. The actual class lives in
+ * `packages/core/src/db/VectorStore.ts`.
+ */
+export interface VectorStoreLike {
+  findEmbeddingByPath(filePath: string): Promise<number[] | null>;
+  search(
+    queryEmbedding: number[],
+    limit?: number,
+  ): Promise<Array<{ filePath: string; score: number }>>;
 }
 
 export interface ImpactInput {
@@ -241,6 +272,12 @@ export interface ImpactInput {
    * static import graph collapses to just the package entry.
    */
   includeSymbolCallers?: boolean;
+  /**
+   * Semantic similarity is computed separately via the async helper
+   * `computeSemanticSimilar()` (not on `getImpactRadius` itself, which
+   * stays synchronous for backward-compatibility with the dozens of
+   * existing sync callers). Bench prediction calls both and merges.
+   */
 }
 
 function traverseImporters(
@@ -487,6 +524,83 @@ function collectSymbolCallers(
   return new Set(ranked.slice(0, SYMBOL_CALLERS_TOP_K).map(([file]) => file));
 }
 
+/**
+ * Collect files semantically similar to the seed via vector search.
+ *
+ * For each seed file, retrieve its stored embedding from the vector
+ * store and search for top-K neighbors. Excludes the seed itself
+ * and any file already present in `staticSet` (to avoid double-
+ * counting; semantic similarity is value-additive on top of
+ * structural signals).
+ *
+ * Score threshold: LanceDB returns cosine distance, where LOWER is
+ * MORE similar. We accept distance < SEMANTIC_DIST_THRESHOLD as
+ * "similar enough" — empirically ~0.7 catches topical relatedness
+ * without flooding the prediction with weakly-related files.
+ */
+const SEMANTIC_TOP_K = 15;
+const SEMANTIC_DIST_THRESHOLD = 0.7;
+
+/**
+ * Public helper to compute the semantic-similarity arm of the impact
+ * prediction. Kept out of `getImpactRadius` so the latter stays
+ * synchronous (a contract dozens of MCP/CLI/test sites depend on).
+ *
+ * Typical usage: call `getImpactRadius()` first, build a static set
+ * from its results, then call `computeSemanticSimilar(...)` to get
+ * the semantic-only addition. Take the union of both.
+ */
+export async function computeSemanticSimilar(
+  changedFiles: readonly string[],
+  vectorStore: VectorStoreLike,
+  staticSet: ReadonlySet<string>,
+): Promise<SemanticSimilarEntry[]> {
+  return collectSemanticSimilar(changedFiles, vectorStore, staticSet);
+}
+
+async function collectSemanticSimilar(
+  changedFiles: readonly string[],
+  vectorStore: VectorStoreLike,
+  staticSet: ReadonlySet<string>,
+): Promise<SemanticSimilarEntry[]> {
+  const changedSet = new Set(changedFiles);
+  // file → best (smallest) distance seen across all seed queries.
+  const scores = new Map<string, number>();
+
+  for (const seedFile of changedFiles) {
+    let embedding: number[] | null;
+    try {
+      embedding = await vectorStore.findEmbeddingByPath(seedFile);
+    } catch {
+      continue;
+    }
+    if (embedding === null) continue;
+
+    let results;
+    try {
+      // Query slightly more than top-K so post-filter has room.
+      results = await vectorStore.search(embedding, SEMANTIC_TOP_K + 5);
+    } catch {
+      continue;
+    }
+
+    for (const r of results) {
+      if (changedSet.has(r.filePath)) continue;
+      if (staticSet.has(r.filePath)) continue;
+      if (r.score >= SEMANTIC_DIST_THRESHOLD) continue;
+      const prev = scores.get(r.filePath);
+      if (prev === undefined || r.score < prev) {
+        scores.set(r.filePath, r.score);
+      }
+    }
+  }
+
+  return Array.from(scores.entries())
+    .sort((a, b) => a[1] - b[1]) // ascending distance = descending similarity
+    .slice(0, SEMANTIC_TOP_K)
+    .map(([node, score]) => ({ node, score }));
+}
+
 export function getImpactRadius(input: ImpactInput): ImpactReport {
   const {
     graph,
@@ -537,6 +651,7 @@ export function getImpactRadius(input: ImpactInput): ImpactReport {
     directImportees,
     symbolCallers,
     historicalCoupling,
+    semanticSimilar: [],
     totalImpacted,
   };
 }

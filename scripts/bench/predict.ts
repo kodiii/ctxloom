@@ -22,10 +22,12 @@
  *   - The worktree at `repoPath` is checked out to the parent SHA
  */
 import { execFileSync } from 'node:child_process';
-import { DependencyGraph, GitOverlayStore } from '@ctxloom/core';
-import { getImpactRadius } from '@ctxloom/core';
+import { DependencyGraph, GitOverlayStore, VectorStore } from '@ctxloom/core';
+import { getImpactRadius, computeSemanticSimilar } from '@ctxloom/core';
 import { logger } from '../../packages/core/src/utils/logger.js';
 import type { Prediction } from './types.js';
+import path from 'node:path';
+import fs from 'node:fs';
 
 const CTXLOOM_BIN = process.env['CTXLOOM_BIN'] ?? 'ctxloom';
 
@@ -90,6 +92,7 @@ export async function blastRadius(
   entryPoint: string,
   prNumber: number,
   overlay?: GitOverlayStore,
+  vectorStore?: VectorStore,
 ): Promise<Prediction> {
   const graph = new DependencyGraph();
   const loaded = await graph.loadSnapshotOnly(repoPath);
@@ -109,9 +112,7 @@ export async function blastRadius(
     includeSymbolCallers: true,
   });
 
-  // Union of five signals: seed + direct importers + direct importees
-  // + symbol callers + historical coupling. `transitiveImporters` is
-  // empty at depth=1; spread is kept for shape-stability.
+  // First union pass: the five sync signals from getImpactRadius.
   const predicted = new Set<string>([
     ...report.seedFiles,
     ...report.directImporters,
@@ -121,10 +122,60 @@ export async function blastRadius(
     ...report.historicalCoupling.map((h) => h.node),
   ]);
 
+  // Sixth arm: semantic similarity via LanceDB embeddings. Async
+  // because it queries the vector store. Excludes anything already
+  // in `predicted` so semantic similarity contributes ONLY value-add
+  // beyond the structural+behavioral signals.
+  if (vectorStore !== undefined) {
+    try {
+      const similar = await computeSemanticSimilar(
+        [entryPoint],
+        vectorStore,
+        predicted,
+      );
+      for (const entry of similar) {
+        predicted.add(entry.node);
+      }
+    } catch (err) {
+      logger.warn('Bench: semantic similarity computation failed', {
+        prNumber,
+        entryPoint,
+        detail: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+
   return {
     prNumber,
     predictedFiles: Array.from(predicted),
   };
+}
+
+/**
+ * Open the VectorStore for the worktree's already-indexed LanceDB.
+ * `ctxloom index` (called by indexRepo()) populates the embeddings,
+ * so by the time we get here the store should be ready.
+ *
+ * Returns `undefined` if no vectors.lancedb exists (e.g. the indexer
+ * skipped embedding for this corpus run). Bench proceeds without the
+ * semantic signal.
+ */
+export async function buildVectorStore(repoPath: string): Promise<VectorStore | undefined> {
+  const dbPath = path.join(repoPath, '.ctxloom', 'vectors.lancedb');
+  if (!fs.existsSync(dbPath)) {
+    return undefined;
+  }
+  try {
+    const store = new VectorStore(dbPath);
+    await store.init();
+    return store;
+  } catch (err) {
+    logger.warn('Bench: VectorStore init failed, proceeding without semantic signal', {
+      repo: repoPath,
+      detail: err instanceof Error ? err.message : String(err),
+    });
+    return undefined;
+  }
 }
 
 /**
