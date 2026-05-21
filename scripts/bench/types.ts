@@ -130,6 +130,23 @@ export interface Metrics {
   graphReachability: number;
 }
 
+/** Graph-correctness metrics for one PR. Measures graph quality
+ *  directly against AST ground truth — no prediction algorithm. */
+export interface GraphCorrectnessMetrics {
+  prNumber: number;
+  /**
+   * Fraction of AST-declared function/class/method/interface symbols
+   * present in graph.symbolIndex with correct file attribution. Range
+   * [0, 1]; 1.0 means perfect graph correctness on declarations.
+   * Source: scripts/bench/graph-correctness.ts:auditSymbolDeclarations.
+   */
+  symbolCoverage: number;
+  /** Total declarations the AST parser found (denominator). */
+  astDeclared: number;
+  /** Number of those present in graph.symbolIndex (numerator). */
+  graphIndexed: number;
+}
+
 /** Token-reduction metrics for one PR. */
 export interface TokenMetrics {
   prNumber: number;
@@ -160,11 +177,23 @@ export interface RepoReport {
   avgSourceRecall: number;
   /** Mean graph reachability — see Metrics.graphReachability. */
   avgGraphReachability: number;
+  /**
+   * Symbol declaration coverage: fraction of AST-declared
+   * function/class/method/interface symbols present in the graph's
+   * symbolIndex with the correct file attribution. Measured DIRECTLY
+   * against AST ground truth — no prediction algorithm in between.
+   *
+   * The primary "absurd accuracy" claim is tested here: if
+   * symbolCoverage ≥ 0.95, the graph genuinely knows where 95%+ of
+   * declared symbols live. If < 0.95, ctx_get_definition / find_callers
+   * / refactor preview would miss one in twenty symbols.
+   */
+  avgSymbolCoverage: number;
   avgNaiveTokens: number;
   avgGraphTokens: number;
   avgReduction: number;
   /** Per-PR breakdown — useful for limitations.md case studies. */
-  perPr: Array<Metrics & TokenMetrics>;
+  perPr: Array<Metrics & TokenMetrics & GraphCorrectnessMetrics>;
 }
 
 /** Final bench output. */
@@ -186,6 +215,8 @@ export interface BenchReport {
     avgSourceRecall: number;
     /** Mean graph reachability across all repos. See Metrics.graphReachability. */
     avgGraphReachability: number;
+    /** Mean symbol declaration coverage. See RepoReport.avgSymbolCoverage. */
+    avgSymbolCoverage: number;
     avgReduction: number;
   };
   /** Per-repo breakdown. */

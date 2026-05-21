@@ -1,6 +1,6 @@
 # ctxloom benchmark
 
-Generated 2026-05-21T11:37:58.584Z on commit 2700f02.
+Generated 2026-05-21T15:59:19.213Z on commit 09df3ef.
 Stage: **full**.
 
 Reproduce locally:
@@ -11,23 +11,25 @@ npm run bench:full
 
 ## Overall
 
-| Repos | PRs | Avg F1 | Avg Precision | Avg Recall | Avg Source Recall | Avg Graph Reachability | Avg Reduction |
-|------:|----:|-------:|--------------:|-----------:|------------------:|----------------------:|--------------:|
-| 5 | 15 | 0.40 | 0.53 | 0.47 | 0.56 | 0.81 | 0.0× |
+| Repos | PRs | Avg F1 | Avg Precision | Avg Recall | Avg Source Recall | Avg Graph Reachability | Avg Symbol Coverage | Avg Reduction |
+|------:|----:|-------:|--------------:|-----------:|------------------:|----------------------:|-------------------:|--------------:|
+| 5 | 15 | 0.40 | 0.53 | 0.47 | 0.56 | 0.81 | 1.00 | 0.0× |
 
 > **Source Recall** = recall computed against only the indexable (source-file) subset of each PR's ground truth — measures the prediction algorithm.
 
 > **Graph Reachability** = fraction of source-file ground truth that is structurally reachable from the entry point via BFS over the import graph (depth ≤ 4, forward + reverse). Measures the **graph** independent of the prediction algorithm — separates "graph completeness" from "algorithm quality". If sourceRecall ≪ graphReachability the algorithm is too conservative; if graphReachability itself is low the graph is missing edges.
 
+> **Symbol Coverage** = fraction of AST-declared function/class/method/interface symbols present in `graph.symbolIndex` with correct file attribution. Measured DIRECTLY against AST ground truth — no prediction algorithm or external oracle in between. The primary test of "absurd accuracy across all project files": if symbolCoverage ≥ 0.95 the graph genuinely knows where 95%+ of declared symbols live; downstream tools (`ctx_get_definition`, `find_callers`, refactor preview) inherit that accuracy.
+
 ## Per-repo
 
-| Repo | PRs | Avg F1 | Precision | Recall | Source Recall | Graph Reach. | Avg Reduction |
-|------|----:|-------:|----------:|-------:|--------------:|-------------:|--------------:|
-| `express` | 3 | 0.26 | 0.20 | 0.53 | 0.67 | 1.00 | 0.0× |
-| `fastapi` | 3 | 0.46 | 0.54 | 0.51 | 0.59 | 0.89 | 0.0× |
-| `flask` | 3 | 0.39 | 0.40 | 0.62 | 0.74 | 0.98 | 0.0× |
-| `gin` | 3 | 0.38 | 0.83 | 0.25 | 0.27 | 0.32 | 0.0× |
-| `httpx` | 3 | 0.50 | 0.66 | 0.45 | 0.54 | 0.86 | 0.0× |
+| Repo | PRs | Avg F1 | Precision | Recall | Source Recall | Graph Reach. | Symbol Cov. | Avg Reduction |
+|------|----:|-------:|----------:|-------:|--------------:|-------------:|------------:|--------------:|
+| `express` | 3 | 0.26 | 0.20 | 0.53 | 0.67 | 1.00 | 1.00 | 0.0× |
+| `fastapi` | 3 | 0.46 | 0.54 | 0.51 | 0.59 | 0.89 | 1.00 | 0.0× |
+| `flask` | 3 | 0.39 | 0.40 | 0.62 | 0.74 | 0.98 | 1.00 | 0.0× |
+| `gin` | 3 | 0.38 | 0.83 | 0.25 | 0.27 | 0.32 | 1.00 | 0.0× |
+| `httpx` | 3 | 0.50 | 0.66 | 0.45 | 0.54 | 0.86 | 1.00 | 0.0× |
 
 ## Per-PR (full data)
 
