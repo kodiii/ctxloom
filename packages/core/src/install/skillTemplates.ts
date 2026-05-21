@@ -43,8 +43,17 @@ description: Orient yourself to an unfamiliar codebase using ctxloom's structura
 
 # Explore Codebase
 
+**Principle: Think Before Coding.** Exploration is "think" with a
+budget. The trap is reading every file in sight; the discipline is
+to read the *graph*, then the few files the graph nominates. This
+skill caps you at 5 tool calls and 2000 tokens — enough to ground
+the next edit, not enough to procrastinate.
+
 Use this when you need to understand a codebase you haven't worked in
 before, or when re-orienting after time away.
+
+**Skip when:** you already know which files matter — just open them.
+Reserve this skill for "I don't know where to start" situations.
 
 ## Steps
 
@@ -97,8 +106,16 @@ argument-hint: "<symbol-name | file-path>"
 
 # Blast Radius
 
+**Principle: Think Before Coding.** You can't make a surgical change
+if you don't know who depends on the symbol. This skill is the
+"think" phase — read the graph slice before editing anything.
+
 Use this before any change to a public function, type, or file
 where you're not sure who depends on it.
+
+**Skip when:** the change is purely internal to a private helper
+with no callers outside the file, OR you've already run this skill
+for the same symbol in the current task.
 
 ## Inputs
 
@@ -151,8 +168,17 @@ argument-hint: "<old-name> <new-name>"
 
 # Refactor Safely
 
+**Principle: Surgical Changes.** A rename touches every call site —
+done blindly it's the opposite of surgical. This skill enforces
+"see the full diff before applying" so the change stays scoped to
+the user's request and doesn't accidentally rewrite tangents.
+
 Use this for renames, signature changes, or function moves. The
 skill enforces preview-before-apply.
+
+**Skip when:** the symbol is local to a single file (just edit it),
+OR the user wants a behavior change, not a rename (use the regular
+edit flow with \`ctx_blast_radius\` for impact awareness).
 
 ## Inputs
 
@@ -209,8 +235,17 @@ description: Identify code that lacks test coverage, prioritized by caller frequ
 
 # Coverage Gap Analysis
 
+**Principle: Goal-Driven Execution.** "Add tests everywhere" is
+yak-shaving. The goal is to add tests where they pay back the
+investment: high-caller, high-churn, low-coverage code. This skill
+ranks gaps so you write tests with intent, not by reflex.
+
 Use this to find untested code that genuinely matters — the
 intersection of "no tests" + "many callers" + "high risk score."
+
+**Skip when:** the user asked for tests on a specific symbol —
+write them directly. Reserve this skill for "where should we
+invest in tests next?" queries.
 
 ## Steps
 
@@ -262,9 +297,19 @@ argument-hint: "<PR number | branch name>"
 
 # Review PR
 
+**Principle: Think Before Coding.** A code review *is* the "think"
+phase for the author and the reviewer alike. This skill structures
+that thinking around graph slices rather than naive file-by-file
+reading, so you spot blast-radius and coverage risks the diff alone
+hides.
+
 Comprehensive PR review using ctxloom's graph. Mirrors the
 multi-agent review the ctxloom-bot posts automatically — useful
 when reviewing manually or when the bot isn't wired up.
+
+**Skip when:** the PR is one-file, ≤30 lines, with full test
+coverage — read the diff directly. Reserve this skill for changes
+where the structural impact isn't obvious from the diff.
 
 ## Inputs
 
@@ -356,6 +401,11 @@ description: Inspect ctxloom's per-tool budget telemetry — fallback distributi
 
 # Budget Stats
 
+**Principle: Simplicity First.** Don't guess what \`DEFAULT_MAX_RESPONSE_TOKENS\`
+should be — measure. This skill turns real telemetry into the
+simplest viable constant: the p75 of actual usage. Tune what hurts;
+leave the rest alone.
+
 Wrapper around \`ctxloom budget-stats\` for inline use inside a
 Claude Code session. Useful when:
 
@@ -363,6 +413,10 @@ Claude Code session. Useful when:
   (the Phase B follow-up)
 - Diagnosing why a tool keeps falling back to skeleton mode
 - Understanding which tools dominate the user's token budget
+
+**Skip when:** there's no budget complaint to investigate — telemetry
+exists for tuning, not browsing. Reserve this skill for "this tool
+keeps hitting the budget" or scheduled tuning passes.
 
 ## Steps
 
