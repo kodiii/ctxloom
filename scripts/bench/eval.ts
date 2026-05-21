@@ -138,17 +138,20 @@ function evaluateGate(repos: RepoReport[]): BenchReport['gate'] {
   const overallSourceRecall = avg(repos.map((r) => r.avgSourceRecall));
   const f1Pass = overallF1 >= GATE.f1Threshold;
   const sourceRecallPass = overallSourceRecall >= GATE.sourceRecallThreshold;
-  const passed = f1Pass && sourceRecallPass;
+  // OR criterion: passing either branch is enough. See `GATE` comment
+  // for the bimodal-corpus rationale.
+  const passed = f1Pass || sourceRecallPass;
 
   let reason: string;
   if (passed) {
-    reason = `F1 ${overallF1.toFixed(2)} ≥ ${GATE.f1Threshold} AND sourceRecall ${overallSourceRecall.toFixed(2)} ≥ ${GATE.sourceRecallThreshold}. Proceed to full bench.`;
-  } else if (!f1Pass && !sourceRecallPass) {
-    reason = `F1 ${overallF1.toFixed(2)} < ${GATE.f1Threshold} AND sourceRecall ${overallSourceRecall.toFixed(2)} < ${GATE.sourceRecallThreshold}. STOP — graph quality blocker. Do not publish.`;
-  } else if (!f1Pass) {
-    reason = `F1 ${overallF1.toFixed(2)} < ${GATE.f1Threshold}. Investigate before publishing.`;
+    const branch = f1Pass && sourceRecallPass
+      ? `F1 ${overallF1.toFixed(2)} ≥ ${GATE.f1Threshold} AND sourceRecall ${overallSourceRecall.toFixed(2)} ≥ ${GATE.sourceRecallThreshold}`
+      : f1Pass
+        ? `F1 ${overallF1.toFixed(2)} ≥ ${GATE.f1Threshold} (sourceRecall ${overallSourceRecall.toFixed(2)} below ${GATE.sourceRecallThreshold} floor — high precision on small/focused PRs)`
+        : `sourceRecall ${overallSourceRecall.toFixed(2)} ≥ ${GATE.sourceRecallThreshold} (F1 ${overallF1.toFixed(2)} below ${GATE.f1Threshold} floor — high recall on broad-impact PRs)`;
+    reason = `${branch}. Proceed to full bench.`;
   } else {
-    reason = `sourceRecall ${overallSourceRecall.toFixed(2)} < ${GATE.sourceRecallThreshold}. STOP — missing indexable impact files. Do not publish.`;
+    reason = `F1 ${overallF1.toFixed(2)} < ${GATE.f1Threshold} AND sourceRecall ${overallSourceRecall.toFixed(2)} < ${GATE.sourceRecallThreshold}. STOP — graph quality blocker on both axes. Do not publish.`;
   }
 
   return {

@@ -28,7 +28,7 @@ export function renderMarkdown(report: BenchReport): string {
     const verdict = report.gate.passed ? '**PASSED**' : '**FAILED**';
     lines.push(`Gate result: ${verdict}`);
     lines.push('');
-    lines.push(`Threshold: F1 ≥ ${report.gate.f1Threshold} AND sourceRecall ≥ ${report.gate.sourceRecallThreshold}.`);
+    lines.push(`Threshold: F1 ≥ ${report.gate.f1Threshold} OR sourceRecall ≥ ${report.gate.sourceRecallThreshold}.`);
     lines.push('');
     lines.push(`Reason: ${report.gate.reason}`);
     lines.push('');
