@@ -105,9 +105,16 @@ export const SPIKE_CORPUS: CorpusEntry[] = [
  *     2024-10) + #3673 (connection resets, 2025-09). All touch
  *     httpx/ + tests/, multi-file.
  *
- *   next.js: #86489 (stale dev types fix, 2025-11) + #86878
- *     (server refresh fix, 2025-12) + #93785 (instrumentationClient
- *     feature, 2026-05). Touch packages/next/src/ + test/.
+ *   next.js (deferred to v1.7.0): the repo is ~61k files, ~10x
+ *     larger than the next-biggest corpus repo. The current indexer
+ *     produces 2 LanceDB transactions per `upsert()` and our v1.5.5
+ *     periodic compaction can't keep pace at that scale — empirical
+ *     test 2026-05-21: nextjs indexing stalled after 3h with only
+ *     ~18% of files processed and 22k+ transaction files on disk.
+ *     The indexer needs streaming/batched upserts for monorepo
+ *     support; tracked as a v1.7.0 follow-up (task #2 host adapters
+ *     blocks on this same work). Corpus reverts to 5 repos × 3 PRs
+ *     = 15 PRs total for v1.6.0 publication.
  */
 export const FULL_CORPUS: CorpusEntry[] = [
   { name: 'express', repo: 'expressjs/express', prs: [6903, 6525, 5885] },
@@ -115,7 +122,7 @@ export const FULL_CORPUS: CorpusEntry[] = [
   { name: 'flask',   repo: 'pallets/flask',     prs: [4682, 4995, 5928] },
   { name: 'gin',     repo: 'gin-gonic/gin',     prs: [3904, 4053, 4491] },
   { name: 'httpx',   repo: 'encode/httpx',      prs: [3139, 3319, 3673] },
-  { name: 'nextjs',  repo: 'vercel/next.js',    prs: [86489, 86878, 93785] },
+  // next.js deferred to v1.7.0 — see comment block above
 ];
 
 /**
