@@ -36,8 +36,8 @@ export function renderMarkdown(report: BenchReport): string {
 
   lines.push('## Overall');
   lines.push('');
-  lines.push('| Repos | PRs | Avg F1 | Avg Precision | Avg Recall | Avg Source Recall | Avg Graph Reachability | Avg Reduction |');
-  lines.push('|------:|----:|-------:|--------------:|-----------:|------------------:|----------------------:|--------------:|');
+  lines.push('| Repos | PRs | Avg F1 | Avg Precision | Avg Recall | Avg Source Recall | Avg Graph Reachability | Avg Symbol Coverage | Avg Reduction |');
+  lines.push('|------:|----:|-------:|--------------:|-----------:|------------------:|----------------------:|-------------------:|--------------:|');
   lines.push(
     `| ${report.overall.repoCount} ` +
     `| ${report.overall.prCount} ` +
@@ -46,6 +46,7 @@ export function renderMarkdown(report: BenchReport): string {
     `| ${report.overall.avgRecall.toFixed(2)} ` +
     `| ${report.overall.avgSourceRecall.toFixed(2)} ` +
     `| ${report.overall.avgGraphReachability.toFixed(2)} ` +
+    `| ${report.overall.avgSymbolCoverage.toFixed(2)} ` +
     `| ${report.overall.avgReduction.toFixed(1)}× |`,
   );
   lines.push('');
@@ -62,11 +63,20 @@ export function renderMarkdown(report: BenchReport): string {
     'algorithm is too conservative; if graphReachability itself is low the graph is missing edges.',
   );
   lines.push('');
+  lines.push(
+    '> **Symbol Coverage** = fraction of AST-declared function/class/method/interface symbols ' +
+    'present in `graph.symbolIndex` with correct file attribution. Measured DIRECTLY against ' +
+    'AST ground truth — no prediction algorithm or external oracle in between. The primary ' +
+    'test of "absurd accuracy across all project files": if symbolCoverage ≥ 0.95 the graph ' +
+    'genuinely knows where 95%+ of declared symbols live; downstream tools (`ctx_get_definition`, ' +
+    '`find_callers`, refactor preview) inherit that accuracy.',
+  );
+  lines.push('');
 
   lines.push('## Per-repo');
   lines.push('');
-  lines.push('| Repo | PRs | Avg F1 | Precision | Recall | Source Recall | Graph Reach. | Avg Reduction |');
-  lines.push('|------|----:|-------:|----------:|-------:|--------------:|-------------:|--------------:|');
+  lines.push('| Repo | PRs | Avg F1 | Precision | Recall | Source Recall | Graph Reach. | Symbol Cov. | Avg Reduction |');
+  lines.push('|------|----:|-------:|----------:|-------:|--------------:|-------------:|------------:|--------------:|');
   for (const repo of report.repos) {
     lines.push(
       `| \`${repo.name}\` ` +
@@ -76,6 +86,7 @@ export function renderMarkdown(report: BenchReport): string {
       `| ${repo.avgRecall.toFixed(2)} ` +
       `| ${repo.avgSourceRecall.toFixed(2)} ` +
       `| ${repo.avgGraphReachability.toFixed(2)} ` +
+      `| ${repo.avgSymbolCoverage.toFixed(2)} ` +
       `| ${repo.avgReduction.toFixed(1)}× |`,
     );
   }

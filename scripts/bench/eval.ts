@@ -30,9 +30,10 @@ import { fetchGroundTruth, isSourceFile } from './groundTruth.js';
 import { ensureWorktree } from './repoCheckout.js';
 import { indexRepo, blastRadius, buildOverlay, buildVectorStore } from './predict.js';
 import { computeMetrics, computeGraphReachability, avg } from './metrics.js';
+import { auditSymbolDeclarations } from './graph-correctness.js';
 import { DependencyGraph } from '@ctxloom/core';
 import { writeReport } from './report.js';
-import type { BenchReport, RepoReport, CorpusEntry, Metrics, TokenMetrics } from './types.js';
+import type { BenchReport, RepoReport, CorpusEntry, Metrics, TokenMetrics, GraphCorrectnessMetrics } from './types.js';
 
 // ESM has no __dirname / __filename. Without these the spike runs to
 // completion, computes correct F1 numbers per PR, then crashes during
@@ -66,7 +67,7 @@ function getCtxloomSha(): string {
 async function runRepo(entry: CorpusEntry): Promise<RepoReport> {
   // eslint-disable-next-line no-console -- bench output goes to stderr
   console.error(`\n=== ${entry.repo} (${entry.prs.length} PRs) ===`);
-  const perPr: Array<Metrics & TokenMetrics> = [];
+  const perPr: Array<Metrics & TokenMetrics & GraphCorrectnessMetrics> = [];
 
   for (const prNumber of entry.prs) {
     console.error(`  PR #${prNumber}: fetching ground truth...`);
@@ -110,17 +111,45 @@ async function runRepo(entry: CorpusEntry): Promise<RepoReport> {
     // what fraction of the source-file GT is structurally connectable.
     // Isolates graph completeness from algorithm quality (see
     // metrics.ts:computeGraphReachability for the design rationale).
-    const reachabilityGraph = new DependencyGraph();
-    const loaded = await reachabilityGraph.loadSnapshotOnly(worktree);
+    const auditGraph = new DependencyGraph();
+    const loaded = await auditGraph.loadSnapshotOnly(worktree);
+    let symbolCoverage = 0;
+    let astDeclared = 0;
+    let graphIndexed = 0;
     if (loaded) {
       const sourceTruth = gt.groundTruthFiles.filter(isSourceFile);
       const { reachable, reachability } = computeGraphReachability(
         gt.entryPoint,
         sourceTruth,
-        reachabilityGraph,
+        auditGraph,
       );
       metrics.graphReachable = reachable;
       metrics.graphReachability = reachability;
+
+      // Graph-correctness audit — symbol declaration coverage.
+      // Directly compares AST-parsed declarations against
+      // graph.symbolIndex; measures graph correctness without any
+      // prediction algorithm in between. The primary test of the
+      // "absurd accuracy across all project files" claim.
+      console.error(`  PR #${prNumber}: auditing symbol declaration coverage...`);
+      try {
+        const report = await auditSymbolDeclarations(worktree, auditGraph);
+        symbolCoverage = report.coverage;
+        astDeclared = report.astDeclared;
+        graphIndexed = report.graphIndexed;
+        console.error(
+          `    symbol coverage: ${(report.coverage * 100).toFixed(1)}% ` +
+          `(${report.graphIndexed}/${report.astDeclared} declarations indexed)`,
+        );
+        if (report.coverage < 0.95 && report.sampleMissed.length > 0) {
+          console.error(`    sample missed (top ${report.sampleMissed.length}):`);
+          for (const m of report.sampleMissed.slice(0, 5)) {
+            console.error(`      ${m.type} ${m.symbol} in ${m.file}`);
+          }
+        }
+      } catch (err) {
+        console.error(`    symbol coverage audit failed: ${err instanceof Error ? err.message : String(err)}`);
+      }
     }
 
     console.error(
@@ -128,6 +157,7 @@ async function runRepo(entry: CorpusEntry): Promise<RepoReport> {
       `R=${metrics.recall.toFixed(2)} ` +
       `sourceR=${metrics.sourceRecall.toFixed(2)} ` +
       `graphReach=${metrics.graphReachability.toFixed(2)} ` +
+      `symCov=${symbolCoverage.toFixed(2)} ` +
       `(${metrics.sourceTruePositives}/${metrics.sourceGroundTruthCount} source, ` +
       `${metrics.graphReachable} reachable)`,
     );
@@ -138,6 +168,9 @@ async function runRepo(entry: CorpusEntry): Promise<RepoReport> {
       naiveTokens: 0,
       graphTokens: 0,
       reduction: 0,
+      symbolCoverage,
+      astDeclared,
+      graphIndexed,
     });
   }
 
@@ -149,6 +182,7 @@ async function runRepo(entry: CorpusEntry): Promise<RepoReport> {
     avgRecall: avg(perPr.map((p) => p.recall)),
     avgSourceRecall: avg(perPr.map((p) => p.sourceRecall)),
     avgGraphReachability: avg(perPr.map((p) => p.graphReachability)),
+    avgSymbolCoverage: avg(perPr.map((p) => p.symbolCoverage)),
     avgNaiveTokens: avg(perPr.map((p) => p.naiveTokens)),
     avgGraphTokens: avg(perPr.map((p) => p.graphTokens)),
     avgReduction: avg(perPr.map((p) => p.reduction)),
@@ -211,6 +245,7 @@ async function main(): Promise<void> {
       avgRecall: avg(allPrs.map((p) => p.recall)),
       avgSourceRecall: avg(allPrs.map((p) => p.sourceRecall)),
       avgGraphReachability: avg(allPrs.map((p) => p.graphReachability)),
+      avgSymbolCoverage: avg(allPrs.map((p) => p.symbolCoverage)),
       avgReduction: avg(allPrs.map((p) => p.reduction)),
     },
     repos,
