@@ -147,16 +147,27 @@ export class DependencyGraph {
               // Otherwise it is a bare node_modules specifier — skip
             }
           } else if (ext === '.go') {
-            // Go: use AST import nodes + GoModuleResolver for module-path imports
+            // Go: use AST import nodes + GoModuleResolver for module-path
+            // imports. CRITICAL: a Go import targets a PACKAGE (an entire
+            // directory of .go files), not a single file. Fan out to all
+            // production files in the target package so the graph reflects
+            // Go's compile-unit semantics — otherwise importing
+            // `github.com/foo/bar/pkg` only attaches to ONE of pkg/'s
+            // ~20 files and a PR that touches sibling files looks
+            // unreachable. Pre-fix this collapsed gin's graphReachability
+            // to 0.32 in the bench (PRs touched 4 files in binding/, only
+            // 1 was reachable from the entry point).
             const goResolver = new GoModuleResolver(rootDir);
             const importNodes = nodes.filter(n => n.type === 'import');
             for (const imp of importNodes) {
               const spec = imp.source ?? imp.name;
               const isRelative = spec.startsWith('.');
-              const resolved = isRelative
-                ? goResolver.resolveRelative(absPath, spec)
-                : goResolver.resolve(spec);
-              if (resolved) this.addEdge(relPath, resolved);
+              const resolvedAll = isRelative
+                ? goResolver.resolveRelativeAll(absPath, spec)
+                : goResolver.resolveAll(spec);
+              for (const resolved of resolvedAll) {
+                this.addEdge(relPath, resolved);
+              }
             }
           } else {
             // Python / Rust / Java: use AST import nodes (more accurate than regex)
@@ -277,6 +288,60 @@ export class DependencyGraph {
     this.pendingReExportQueries = [];
     if (reExportEdgesAdded > 0) {
       logger.info('Re-export tracing added parallel edges', { count: reExportEdgesAdded });
+    }
+
+    // Pass 3: Go test↔source linkage. In Go, `foo_test.go` is part of
+    // the same package as `foo.go` (same compile unit, full access to
+    // package-private symbols). But test files import the package via
+    // its module path, not the source file directly, so there's no
+    // syntactic import edge connecting them. Without an explicit link,
+    // a PR that touches `binding/binding.go` AND `binding/binding_test.go`
+    // shows the test file as unreachable from any entry point — the
+    // graph misses the structural relationship Go's compiler treats as
+    // primary.
+    //
+    // Heuristic: for every `<name>_test.go`, link it bidirectionally to
+    // `<name>.go` in the same directory if it exists. Falls back to
+    // linking to any sibling .go file in the same package directory if
+    // the namesake source doesn't exist. This is over-inflation in the
+    // tail case but accurate to Go's "tests share package scope" model
+    // and was the missing link behind gin's bench graphReachability=0.32.
+    let goTestEdgesAdded = 0;
+    for (const relPath of this.forwardEdges.keys()) {
+      if (!relPath.endsWith('_test.go')) continue;
+      const dir = path.dirname(relPath);
+      const base = path.basename(relPath, '_test.go');
+      const namesake = path.join(dir, base + '.go').replace(/\\/g, '/');
+      if (this.forwardEdges.has(namesake)) {
+        // Bidirectional: test→source for "test depends on source",
+        // source→test isn't strictly true semantically but is needed
+        // for BFS reachability from the source side too. addEdge is
+        // idempotent so duplicates from a prior pass are free.
+        this.addEdge(relPath, namesake);
+        this.addEdge(namesake, relPath);
+        goTestEdgesAdded += 2;
+        continue;
+      }
+      // Fallback: connect to any non-test sibling .go file in the same
+      // directory (package-level coupling). Bounded by reading the dir
+      // once per test file — O(N) over the corpus.
+      const absDir = path.join(this.rootDir, dir);
+      try {
+        const siblings = fs
+          .readdirSync(absDir)
+          .filter((f) => f.endsWith('.go') && !f.endsWith('_test.go'));
+        for (const sib of siblings) {
+          const sibRel = path.join(dir, sib).replace(/\\/g, '/');
+          this.addEdge(relPath, sibRel);
+          this.addEdge(sibRel, relPath);
+          goTestEdgesAdded += 2;
+        }
+      } catch {
+        // dir disappeared between index passes — ignore
+      }
+    }
+    if (goTestEdgesAdded > 0) {
+      logger.info('Go test↔source linkage added edges', { count: goTestEdgesAdded });
     }
 
     // Save snapshot
@@ -506,15 +571,21 @@ export class DependencyGraph {
             }
           }
         } else if (ext === '.go') {
+          // Fan out Go package imports to ALL non-test files in the
+          // target package. See the primary parse path for the full
+          // rationale. Mirrored here so incremental re-indexing produces
+          // the same edge set as a clean rebuild.
           const goResolver = new GoModuleResolver(rootDir);
           const importNodes = nodes.filter(n => n.type === 'import');
           for (const imp of importNodes) {
             const spec = imp.source ?? imp.name;
             const isRelative = spec.startsWith('.');
-            const resolved = isRelative
-              ? goResolver.resolveRelative(absPath, spec)
-              : goResolver.resolve(spec);
-            if (resolved) this.addEdge(relPath, resolved);
+            const resolvedAll = isRelative
+              ? goResolver.resolveRelativeAll(absPath, spec)
+              : goResolver.resolveAll(spec);
+            for (const resolved of resolvedAll) {
+              this.addEdge(relPath, resolved);
+            }
           }
         } else {
           // Python / Rust / Java: prefer AST import nodes, fall back to regex
