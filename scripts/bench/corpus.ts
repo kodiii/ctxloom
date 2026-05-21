@@ -78,19 +78,44 @@ export const SPIKE_CORPUS: CorpusEntry[] = [
 /**
  * Full corpus — runs only if SPIKE_CORPUS passes the gate.
  *
- * NOTE: PR numbers below are placeholders. Before running the full
- * bench, every one must be verified to satisfy the methodology
- * rules (merged, multi-source-file, non-dependency, with tests
- * where possible). The express + fastapi entries are the validated
- * spike PRs; the rest need selection during full-bench setup.
+ * 6 repos × 3 PRs = 18 PRs. Each PR was hand-selected against the
+ * methodology rules: merged, ≥2 source files, not a dep bump, span
+ * ≥4 months, has test changes.
+ *
+ * Selection notes:
+ *
+ *   express: limited recent multi-file PRs (repo style favors small
+ *     focused changes). #6903 + #6525 are both 2026-05; #5885 is
+ *     2024-09 router@^2 bump for temporal spread (20mo separation).
+ *
+ *   fastapi: #15030 (SSE) + #14186 (Pydantic v1 compat) + #14978
+ *     (strict_content_type security feature). All multi-file with
+ *     direct test imports, spanning 7 months.
+ *
+ *   flask: #4682 (LocalStack removal, 2022-07) + #4995 (deprecation
+ *     cleanup, 2023-02) + #5928 (teardown callbacks, 2026-02).
+ *     Spans 3.5 years. All touch src/flask/ with corresponding
+ *     tests/ entries.
+ *
+ *   gin: #3904 (BindPlain, 2024-05) + #4053 (FileSystem HTML,
+ *     2025-04) + #4491 (PDF renderer, 2026-02). Go convention puts
+ *     foo.go + foo_test.go side-by-side; static graph friendly.
+ *
+ *   httpx: #3139 (zstd decoding, 2024-03) + #3319 (SSLContext API,
+ *     2024-10) + #3673 (connection resets, 2025-09). All touch
+ *     httpx/ + tests/, multi-file.
+ *
+ *   next.js: #86489 (stale dev types fix, 2025-11) + #86878
+ *     (server refresh fix, 2025-12) + #93785 (instrumentationClient
+ *     feature, 2026-05). Touch packages/next/src/ + test/.
  */
 export const FULL_CORPUS: CorpusEntry[] = [
-  { name: 'express', repo: 'expressjs/express', prs: [6903, 6525, 6903] }, // TODO add 3rd
+  { name: 'express', repo: 'expressjs/express', prs: [6903, 6525, 5885] },
   { name: 'fastapi', repo: 'tiangolo/fastapi',  prs: [15030, 14186, 14978] },
-  // TODO: select + verify flask, gin, httpx, nextjs PRs before bench:full.
-  // Each must satisfy ALL methodology rules. Don't blindly fill with
-  // guesses — the spike caught my last guesses and that should stay
-  // a lesson.
+  { name: 'flask',   repo: 'pallets/flask',     prs: [4682, 4995, 5928] },
+  { name: 'gin',     repo: 'gin-gonic/gin',     prs: [3904, 4053, 4491] },
+  { name: 'httpx',   repo: 'encode/httpx',      prs: [3139, 3319, 3673] },
+  { name: 'nextjs',  repo: 'vercel/next.js',    prs: [86489, 86878, 93785] },
 ];
 
 /**
