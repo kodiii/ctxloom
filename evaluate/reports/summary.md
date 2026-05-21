@@ -1,6 +1,6 @@
 # ctxloom benchmark
 
-Generated 2026-05-21T15:59:19.213Z on commit 09df3ef.
+Generated 2026-05-21T18:49:46.484Z on commit 9c98c78.
 Stage: **full**.
 
 Reproduce locally:
@@ -11,9 +11,9 @@ npm run bench:full
 
 ## Overall
 
-| Repos | PRs | Avg F1 | Avg Precision | Avg Recall | Avg Source Recall | Avg Graph Reachability | Avg Symbol Coverage | Avg Reduction |
-|------:|----:|-------:|--------------:|-----------:|------------------:|----------------------:|-------------------:|--------------:|
-| 5 | 15 | 0.40 | 0.53 | 0.47 | 0.56 | 0.81 | 1.00 | 0.0× |
+| Repos | PRs | Avg F1 | Avg Precision | Avg Recall | Avg Source Recall | Avg Graph Reachability | Avg Symbol Coverage | Avg Import Coverage | Avg Reduction |
+|------:|----:|-------:|--------------:|-----------:|------------------:|----------------------:|-------------------:|-------------------:|--------------:|
+| 5 | 15 | 0.40 | 0.53 | 0.47 | 0.56 | 0.81 | 1.00 | 1.00 | 0.0× |
 
 > **Source Recall** = recall computed against only the indexable (source-file) subset of each PR's ground truth — measures the prediction algorithm.
 
@@ -21,15 +21,17 @@ npm run bench:full
 
 > **Symbol Coverage** = fraction of AST-declared function/class/method/interface symbols present in `graph.symbolIndex` with correct file attribution. Measured DIRECTLY against AST ground truth — no prediction algorithm or external oracle in between. The primary test of "absurd accuracy across all project files": if symbolCoverage ≥ 0.95 the graph genuinely knows where 95%+ of declared symbols live; downstream tools (`ctx_get_definition`, `find_callers`, refactor preview) inherit that accuracy.
 
+> **Import Coverage** = fraction of AST-found intra-repo (relative) import statements that resulted in a graph forwardEdge. Direct measure of the import resolver's correctness, independent of any prediction algorithm. Per-extension breakdown isolates language-specific resolver gaps — e.g. if `gin` shows .go imports at 0.30 coverage while JS/TS/Py are at 1.00, the Go-resolver path is dropping edges. Diagnoses precisely WHERE in the graph layer a low graphReachability number originates.
+
 ## Per-repo
 
-| Repo | PRs | Avg F1 | Precision | Recall | Source Recall | Graph Reach. | Symbol Cov. | Avg Reduction |
-|------|----:|-------:|----------:|-------:|--------------:|-------------:|------------:|--------------:|
-| `express` | 3 | 0.26 | 0.20 | 0.53 | 0.67 | 1.00 | 1.00 | 0.0× |
-| `fastapi` | 3 | 0.46 | 0.54 | 0.51 | 0.59 | 0.89 | 1.00 | 0.0× |
-| `flask` | 3 | 0.39 | 0.40 | 0.62 | 0.74 | 0.98 | 1.00 | 0.0× |
-| `gin` | 3 | 0.38 | 0.83 | 0.25 | 0.27 | 0.32 | 1.00 | 0.0× |
-| `httpx` | 3 | 0.50 | 0.66 | 0.45 | 0.54 | 0.86 | 1.00 | 0.0× |
+| Repo | PRs | Avg F1 | Precision | Recall | Source Recall | Graph Reach. | Symbol Cov. | Import Cov. | Avg Reduction |
+|------|----:|-------:|----------:|-------:|--------------:|-------------:|------------:|------------:|--------------:|
+| `express` | 3 | 0.26 | 0.20 | 0.53 | 0.67 | 1.00 | 1.00 | 1.00 | 0.0× |
+| `fastapi` | 3 | 0.46 | 0.54 | 0.51 | 0.59 | 0.89 | 1.00 | 1.00 | 0.0× |
+| `flask` | 3 | 0.39 | 0.40 | 0.62 | 0.74 | 0.98 | 1.00 | 1.00 | 0.0× |
+| `gin` | 3 | 0.38 | 0.83 | 0.25 | 0.27 | 0.32 | 1.00 | n/a | 0.0× |
+| `httpx` | 3 | 0.50 | 0.66 | 0.45 | 0.54 | 0.86 | 1.00 | 1.00 | 0.0× |
 
 ## Per-PR (full data)
 

@@ -7,6 +7,17 @@ import fs from 'node:fs';
 import path from 'node:path';
 import type { BenchReport, RepoReport } from './types.js';
 
+/**
+ * Render a coverage cell. -1 is the "not applicable" marker (e.g.
+ * import coverage on pure-Go corpora that exclusively use module-path
+ * imports) — emit "n/a" so reviewers don't confuse it with a real
+ * score of 0.0 or 1.0.
+ */
+function fmtCoverage(value: number): string {
+  if (value < 0) return 'n/a';
+  return value.toFixed(2);
+}
+
 export function renderMarkdown(report: BenchReport): string {
   const lines: string[] = [];
 
@@ -36,8 +47,8 @@ export function renderMarkdown(report: BenchReport): string {
 
   lines.push('## Overall');
   lines.push('');
-  lines.push('| Repos | PRs | Avg F1 | Avg Precision | Avg Recall | Avg Source Recall | Avg Graph Reachability | Avg Symbol Coverage | Avg Reduction |');
-  lines.push('|------:|----:|-------:|--------------:|-----------:|------------------:|----------------------:|-------------------:|--------------:|');
+  lines.push('| Repos | PRs | Avg F1 | Avg Precision | Avg Recall | Avg Source Recall | Avg Graph Reachability | Avg Symbol Coverage | Avg Import Coverage | Avg Reduction |');
+  lines.push('|------:|----:|-------:|--------------:|-----------:|------------------:|----------------------:|-------------------:|-------------------:|--------------:|');
   lines.push(
     `| ${report.overall.repoCount} ` +
     `| ${report.overall.prCount} ` +
@@ -47,6 +58,7 @@ export function renderMarkdown(report: BenchReport): string {
     `| ${report.overall.avgSourceRecall.toFixed(2)} ` +
     `| ${report.overall.avgGraphReachability.toFixed(2)} ` +
     `| ${report.overall.avgSymbolCoverage.toFixed(2)} ` +
+    `| ${fmtCoverage(report.overall.avgImportCoverage)} ` +
     `| ${report.overall.avgReduction.toFixed(1)}× |`,
   );
   lines.push('');
@@ -72,11 +84,20 @@ export function renderMarkdown(report: BenchReport): string {
     '`find_callers`, refactor preview) inherit that accuracy.',
   );
   lines.push('');
+  lines.push(
+    '> **Import Coverage** = fraction of AST-found intra-repo (relative) import statements ' +
+    'that resulted in a graph forwardEdge. Direct measure of the import resolver\'s correctness, ' +
+    'independent of any prediction algorithm. Per-extension breakdown isolates language-specific ' +
+    'resolver gaps — e.g. if `gin` shows .go imports at 0.30 coverage while JS/TS/Py are at 1.00, ' +
+    'the Go-resolver path is dropping edges. Diagnoses precisely WHERE in the graph layer a low ' +
+    'graphReachability number originates.',
+  );
+  lines.push('');
 
   lines.push('## Per-repo');
   lines.push('');
-  lines.push('| Repo | PRs | Avg F1 | Precision | Recall | Source Recall | Graph Reach. | Symbol Cov. | Avg Reduction |');
-  lines.push('|------|----:|-------:|----------:|-------:|--------------:|-------------:|------------:|--------------:|');
+  lines.push('| Repo | PRs | Avg F1 | Precision | Recall | Source Recall | Graph Reach. | Symbol Cov. | Import Cov. | Avg Reduction |');
+  lines.push('|------|----:|-------:|----------:|-------:|--------------:|-------------:|------------:|------------:|--------------:|');
   for (const repo of report.repos) {
     lines.push(
       `| \`${repo.name}\` ` +
@@ -87,6 +108,7 @@ export function renderMarkdown(report: BenchReport): string {
       `| ${repo.avgSourceRecall.toFixed(2)} ` +
       `| ${repo.avgGraphReachability.toFixed(2)} ` +
       `| ${repo.avgSymbolCoverage.toFixed(2)} ` +
+      `| ${fmtCoverage(repo.avgImportCoverage)} ` +
       `| ${repo.avgReduction.toFixed(1)}× |`,
     );
   }

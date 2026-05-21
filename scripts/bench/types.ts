@@ -145,6 +145,22 @@ export interface GraphCorrectnessMetrics {
   astDeclared: number;
   /** Number of those present in graph.symbolIndex (numerator). */
   graphIndexed: number;
+  /**
+   * Fraction of AST-found intra-repo (relative) import statements
+   * that resulted in a graph forwardEdge. Range [0, 1]; 1.0 means
+   * the import resolver caught every relative-path import the AST
+   * parser identified. Source:
+   * scripts/bench/graph-correctness.ts:auditImportEdges.
+   *
+   * Diagnostic for language-specific resolver gaps: e.g. if gin's
+   * importCoverage on .go files is 0.30 while JS/TS/Py are at 1.0,
+   * the Go-resolver path is dropping edges.
+   */
+  importCoverage: number;
+  /** Total relative-import sources the AST parser found (denominator). */
+  astRelativeImports: number;
+  /** Total graph forwardEdges across the same files (numerator). */
+  graphImportEdges: number;
 }
 
 /** Token-reduction metrics for one PR. */
@@ -189,6 +205,8 @@ export interface RepoReport {
    * / refactor preview would miss one in twenty symbols.
    */
   avgSymbolCoverage: number;
+  /** Mean import edge coverage — see Metrics.importCoverage. */
+  avgImportCoverage: number;
   avgNaiveTokens: number;
   avgGraphTokens: number;
   avgReduction: number;
@@ -217,6 +235,8 @@ export interface BenchReport {
     avgGraphReachability: number;
     /** Mean symbol declaration coverage. See RepoReport.avgSymbolCoverage. */
     avgSymbolCoverage: number;
+    /** Mean import edge coverage. See RepoReport.avgImportCoverage. */
+    avgImportCoverage: number;
     avgReduction: number;
   };
   /** Per-repo breakdown. */
