@@ -36,8 +36,8 @@ export function renderMarkdown(report: BenchReport): string {
 
   lines.push('## Overall');
   lines.push('');
-  lines.push('| Repos | PRs | Avg F1 | Avg Precision | Avg Recall | Avg Source Recall | Avg Reduction |');
-  lines.push('|------:|----:|-------:|--------------:|-----------:|------------------:|--------------:|');
+  lines.push('| Repos | PRs | Avg F1 | Avg Precision | Avg Recall | Avg Source Recall | Avg Graph Reachability | Avg Reduction |');
+  lines.push('|------:|----:|-------:|--------------:|-----------:|------------------:|----------------------:|--------------:|');
   lines.push(
     `| ${report.overall.repoCount} ` +
     `| ${report.overall.prCount} ` +
@@ -45,19 +45,28 @@ export function renderMarkdown(report: BenchReport): string {
     `| ${report.overall.avgPrecision.toFixed(2)} ` +
     `| ${report.overall.avgRecall.toFixed(2)} ` +
     `| ${report.overall.avgSourceRecall.toFixed(2)} ` +
+    `| ${report.overall.avgGraphReachability.toFixed(2)} ` +
     `| ${report.overall.avgReduction.toFixed(1)}× |`,
   );
   lines.push('');
   lines.push(
     '> **Source Recall** = recall computed against only the indexable (source-file) ' +
-    'subset of each PR\'s ground truth — see [methodology](../methodology.md#source-recall).',
+    'subset of each PR\'s ground truth — measures the prediction algorithm.',
+  );
+  lines.push('');
+  lines.push(
+    '> **Graph Reachability** = fraction of source-file ground truth that is structurally ' +
+    'reachable from the entry point via BFS over the import graph (depth ≤ 4, forward + ' +
+    'reverse). Measures the **graph** independent of the prediction algorithm — separates ' +
+    '"graph completeness" from "algorithm quality". If sourceRecall ≪ graphReachability the ' +
+    'algorithm is too conservative; if graphReachability itself is low the graph is missing edges.',
   );
   lines.push('');
 
   lines.push('## Per-repo');
   lines.push('');
-  lines.push('| Repo | PRs | Avg F1 | Precision | Recall | Source Recall | Avg Reduction |');
-  lines.push('|------|----:|-------:|----------:|-------:|--------------:|--------------:|');
+  lines.push('| Repo | PRs | Avg F1 | Precision | Recall | Source Recall | Graph Reach. | Avg Reduction |');
+  lines.push('|------|----:|-------:|----------:|-------:|--------------:|-------------:|--------------:|');
   for (const repo of report.repos) {
     lines.push(
       `| \`${repo.name}\` ` +
@@ -66,6 +75,7 @@ export function renderMarkdown(report: BenchReport): string {
       `| ${repo.avgPrecision.toFixed(2)} ` +
       `| ${repo.avgRecall.toFixed(2)} ` +
       `| ${repo.avgSourceRecall.toFixed(2)} ` +
+      `| ${repo.avgGraphReachability.toFixed(2)} ` +
       `| ${repo.avgReduction.toFixed(1)}× |`,
     );
   }
@@ -78,8 +88,8 @@ export function renderMarkdown(report: BenchReport): string {
   for (const repo of report.repos) {
     lines.push(`### ${repo.name}`);
     lines.push('');
-    lines.push('| PR | TP | FP | FN | Precision | Recall | F1 | Src TP/GT | Src Recall | Naive tok | Graph tok | Reduction |');
-    lines.push('|---:|---:|---:|---:|----------:|-------:|---:|----------:|-----------:|----------:|----------:|----------:|');
+    lines.push('| PR | TP | FP | FN | Precision | Recall | F1 | Src TP/GT | Src Recall | Graph Reach. | Naive tok | Graph tok | Reduction |');
+    lines.push('|---:|---:|---:|---:|----------:|-------:|---:|----------:|-----------:|-------------:|----------:|----------:|----------:|');
     for (const pr of repo.perPr) {
       lines.push(
         `| #${pr.prNumber} ` +
@@ -91,6 +101,7 @@ export function renderMarkdown(report: BenchReport): string {
         `| ${pr.f1.toFixed(2)} ` +
         `| ${pr.sourceTruePositives}/${pr.sourceGroundTruthCount} ` +
         `| ${pr.sourceRecall.toFixed(2)} ` +
+        `| ${pr.graphReachability.toFixed(2)} ` +
         `| ${pr.naiveTokens.toLocaleString()} ` +
         `| ${pr.graphTokens.toLocaleString()} ` +
         `| ${pr.reduction.toFixed(1)}× |`,

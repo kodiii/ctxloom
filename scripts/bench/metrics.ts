@@ -25,6 +25,7 @@
  * in practice — a merged PR always has ≥1 changed file.
  */
 import type { Metrics } from './types.js';
+import type { DependencyGraph } from '@ctxloom/core';
 
 /**
  * Pure metric calculation. No I/O. No side effects. Easy to test.
@@ -92,6 +93,11 @@ export function computeMetrics(
     sourceGroundTruthCount,
     sourceTruePositives,
     sourceRecall,
+    // Populated by the caller after computeGraphReachability().
+    // Defaulted here so the type stays satisfied; the bench eval
+    // path always overwrites before reporting.
+    graphReachable: 0,
+    graphReachability: 0,
   };
 }
 
@@ -99,4 +105,74 @@ export function computeMetrics(
 export function avg(values: readonly number[]): number {
   if (values.length === 0) return 0;
   return values.reduce((sum, v) => sum + v, 0) / values.length;
+}
+
+/**
+ * Graph reachability — separate from prediction-algorithm recall.
+ *
+ * Answers: of the source-file ground-truth set, what fraction is
+ * structurally connectable to the entry point via BFS over the
+ * import graph (forward + reverse edges)?
+ *
+ * This isolates GRAPH COMPLETENESS from ALGORITHM QUALITY:
+ *
+ *   sourceRecall   = predict(entry) ∩ GT  → algorithm hit rate
+ *   reachability  = bfs(entry) ∩ GT      → graph hit rate ceiling
+ *
+ * If reachability >> sourceRecall: algorithm is too conservative —
+ *   the graph contains the right edges but we don't traverse far
+ *   enough or rank/cap too tightly.
+ *
+ * If reachability ≈ sourceRecall: algorithm is doing the best the
+ *   graph allows — improvement requires more / better edges.
+ *
+ * If reachability is itself low: the graph is missing edges —
+ *   re-exports, dynamic imports, cross-package connections that
+ *   the import resolver doesn't capture.
+ *
+ * Note: this uses the same import-graph the prediction draws from,
+ * but the comparison stays honest because the ORACLE is still the
+ * external merged PR diff. We're asking "is this PR file in the
+ * graph's reach, regardless of how we'd rank it?" — not "does our
+ * prediction match our own graph traversal" (the self-referential
+ * pattern). Depth cap of 4 captures meaningful structural distance
+ * without exploding into the full transitive closure.
+ */
+const REACHABILITY_DEPTH = 4;
+
+export function computeGraphReachability(
+  entryPoint: string,
+  groundTruthSourceFiles: readonly string[],
+  graph: DependencyGraph,
+): { reachable: number; reachability: number } {
+  const truth = new Set(groundTruthSourceFiles);
+  const visited = new Set<string>([entryPoint]);
+  let frontier = new Set<string>([entryPoint]);
+
+  for (let depth = 0; depth < REACHABILITY_DEPTH; depth += 1) {
+    const nextFrontier = new Set<string>();
+    for (const file of frontier) {
+      // Forward edges (files this one imports)
+      for (const dep of graph.getImports(file)) {
+        if (visited.has(dep)) continue;
+        visited.add(dep);
+        nextFrontier.add(dep);
+      }
+      // Reverse edges (files that import this one)
+      for (const imp of graph.getImporters(file)) {
+        if (visited.has(imp)) continue;
+        visited.add(imp);
+        nextFrontier.add(imp);
+      }
+    }
+    if (nextFrontier.size === 0) break;
+    frontier = nextFrontier;
+  }
+
+  let reachableInTruth = 0;
+  for (const f of truth) {
+    if (visited.has(f)) reachableInTruth += 1;
+  }
+  const reachability = truth.size === 0 ? 1 : reachableInTruth / truth.size;
+  return { reachable: reachableInTruth, reachability };
 }

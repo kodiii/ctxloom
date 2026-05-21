@@ -29,7 +29,8 @@ import { SPIKE_CORPUS, FULL_CORPUS, GATE } from './corpus.js';
 import { fetchGroundTruth, isSourceFile } from './groundTruth.js';
 import { ensureWorktree } from './repoCheckout.js';
 import { indexRepo, blastRadius, buildOverlay, buildVectorStore } from './predict.js';
-import { computeMetrics, avg } from './metrics.js';
+import { computeMetrics, computeGraphReachability, avg } from './metrics.js';
+import { DependencyGraph } from '@ctxloom/core';
 import { writeReport } from './report.js';
 import type { BenchReport, RepoReport, CorpusEntry, Metrics, TokenMetrics } from './types.js';
 
@@ -103,11 +104,32 @@ async function runRepo(entry: CorpusEntry): Promise<RepoReport> {
       prediction.predictedFiles,
       isSourceFile,
     );
+
+    // Graph reachability — independent of the prediction algorithm.
+    // Walks the import graph via BFS from the entry point and measures
+    // what fraction of the source-file GT is structurally connectable.
+    // Isolates graph completeness from algorithm quality (see
+    // metrics.ts:computeGraphReachability for the design rationale).
+    const reachabilityGraph = new DependencyGraph();
+    const loaded = await reachabilityGraph.loadSnapshotOnly(worktree);
+    if (loaded) {
+      const sourceTruth = gt.groundTruthFiles.filter(isSourceFile);
+      const { reachable, reachability } = computeGraphReachability(
+        gt.entryPoint,
+        sourceTruth,
+        reachabilityGraph,
+      );
+      metrics.graphReachable = reachable;
+      metrics.graphReachability = reachability;
+    }
+
     console.error(
       `    F1=${metrics.f1.toFixed(2)} P=${metrics.precision.toFixed(2)} ` +
       `R=${metrics.recall.toFixed(2)} ` +
       `sourceR=${metrics.sourceRecall.toFixed(2)} ` +
-      `(${metrics.sourceTruePositives}/${metrics.sourceGroundTruthCount} source)`,
+      `graphReach=${metrics.graphReachability.toFixed(2)} ` +
+      `(${metrics.sourceTruePositives}/${metrics.sourceGroundTruthCount} source, ` +
+      `${metrics.graphReachable} reachable)`,
     );
 
     // Token metrics placeholder — TODO wire scripts/bench/tokens.ts
@@ -126,6 +148,7 @@ async function runRepo(entry: CorpusEntry): Promise<RepoReport> {
     avgPrecision: avg(perPr.map((p) => p.precision)),
     avgRecall: avg(perPr.map((p) => p.recall)),
     avgSourceRecall: avg(perPr.map((p) => p.sourceRecall)),
+    avgGraphReachability: avg(perPr.map((p) => p.graphReachability)),
     avgNaiveTokens: avg(perPr.map((p) => p.naiveTokens)),
     avgGraphTokens: avg(perPr.map((p) => p.graphTokens)),
     avgReduction: avg(perPr.map((p) => p.reduction)),
@@ -187,6 +210,7 @@ async function main(): Promise<void> {
       avgPrecision: avg(allPrs.map((p) => p.precision)),
       avgRecall: avg(allPrs.map((p) => p.recall)),
       avgSourceRecall: avg(allPrs.map((p) => p.sourceRecall)),
+      avgGraphReachability: avg(allPrs.map((p) => p.graphReachability)),
       avgReduction: avg(allPrs.map((p) => p.reduction)),
     },
     repos,
