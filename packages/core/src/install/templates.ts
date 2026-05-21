@@ -38,6 +38,27 @@ The graph is faster, cheaper (fewer tokens), and gives you
 structural context (callers, dependents, test coverage) that file
 scanning cannot.
 
+### Operating principles
+
+ctxloom's tools exist to operationalize four principles for working
+with an AI coding agent. They're the *why* behind every tool below.
+Adapted from Karpathy's LLM-coding-pitfalls notes
+(<https://github.com/multica-ai/andrej-karpathy-skills>, MIT).
+
+1. **Think before coding** — read the relevant graph slice before
+   editing. \`ctx_blast_radius\`, \`ctx_get_call_graph\`,
+   \`ctx_get_review_context\` are how you do this without re-reading
+   whole files.
+2. **Simplicity first** — prefer the smallest viable change. Use
+   \`ctx_refactor_preview\` to see the full diff *before* applying;
+   if the preview is sprawling, the plan is too big.
+3. **Surgical changes** — every changed line should trace directly
+   to the user's request. \`ctx_detect_changes\` after each edit
+   confirms scope hasn't drifted.
+4. **Goal-driven execution** — stop when the goal is met. Don't
+   "polish" beyond the request. \`ctx_knowledge_gaps\` flags real
+   risk surfaces; everything else is yak-shaving.
+
 ### Start every workflow with \`ctx_get_minimal_context\`
 
 The first MCP call into ctxloom should always be
