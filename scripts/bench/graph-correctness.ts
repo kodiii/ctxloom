@@ -43,6 +43,46 @@ import fs from 'node:fs';
 import type { DependencyGraph } from '@ctxloom/core';
 import { ASTParser } from '../../packages/core/src/ast/ASTParser.js';
 
+export interface ImportCoverageReport {
+  /**
+   * Number of distinct relative-import SOURCES the AST parser found
+   * across the indexed files (deduped per-file by source-spec string).
+   * Approximates "how many intra-repo import statements does the
+   * source code contain?"
+   */
+  astRelativeImports: number;
+  /**
+   * Number of forwardEdges in the graph, summed across the same set
+   * of files. Approximates "how many edges did the resolver actually
+   * emit?"
+   */
+  graphEdges: number;
+  /**
+   * graphEdges / astRelativeImports, capped at 1.0. < 1.0 means the
+   * import resolver is losing edges that the AST clearly identifies
+   * as intra-repo imports. `null` when the corpus contains zero
+   * relative-style imports (e.g. pure-Go repos that exclusively use
+   * module-path imports) — coverage is undefined for that case
+   * rather than vacuously 1.0.
+   */
+  coverage: number | null;
+  /** Number of files with at least one relative import (denominator scope). */
+  filesAudited: number;
+  /**
+   * Per-extension breakdown — surfaces language-specific resolver
+   * gaps (e.g. Go .go files with low coverage isolate a Go-resolver
+   * bug without polluting the JS/TS numbers).
+   */
+  byExtension: Record<string, { ast: number; graph: number; files: number }>;
+  /**
+   * `true` when the audit's relative-import heuristic doesn't apply
+   * to this corpus — e.g. pure-Go repos that use module-path imports
+   * exclusively. A separate Go-aware audit is needed (task #24
+   * follow-up).
+   */
+  notApplicable: boolean;
+}
+
 export interface SymbolCoverageReport {
   /** Number of (symbol, file) declarations the AST parser found. */
   astDeclared: number;
@@ -82,6 +122,100 @@ const INDEXED_TYPES = new Set(['function', 'class', 'interface', 'method']);
  * to check" (vacuously true) rather than a failure, so empty
  * fixture-style files don't penalize the audit.
  */
+/**
+ * Audit import-edge coverage across a repo. For every indexed file:
+ *
+ *   - Parse with AST, collect distinct relative-import source specs
+ *     (e.g. `.foo`, `../bar`, `./baz/qux`).
+ *   - Count the graph's forwardEdges for that file.
+ *   - Ratio = graphEdges / astRelativeImports (capped at 1.0).
+ *
+ * The dedup-by-source-spec choice is deliberate. The graph emits one
+ * edge per resolved target file; the AST emits one node per import
+ * statement. `from .x import a; from .x import b` is 1 unique source
+ * spec but produces 2 ParsedNode entries. We dedupe to the source-
+ * spec level so the ratio reflects "edges per intra-repo import
+ * statement family" — closely matching what the resolver should
+ * produce. Over-count (graph > AST) caps at 1.0; under-count is the
+ * interesting failure mode (resolver missing edges).
+ *
+ * Per-extension breakdown isolates language-specific resolver gaps:
+ * if `gin` shows .go imports at 0.30 coverage but JS/TS/Py at 1.0,
+ * the bug is in the Go resolver path specifically.
+ */
+export async function auditImportEdges(
+  repoPath: string,
+  graph: DependencyGraph,
+): Promise<ImportCoverageReport> {
+  const parser = new ASTParser();
+  await parser.init();
+
+  let astRelativeImports = 0;
+  let graphEdges = 0;
+  let filesAudited = 0;
+  const byExtension: Record<string, { ast: number; graph: number; files: number }> = {};
+
+  for (const relPath of graph.allFiles()) {
+    const ext = path.extname(relPath).toLowerCase();
+    if (!INDEXED_EXTENSIONS.has(ext)) continue;
+
+    const absPath = path.join(repoPath, relPath);
+    if (!fs.existsSync(absPath)) continue;
+
+    let nodes;
+    try {
+      nodes = await parser.parse(absPath);
+    } catch {
+      continue;
+    }
+
+    // Distinct intra-repo import source specs (relative paths).
+    // Bare module imports (e.g. `os`, `lodash`) intentionally skipped
+    // — they target external packages, not files in this repo.
+    const relativeImports = new Set<string>();
+    for (const node of nodes) {
+      if (node.type !== 'import') continue;
+      const src = node.source ?? node.name;
+      if (src.startsWith('.')) {
+        relativeImports.add(src);
+      }
+    }
+
+    if (relativeImports.size === 0) continue;
+    filesAudited += 1;
+    const fileEdges = graph.getImports(relPath).length;
+
+    astRelativeImports += relativeImports.size;
+    graphEdges += fileEdges;
+
+    if (!byExtension[ext]) {
+      byExtension[ext] = { ast: 0, graph: 0, files: 0 };
+    }
+    byExtension[ext].ast += relativeImports.size;
+    byExtension[ext].graph += fileEdges;
+    byExtension[ext].files += 1;
+  }
+
+  // When the heuristic finds zero relative imports (e.g. pure-Go
+  // corpora that exclusively use module-path imports), the metric is
+  // undefined rather than vacuously 1.0. The report surfaces this
+  // explicitly so downstream tooling doesn't mistake "no signal" for
+  // "perfect coverage".
+  const notApplicable = astRelativeImports === 0;
+  const coverage: number | null = notApplicable
+    ? null
+    : Math.min(1, graphEdges / astRelativeImports);
+
+  return {
+    astRelativeImports,
+    graphEdges,
+    coverage,
+    filesAudited,
+    byExtension,
+    notApplicable,
+  };
+}
+
 export async function auditSymbolDeclarations(
   repoPath: string,
   graph: DependencyGraph,

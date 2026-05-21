@@ -30,7 +30,7 @@ import { fetchGroundTruth, isSourceFile } from './groundTruth.js';
 import { ensureWorktree } from './repoCheckout.js';
 import { indexRepo, blastRadius, buildOverlay, buildVectorStore } from './predict.js';
 import { computeMetrics, computeGraphReachability, avg } from './metrics.js';
-import { auditSymbolDeclarations } from './graph-correctness.js';
+import { auditSymbolDeclarations, auditImportEdges } from './graph-correctness.js';
 import { DependencyGraph } from '@ctxloom/core';
 import { writeReport } from './report.js';
 import type { BenchReport, RepoReport, CorpusEntry, Metrics, TokenMetrics, GraphCorrectnessMetrics } from './types.js';
@@ -48,6 +48,20 @@ function getStage(): Stage {
   const argStage = process.argv[2];
   if (argStage === 'spike' || argStage === 'full') return argStage;
   throw new Error(`Usage: tsx eval.ts <spike|full>. Got: ${argStage}`);
+}
+
+/**
+ * Average a list of coverage values, treating -1 as "not applicable"
+ * (e.g. import coverage on a pure-Go repo). The marker -1 is filtered
+ * out so it doesn't drag a perfectly-fine 1.0 average down to ~0.5.
+ *
+ * If every value is N/A the result is itself -1, which the report
+ * renderer surfaces as "n/a" — distinct from a real 0.0 score.
+ */
+function avgSkippingNA(values: readonly number[]): number {
+  const applicable = values.filter((v) => v >= 0);
+  if (applicable.length === 0) return -1;
+  return applicable.reduce((sum, v) => sum + v, 0) / applicable.length;
 }
 
 function getCtxloomSha(): string {
@@ -116,6 +130,9 @@ async function runRepo(entry: CorpusEntry): Promise<RepoReport> {
     let symbolCoverage = 0;
     let astDeclared = 0;
     let graphIndexed = 0;
+    let importCoverage = 0;
+    let astRelativeImports = 0;
+    let graphImportEdges = 0;
     if (loaded) {
       const sourceTruth = gt.groundTruthFiles.filter(isSourceFile);
       const { reachable, reachability } = computeGraphReachability(
@@ -150,6 +167,42 @@ async function runRepo(entry: CorpusEntry): Promise<RepoReport> {
       } catch (err) {
         console.error(`    symbol coverage audit failed: ${err instanceof Error ? err.message : String(err)}`);
       }
+
+      // Import edge coverage — direct measure of the import resolver
+      // against AST ground truth. Per-extension breakdown isolates
+      // language-specific resolver bugs (e.g. gin's Go path).
+      console.error(`  PR #${prNumber}: auditing import edge coverage...`);
+      try {
+        const report = await auditImportEdges(worktree, auditGraph);
+        astRelativeImports = report.astRelativeImports;
+        graphImportEdges = report.graphEdges;
+        if (report.notApplicable) {
+          // N/A: pure-Go corpora that use module-path imports
+          // exclusively don't satisfy the relative-import heuristic.
+          // Marker value -1 lets aggregation skip these without
+          // counting them as 0 (a false bug signal) or 1 (false win).
+          importCoverage = -1;
+          console.error(`    import coverage: n/a (no relative-style imports in this corpus — needs Go-aware audit)`);
+        } else {
+          importCoverage = report.coverage ?? 0;
+          console.error(
+            `    import coverage: ${(importCoverage * 100).toFixed(1)}% ` +
+            `(${report.graphEdges}/${report.astRelativeImports} edges, ${report.filesAudited} files)`,
+          );
+          // Per-extension diagnostic — only emit if any extension is
+          // notably worse than the overall ratio (indicates a
+          // language-specific resolver gap worth flagging).
+          if (importCoverage < 0.9 && Object.keys(report.byExtension).length > 1) {
+            console.error(`    per-extension:`);
+            for (const [ext, stats] of Object.entries(report.byExtension)) {
+              const ratio = stats.ast === 0 ? 1 : Math.min(1, stats.graph / stats.ast);
+              console.error(`      ${ext}: ${(ratio * 100).toFixed(1)}% (${stats.graph}/${stats.ast}, ${stats.files} files)`);
+            }
+          }
+        }
+      } catch (err) {
+        console.error(`    import coverage audit failed: ${err instanceof Error ? err.message : String(err)}`);
+      }
     }
 
     console.error(
@@ -158,6 +211,7 @@ async function runRepo(entry: CorpusEntry): Promise<RepoReport> {
       `sourceR=${metrics.sourceRecall.toFixed(2)} ` +
       `graphReach=${metrics.graphReachability.toFixed(2)} ` +
       `symCov=${symbolCoverage.toFixed(2)} ` +
+      `impCov=${importCoverage.toFixed(2)} ` +
       `(${metrics.sourceTruePositives}/${metrics.sourceGroundTruthCount} source, ` +
       `${metrics.graphReachable} reachable)`,
     );
@@ -171,6 +225,9 @@ async function runRepo(entry: CorpusEntry): Promise<RepoReport> {
       symbolCoverage,
       astDeclared,
       graphIndexed,
+      importCoverage,
+      astRelativeImports,
+      graphImportEdges,
     });
   }
 
@@ -183,6 +240,12 @@ async function runRepo(entry: CorpusEntry): Promise<RepoReport> {
     avgSourceRecall: avg(perPr.map((p) => p.sourceRecall)),
     avgGraphReachability: avg(perPr.map((p) => p.graphReachability)),
     avgSymbolCoverage: avg(perPr.map((p) => p.symbolCoverage)),
+    // -1 marker = N/A (e.g. pure-Go corpora that lack relative imports).
+    // Skip those PRs when averaging — otherwise a fake-low denominator
+    // would smear a real metric with non-applicable cells. If ALL PRs
+    // for a repo are N/A the average is itself N/A (-1), surfaced as
+    // "n/a" in the report renderer.
+    avgImportCoverage: avgSkippingNA(perPr.map((p) => p.importCoverage)),
     avgNaiveTokens: avg(perPr.map((p) => p.naiveTokens)),
     avgGraphTokens: avg(perPr.map((p) => p.graphTokens)),
     avgReduction: avg(perPr.map((p) => p.reduction)),
@@ -246,6 +309,7 @@ async function main(): Promise<void> {
       avgSourceRecall: avg(allPrs.map((p) => p.sourceRecall)),
       avgGraphReachability: avg(allPrs.map((p) => p.graphReachability)),
       avgSymbolCoverage: avg(allPrs.map((p) => p.symbolCoverage)),
+      avgImportCoverage: avgSkippingNA(allPrs.map((p) => p.importCoverage)),
       avgReduction: avg(allPrs.map((p) => p.reduction)),
     },
     repos,
