@@ -4,19 +4,67 @@ How ctxloom's published benchmark numbers are produced. This document
 is *normative* — running the bench against a different methodology
 than what's described here is cheating.
 
-## What the bench measures
+## What ctxloom is — and what the bench therefore measures
 
-Two questions, two metric families:
+ctxloom is a **project context engine**. The dependency graph is the
+core data structure; the impact-radius / blast-radius prediction used
+in the bench is **one of several** consumers:
 
-1. **Impact accuracy** — when ctxloom predicts "these files are
-   affected by this change", how accurate is the prediction?
-   Measured via **precision, recall, F1** against a real PR's
-   actual file diff as ground truth.
+| Consumer | What it asks the graph |
+|---|---|
+| Code-review (this bench) | "Given a changed file, what other files might be affected?" |
+| Symbol lookup (`ctx_get_definition`) | "Where is `APIRouter` defined?" |
+| Call-graph queries (`ctx_get_call_graph`) | "Who calls `res.send()`?" |
+| Architectural overview (`ctx_architecture_overview`) | "What communities does this codebase split into?" |
+| Semantic search (`ctx_search`) | "Find code about JSON streaming." |
+| Cross-repo search | "Find usages of this symbol across all my projects." |
 
-2. **Token efficiency** — how much smaller is the context ctxloom
+A bench measuring only PR-impact prediction is therefore a **partial**
+read on ctxloom quality. We benchmark impact-radius here because it's
+the most-comparable metric across alternative tools — not because it's
+the only thing the graph does. Future bench releases will add
+direct-measure suites for symbol resolution + semantic search (task #X
+in the roadmap).
+
+## What this bench measures (impact-radius focus)
+
+Three metric families:
+
+1. **Algorithm accuracy** — when the prediction algorithm returns
+   "these files are affected", how accurate is it? Precision, recall,
+   F1, and **sourceRecall** (recall filtered to indexable files only).
+   Measured against the merged PR's actual file diff as **external
+   oracle** — `gh pr view --json files`. Not derived from our own
+   graph, which would be self-referential.
+
+2. **Graph completeness** — independent of the prediction algorithm,
+   what fraction of the PR's source-file ground truth is structurally
+   reachable from the entry point via BFS over the import graph?
+   Reported as **graphReachability**. If sourceRecall ≪ graphReachability
+   the algorithm is too conservative; if graphReachability is itself
+   low the graph is missing edges (re-exports, dynamic imports, etc.).
+
+3. **Token efficiency** — how much smaller is the context ctxloom
    would feed an agent compared to the naive "re-read every file"
-   baseline? Measured in **tokens** with the standard `cl100k_base`
-   tokenizer (matches Claude and GPT tokenization).
+   baseline? Measured in tokens with **`tiktoken cl100k_base`**
+   (matches Claude and GPT tokenization). Token-counting via
+   character-count approximations (`len // 4`) is rejected as too
+   coarse for cross-tool comparison.
+
+### Why the oracle is the merged PR diff, not the graph
+
+It's tempting to define "ground truth" as "files structurally reachable
+from the entry via our graph". That's circular — the metric measures
+the algorithm against the graph, the graph against the algorithm. Recall
+becomes 1.0 by construction. Such a bench measures **internal
+consistency**, not quality.
+
+We use the **merged PR file diff** as oracle. It's external (we don't
+control it), noisy (includes unindexable files like CHANGELOG and
+package.json bumps that any graph must "miss"), and harder than a
+graph-derived oracle by design. `sourceRecall` filters out the
+unindexable noise; `graphReachability` separates graph health from
+algorithm health.
 
 ## Corpus
 

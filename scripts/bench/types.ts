@@ -105,6 +105,29 @@ export interface Metrics {
   sourceGroundTruthCount: number;
   sourceTruePositives: number;
   sourceRecall: number;
+  /**
+   * Graph reachability (v1.6.x metric). Separates "graph completeness"
+   * from "algorithm quality":
+   *
+   *   sourceRecall      = our prediction algorithm's hit rate
+   *   graphReachability = the fraction of source GT files reachable
+   *                       from the entry point via ANY BFS traversal
+   *                       of the import graph (forward + reverse, up
+   *                       to depth N).
+   *
+   * If `graphReachability` is high but `sourceRecall` is low, the
+   * graph contains the right edges but our prediction algorithm
+   * was too conservative. If both are low, the graph itself is
+   * missing edges (re-exports, dynamic imports, cross-package
+   * connections we don't resolve).
+   *
+   * This is the metric that answers the question "is the graph
+   * doing its job?" without being self-referential (CRG's pattern,
+   * which uses graph traversal as both prediction and oracle).
+   * Here the oracle stays the merged PR diff — external signal.
+   */
+  graphReachable: number;
+  graphReachability: number;
 }
 
 /** Token-reduction metrics for one PR. */
@@ -135,6 +158,8 @@ export interface RepoReport {
   /** Mean of per-PR sourceRecall — graph-quality signal with the
    *  structural-ceiling noise of unindexable GT files removed. */
   avgSourceRecall: number;
+  /** Mean graph reachability — see Metrics.graphReachability. */
+  avgGraphReachability: number;
   avgNaiveTokens: number;
   avgGraphTokens: number;
   avgReduction: number;
@@ -159,6 +184,8 @@ export interface BenchReport {
     avgRecall: number;
     /** Mean source-file recall — see RepoReport.avgSourceRecall. */
     avgSourceRecall: number;
+    /** Mean graph reachability across all repos. See Metrics.graphReachability. */
+    avgGraphReachability: number;
     avgReduction: number;
   };
   /** Per-repo breakdown. */
