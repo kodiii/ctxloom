@@ -5,6 +5,29 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
 ---
 
+## [1.7.1] — 2026-05-23
+
+**Patch release** — single fix for the pr-bot GitHub Marketplace listing.
+
+The pr-bot `action.yml` description was 244 characters; GitHub's Marketplace
+publish form rejects anything over 125. Trimmed to 122 characters so the
+Marketplace listing validates:
+
+> Risk-scored PR review using your repo's local dependency graph.
+> Inline + summary comments. No LLM, no external services.
+
+No behavioral changes — the Action does exactly the same thing it did at
+v1.7.0. README and the rest of the pr-bot docs keep the longer prose.
+
+Why a dedicated tag (vs. force-bumping v1.7.0 in place): the Marketplace
+listing references `action.yml` from a specific release tag, not from
+`main`. Force-pushing v1.7.0 would break SHA-pinned consumers; v1.7.1
+ships the fix without rewriting history.
+
+Reference: PR #250.
+
+---
+
 ## [1.7.0] — 2026-05-23
 
 **Major release** — graph quality, language reach, and benchmark rigor.
