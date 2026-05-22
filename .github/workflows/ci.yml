@@ -41,6 +41,52 @@ jobs:
       - name: Build
         run: npm run build
 
+      # ── Cache + pre-warm the MiniLM ONNX model ────────────────────
+      # The embedder lazy-downloads `sentence-transformers/all-MiniLM-L6-v2`
+      # (~90 MB) on first use via @huggingface/transformers. On fresh
+      # CI runners, the download finalization races the next ONNX
+      # `Load model` open — the file looks complete but the OS hasn't
+      # fsync'd the page cache, so onnxruntime hits a partial header
+      # and throws "Protobuf parsing failed". Our embedder retries
+      # with exponential backoff (1s/2s), but the race won that
+      # window 8+ times during the v1.7.0 cycle.
+      #
+      # Fix has two parts:
+      #
+      #   1. CACHE the model dir across CI runs — once the model is
+      #      cached, the download step doesn't run at all on subsequent
+      #      runs (same SHA-pinned key) and the race can't trigger.
+      #
+      #   2. PRE-WARM on a cache miss — run a single generateEmbedding
+      #      call BEFORE the test step. This forces the download to
+      #      complete + fsync to settle, isolating the race to one
+      #      controlled step that retries on its own. By the time
+      #      the test suite imports the embedder, the model is on
+      #      disk with bytes settled.
+      #
+      # Cache key is per-Node-version because transformers.js may
+      # ship runtime-specific binary bindings; pinning the model
+      # version explicitly in the key lets future model swaps
+      # (e.g. jina-code default in v1.8.0) invalidate cleanly.
+      - name: Cache HuggingFace model
+        uses: actions/cache@v4
+        with:
+          path: node_modules/@huggingface/transformers/.cache
+          key: hf-model-${{ matrix.node-version }}-sentence-transformers-all-MiniLM-L6-v2
+          restore-keys: |
+            hf-model-${{ matrix.node-version }}-
+
+      - name: Pre-warm embedder model (avoid Protobuf race)
+        # Imports the embedder via tsx (against the source — no
+        # dependency on the hashed dist filename) and triggers a
+        # single generateEmbedding call. transformers.js downloads
+        # + fsync's the ONNX file in this step; subsequent test
+        # imports read from disk without racing the OS page cache.
+        # Falls back to the embedder's own 3-attempt retry on the
+        # download itself, so a single transient fetch failure
+        # doesn't block the pipeline.
+        run: npx tsx scripts/ci/prewarm-embedder.mts
+
       - name: Test
         run: npm test
 
