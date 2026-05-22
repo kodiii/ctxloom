@@ -6,7 +6,7 @@
  * these tests are skipped. collectFiles tests run offline.
  */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { generateEmbedding, collectFiles, collectFilesStream, EMBEDDING_DIMENSION } from '../src/indexer/embedder.js';
+import { generateEmbedding, generateEmbeddingBatch, collectFiles, collectFilesStream, EMBEDDING_DIMENSION } from '../src/indexer/embedder.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
@@ -71,6 +71,70 @@ describe('Embedder', () => {
       try {
         const embedding = await generateEmbedding('');
         expect(embedding.length).toBe(EMBEDDING_DIMENSION);
+      } catch (err: any) {
+        if (err?.message?.includes('Unauthorized') || err?.message?.includes('access')) {
+          console.warn('Skipping embedding test: HuggingFace model not accessible');
+          return;
+        }
+        throw err;
+      }
+    });
+  });
+
+  // ─── generateEmbeddingBatch (v1.7.0 perf — Step 1 of acceleration) ─
+  // Batched API for the indexer's hot path. Validates: (a) order-
+  // preserving 2D output, (b) per-vector correctness matches the
+  // single-text API, (c) empty-input safety, (d) dimension match.
+  describe('generateEmbeddingBatch()', () => {
+    it('returns an empty array for empty input (no model call)', async () => {
+      // Pure short-circuit — must not even spin up the embedder.
+      // Useful in the indexer path where a chunk may produce zero
+      // ready records after filtering oversized/empty files.
+      const out = await generateEmbeddingBatch([]);
+      expect(out).toEqual([]);
+    });
+
+    it.skipIf(!canAccessHF)('returns N vectors of correct dimension', async () => {
+      try {
+        const out = await generateEmbeddingBatch(['function foo() {}', 'class Bar {}', 'const x = 1;']);
+        expect(out).toHaveLength(3);
+        for (const v of out) {
+          expect(v.length).toBe(EMBEDDING_DIMENSION);
+        }
+      } catch (err: any) {
+        if (err?.message?.includes('Unauthorized') || err?.message?.includes('access')) {
+          console.warn('Skipping embedding test: HuggingFace model not accessible');
+          return;
+        }
+        throw err;
+      }
+    });
+
+    it.skipIf(!canAccessHF)('produces vectors that match the single-text API (order + values)', async () => {
+      // Critical invariant for the batched indexer: the i-th vector
+      // returned by generateEmbeddingBatch MUST equal the vector
+      // generateEmbedding would return for the i-th input. Order
+      // preservation is the foundation of the indexer's zip-back
+      // step that re-aligns embeddings to file paths.
+      try {
+        const texts = ['hello world', 'goodbye moon', 'fizz buzz baz'];
+        const batchVecs = await generateEmbeddingBatch(texts);
+        for (let i = 0; i < texts.length; i++) {
+          const singleVec = await generateEmbedding(texts[i]);
+          expect(batchVecs[i].length).toBe(singleVec.length);
+          // Cosine ≈ 1.0 (allow tiny float drift from different ONNX
+          // execution paths; identity through-test would over-pin).
+          let dot = 0;
+          let na = 0;
+          let nb = 0;
+          for (let j = 0; j < singleVec.length; j++) {
+            dot += batchVecs[i][j] * singleVec[j];
+            na += batchVecs[i][j] * batchVecs[i][j];
+            nb += singleVec[j] * singleVec[j];
+          }
+          const cos = dot / (Math.sqrt(na) * Math.sqrt(nb));
+          expect(cos).toBeGreaterThan(0.999);
+        }
       } catch (err: any) {
         if (err?.message?.includes('Unauthorized') || err?.message?.includes('access')) {
           console.warn('Skipping embedding test: HuggingFace model not accessible');
