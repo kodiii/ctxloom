@@ -54,7 +54,7 @@ jobs:
             exit 0
           fi
           node e2e-corpus/run.mjs --repo='${{ matrix.repo }}' --json | tee report.json
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: e2e-corpus-${{ matrix.repo == 'expressjs/express' && 'expressjs-express' || matrix.repo == 'pallets/flask' && 'pallets-flask' || matrix.repo == 'gin-gonic/gin' && 'gin-gonic-gin' || matrix.repo == 'tokio-rs/axum' && 'tokio-rs-axum' || 'vercel-nextjs' }}
