@@ -112,6 +112,19 @@ updates:
         update-types: ["version-update:semver-major"]
       - dependency-name: "@typescript-eslint/*"
         update-types: ["version-update:semver-major"]
+      # ── Follow-up additions after the post-#207 backlog flush ─────
+      # The initial Dependabot run on the new config opened PRs for
+      # these packages because the ignore-list wasn't comprehensive
+      # enough. Closed those manually; locking the rule in here so
+      # the next weekly run doesn't reopen them.
+      - dependency-name: "zod"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "express"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "@types/supertest"
+        update-types: ["version-update:semver-major"]
     # Commit message hygiene — mirrors how we phrase our own
     # commits so the changelog reads consistently.
     commit-message:
@@ -158,6 +171,16 @@ updates:
         update-types: ["version-update:semver-major"]
       - dependency-name: "@types/react-dom"
         update-types: ["version-update:semver-major"]
+      # ── Post-#207 backlog catch-up additions ──────────────────────
+      # express 5 is a substantial migration (deprecates body-parser,
+      # changes router, async handler semantics) — kept out of
+      # auto-PR per the same logic as the vite ignore.
+      - dependency-name: "express"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "@types/supertest"
+        update-types: ["version-update:semver-major"]
     commit-message:
       prefix: "chore(deps)"
       prefix-development: "chore(dev-deps)"
@@ -195,6 +218,15 @@ updates:
       - dependency-name: "@octokit/*"
         update-types: ["version-update:semver-major"]
       - dependency-name: "octokit"
+        update-types: ["version-update:semver-major"]
+      # ── Post-#207 backlog catch-up additions ──────────────────────
+      # zod 4 is a substantial API rewrite (parse vs safeParse default,
+      # new error format) — kept out of auto-PR.
+      - dependency-name: "zod"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "@types/supertest"
         update-types: ["version-update:semver-major"]
     commit-message:
       prefix: "chore(deps)"
