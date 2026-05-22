@@ -121,7 +121,7 @@ jobs:
         with:
           fetch-depth: 0   # required: pr-bot reads git history for co-change overlay
 
-      - uses: kodiii/ctxloom/apps/pr-bot@${ref}
+      - uses: kodiii/ctxloom-pr-bot@${ref}
 `;
 }
 

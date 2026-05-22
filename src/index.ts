@@ -572,7 +572,7 @@ async function main(): Promise<void> {
       }
       process.stdout.write(fmtSuccess(`Created ${result.path}`));
       process.stdout.write(`  ${style.dim(`Default branch: ${result.defaultBranch}`)}\n`);
-      process.stdout.write(`  ${style.dim(`Pinned to:      kodiii/ctxloom/apps/pr-bot@${ref}`)}\n\n`);
+      process.stdout.write(`  ${style.dim(`Pinned to:      kodiii/ctxloom-pr-bot@${ref}`)}\n\n`);
       process.stdout.write(
         fmtNextStep(
           'Commit and push the workflow',
