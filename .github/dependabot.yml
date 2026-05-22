@@ -93,9 +93,13 @@ updates:
         update-types: ["version-update:semver-major"]
       - dependency-name: "tsup"
         update-types: ["version-update:semver-major"]
-      # Vector DB — schema changes possible across majors
+      # Vector DB — pre-1.0 (0.x), so SEMVER MINOR IS BREAKING per
+      # the semver spec. Block both major and minor bumps; only
+      # patches are safe-by-default. PR #235 (0.27 → 0.29) reshaped
+      # the LanceDB table layout — would have broken every existing
+      # user's vector index.
       - dependency-name: "@lancedb/lancedb"
-        update-types: ["version-update:semver-major"]
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
       # ONNX runtime — model compat across versions
       - dependency-name: "onnxruntime-node"
         update-types: ["version-update:semver-major"]
@@ -125,8 +129,22 @@ updates:
         update-types: ["version-update:semver-major"]
       - dependency-name: "@types/supertest"
         update-types: ["version-update:semver-major"]
-    # Commit message hygiene — mirrors how we phrase our own
-    # commits so the changelog reads consistently.
+      # ── Round-2 additions (post-Monday-09:00 flush, PRs #227-238) ─
+      # The first weekly run after #224 surfaced four more packages
+      # whose majors slipped through. Same rationale as the prior
+      # additions: major bumps reshape APIs and need a focused
+      # migration PR, not a drive-by Dependabot auto-bump. Locking
+      # in the rules so future weekly runs don't reopen them.
+      - dependency-name: "@octokit/core"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "react-router"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "react-router-dom"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "recharts"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "jsdom"
+        update-types: ["version-update:semver-major"]
     commit-message:
       prefix: "chore(deps)"
       prefix-development: "chore(dev-deps)"
@@ -181,6 +199,19 @@ updates:
         update-types: ["version-update:semver-major"]
       - dependency-name: "@types/supertest"
         update-types: ["version-update:semver-major"]
+      # ── Round-2 additions (PRs #236, #237, #238) ──────────────────
+      # react-router v7 reshapes the data-router APIs; recharts v3
+      # rewrites the chart-component surface; jsdom v25+ changes
+      # DOM polyfills. All three need focused migrations, not
+      # auto-PRs.
+      - dependency-name: "react-router"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "react-router-dom"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "recharts"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "jsdom"
+        update-types: ["version-update:semver-major"]
     commit-message:
       prefix: "chore(deps)"
       prefix-development: "chore(dev-deps)"
@@ -214,8 +245,22 @@ updates:
       - dependency-name: "@vitest/*"
         update-types: ["version-update:semver-major"]
       # Octokit majors reshape the GitHub API client surface —
-      # never auto-bump
+      # never auto-bump. We list `@octokit/core` explicitly in
+      # addition to the `@octokit/*` glob because PR #232 (@octokit/core
+      # 6 → 7) slipped through with the glob alone — Dependabot's
+      # glob matching is conservative and may not always expand to
+      # all sub-packages depending on the queue state.
       - dependency-name: "@octokit/*"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "@octokit/core"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "@octokit/rest"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "@octokit/webhooks"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "@octokit/auth-app"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "@octokit/plugin-throttling"
         update-types: ["version-update:semver-major"]
       - dependency-name: "octokit"
         update-types: ["version-update:semver-major"]
@@ -249,6 +294,39 @@ updates:
       time: "09:00"
       timezone: "Europe/Lisbon"
     open-pull-requests-limit: 5
+    # GitHub Actions ignore policy (added post-#225's mega-batch).
+    # Dependabot likes to jump multiple majors at once on actions:
+    # we saw actions/download-artifact propose 4 → 8 in a single PR,
+    # actions/checkout 4 → 6, actions/setup-node 4 → 6. Multi-major
+    # jumps reshape inputs/outputs across the gap and frequently
+    # break workflows in non-obvious ways.
+    #
+    # Policy: ignore EVERY major bump on the actions we actually
+    # use. Dependabot still issues PRs for patch and minor updates
+    # (which are safe and useful), and the security tab still flags
+    # CVEs. When we want to step up a major, we do it deliberately
+    # in a focused PR.
+    ignore:
+      - dependency-name: "actions/checkout"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "actions/setup-node"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "actions/cache"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "actions/upload-artifact"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "actions/download-artifact"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "actions/github-script"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "softprops/action-gh-release"
+        update-types: ["version-update:semver-major"]
+      # Docker actions usually advance majors carefully (the v6→v7
+      # bumps in #208/#209/#212 merged cleanly), but a future
+      # multi-major would still hurt — ignore majors for the docker/*
+      # set too.
+      - dependency-name: "docker/*"
+        update-types: ["version-update:semver-major"]
     commit-message:
       prefix: "chore(ci)"
       include: "scope"
