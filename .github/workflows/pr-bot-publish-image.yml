@@ -66,7 +66,7 @@ jobs:
         uses: docker/setup-buildx-action@v3
 
       - name: Build & push pr-bot image
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           # Build context is the monorepo root so the Dockerfile's
           # `COPY packages/core/ ...` and `COPY apps/pr-bot/ ...` lines
