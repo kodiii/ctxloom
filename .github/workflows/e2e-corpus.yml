@@ -20,7 +20,7 @@ on:
 permissions:
   contents: read
 
-# Opt into Node.js 24 for actions/checkout@v4 + actions/setup-node@v4.
+# Opt into Node.js 24 for actions/checkout@v6 + actions/setup-node@v4.
 # GitHub forces this by June 2026; setting it explicitly silences the
 # deprecation warning and gives us forward-compatible behavior today.
 env:
@@ -40,7 +40,7 @@ jobs:
     runs-on: ubuntu-22.04
     timeout-minutes: ${{ matrix.timeout }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: actions/setup-node@v4
         with: { node-version: '20', cache: 'npm' }
       - run: npm ci

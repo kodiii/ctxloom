@@ -24,7 +24,7 @@ on:
       - 'tsconfig.json'
       - '.github/workflows/pr-bot-ci.yml'
 
-# Opt into Node.js 24 for actions/checkout@v4 + actions/setup-node@v4.
+# Opt into Node.js 24 for actions/checkout@v6 + actions/setup-node@v4.
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
 
@@ -34,7 +34,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Setup Node.js
         uses: actions/setup-node@v4

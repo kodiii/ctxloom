@@ -24,7 +24,7 @@ on:
         required: true
         type: string
 
-# Opt into Node.js 24 for actions/checkout@v4 + actions/setup-node@v4.
+# Opt into Node.js 24 for actions/checkout@v6 + actions/setup-node@v4.
 # GitHub forces this by June 2026; setting it explicitly silences the
 # deprecation warning and gives us forward-compatible behavior today.
 env:
@@ -36,7 +36,7 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           ref: ${{ inputs.tag || github.ref }}
 

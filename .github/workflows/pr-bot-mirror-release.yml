@@ -61,7 +61,7 @@ jobs:
           echo "Mirroring v$version (floating major: v$major) to $MIRROR_REPO"
 
       - name: Checkout monorepo at tag
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: ${{ inputs.tag || github.ref }}
           path: monorepo
@@ -76,7 +76,7 @@ jobs:
           fi
 
       - name: Checkout mirror repo
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           repository: ${{ env.MIRROR_REPO }}
           token: ${{ secrets.PR_BOT_MIRROR_TOKEN }}
