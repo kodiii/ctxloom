@@ -17,17 +17,109 @@ import { logger } from '../utils/logger.js';
 // their bundle / container slim. The type import above is erased at
 // compile time and adds no runtime cost.
 
-const EMBEDDING_DIMENSION = 384;
-const MODEL_ID = 'sentence-transformers/all-MiniLM-L6-v2';
 const CHUNK_SIZE = 4096; // characters per chunk
 
-// Minimum plausible size for the all-MiniLM-L6-v2 fp32 ONNX model.
-// The real artifact is ~90 MB; anything smaller is a truncated download.
-// Used to distinguish "freshly-downloaded, not yet flushed" (file may be
-// any size during the brief window before fsync) from "permanently
-// truncated" (file is on disk but partial — e.g. download was killed
-// mid-stream by an FD-leak cascade in a prior process).
-const MIN_MODEL_BYTES = 80 * 1024 * 1024;
+/**
+ * Registry of supported embedding models. Every entry MUST share these
+ * properties for safe runtime swap-in:
+ *
+ *   - HuggingFace-hub identifier (transformers.js fetches by this name)
+ *   - Output dimensionality (fixed per model; LanceDB table layout
+ *     is shaped to this number at first-create time, so it cannot
+ *     change without re-indexing)
+ *   - `minBytes` for the truncated-download detector (each model has
+ *     a different file size; MiniLM fp32 is ~90 MB, jina-code is ~140 MB)
+ *
+ * To add a new model: append an entry, validate it produces vectors of
+ * the declared dimension, and document the size on disk so the
+ * truncated-download recovery still works.
+ */
+interface EmbeddingModelConfig {
+  readonly hfId: string;
+  readonly dim: number;
+  readonly minBytes: number;
+  readonly description: string;
+}
+
+const MODEL_REGISTRY: Record<string, EmbeddingModelConfig> = {
+  // The historical default. General English, 384-dim, ~90 MB.
+  // Kept as the free-tier default so existing users see zero change.
+  minilm: {
+    hfId: 'sentence-transformers/all-MiniLM-L6-v2',
+    dim: 384,
+    minBytes: 80 * 1024 * 1024,
+    description: 'General-purpose English sentence embedder (2020). 384-dim. The legacy default.',
+  },
+  // Code-specific embedding model (Jina AI). 768-dim, ~140 MB.
+  // Empirically 20-40% better recall on code-similarity queries than
+  // MiniLM — the upgrade path recommended in the v1.7.0 analysis.
+  // Runs through the same @huggingface/transformers pipeline so the
+  // privacy story (fully local, no network at inference time) is
+  // preserved.
+  'jina-code': {
+    hfId: 'jinaai/jina-embeddings-v2-base-code',
+    dim: 768,
+    minBytes: 130 * 1024 * 1024,
+    description: 'Code-specific embedder (Jina, 2024). 768-dim. Better recall on code-similarity tasks.',
+  },
+};
+
+/**
+ * Resolve the active embedding model from the environment.
+ *
+ * Accepted forms for `CTXLOOM_EMBEDDING_MODEL`:
+ *   - A registry alias: `minilm` | `jina-code`
+ *   - A raw HuggingFace ID (e.g. `BAAI/bge-small-en-v1.5`) — bypasses
+ *     the registry; caller must also set `CTXLOOM_EMBEDDING_DIM` so the
+ *     LanceDB schema knows the vector length to use
+ *
+ * Defaults to `minilm` for back-compat. Switching models on an existing
+ * project requires re-indexing — see VectorStore's dimension-mismatch
+ * guard.
+ */
+/**
+ * Pure resolver: env-vars → active model config. Exported so unit tests
+ * can exercise the registry/alias/raw-HF-id branches without polluting
+ * `process.env` or reloading the module. The module-level `ACTIVE_MODEL`
+ * binding captures the result at import time, so call sites that care
+ * about runtime-stable behavior continue to see the same value for the
+ * process lifetime.
+ */
+export function resolveEmbeddingModel(
+  env: { CTXLOOM_EMBEDDING_MODEL?: string; CTXLOOM_EMBEDDING_DIM?: string } = process.env,
+): EmbeddingModelConfig {
+  const envModel = env.CTXLOOM_EMBEDDING_MODEL?.trim();
+  if (!envModel) return MODEL_REGISTRY.minilm;
+
+  const registered = MODEL_REGISTRY[envModel];
+  if (registered) return registered;
+
+  // Raw HF id — require explicit dim or refuse rather than guess.
+  const envDim = env.CTXLOOM_EMBEDDING_DIM
+    ? Number.parseInt(env.CTXLOOM_EMBEDDING_DIM, 10)
+    : NaN;
+  if (!Number.isFinite(envDim) || envDim <= 0) {
+    throw new Error(
+      `CTXLOOM_EMBEDDING_MODEL=${envModel} is not a known alias. ` +
+      `Either use one of [${Object.keys(MODEL_REGISTRY).join(', ')}] ` +
+      `or set CTXLOOM_EMBEDDING_DIM=<vector-length> alongside a raw HF id.`,
+    );
+  }
+  return {
+    hfId: envModel,
+    dim: envDim,
+    // Without a known artifact size we can't enforce the truncated-download
+    // guard. Use 1 MB as the minimum; the worst case is a redundant retry
+    // rather than a hung process.
+    minBytes: 1024 * 1024,
+    description: `User-supplied model: ${envModel} (${envDim}-dim)`,
+  };
+}
+
+const ACTIVE_MODEL = resolveEmbeddingModel();
+const EMBEDDING_DIMENSION = ACTIVE_MODEL.dim;
+const MODEL_ID = ACTIVE_MODEL.hfId;
+const MIN_MODEL_BYTES = ACTIVE_MODEL.minBytes;
 
 let embedder: FeatureExtractionPipeline | null = null;
 let embedderInitInFlight: Promise<FeatureExtractionPipeline> | null = null;
@@ -304,3 +396,24 @@ export async function indexDirectory(
 }
 
 export { EMBEDDING_DIMENSION };
+
+/**
+ * Identifier of the currently-active embedding model. Used by
+ * VectorStore to detect dimension-mismatch on table open (so a user
+ * who flips CTXLOOM_EMBEDDING_MODEL on an existing project gets a
+ * clear "re-index required" error rather than a silent type cast).
+ */
+export const EMBEDDING_MODEL_ID = MODEL_ID;
+
+/**
+ * Full active-model config (id, dim, description). Surfaced for
+ * status/diagnostic tooling — `ctxloom status` includes this so users
+ * can verify which model is in use.
+ */
+export function getActiveEmbeddingModel(): { hfId: string; dim: number; description: string } {
+  return {
+    hfId: ACTIVE_MODEL.hfId,
+    dim: ACTIVE_MODEL.dim,
+    description: ACTIVE_MODEL.description,
+  };
+}

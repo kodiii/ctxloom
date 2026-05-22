@@ -36,6 +36,58 @@ describe('VectorStore', () => {
       await store.init();
       // Should not throw
     });
+
+    // ── Embedding-model marker file (v1.7.0) ──────────────────────
+    // The marker guards against silent dimension corruption when a
+    // user flips CTXLOOM_EMBEDDING_MODEL on an existing index. We
+    // exercise the file-system side of the contract here; the
+    // resolver itself is covered by EmbeddingModelRegistry.test.ts.
+
+    it('writes the embedding-model marker on first init', () => {
+      const markerPath = path.join(path.dirname(dbPath), 'embedding-model.json');
+      expect(fs.existsSync(markerPath)).toBe(true);
+      const marker = JSON.parse(fs.readFileSync(markerPath, 'utf-8'));
+      expect(marker).toHaveProperty('model');
+      expect(marker).toHaveProperty('dim');
+      // The active dim must equal what the table was created with —
+      // without this the next assertion is meaningless.
+      expect(typeof marker.dim).toBe('number');
+      expect(marker.dim).toBeGreaterThan(0);
+    });
+
+    it('throws a clear migration error when the marker model differs', async () => {
+      // Tamper with the marker to simulate "user flipped
+      // CTXLOOM_EMBEDDING_MODEL on an existing project".
+      const markerPath = path.join(path.dirname(dbPath), 'embedding-model.json');
+      const original = JSON.parse(fs.readFileSync(markerPath, 'utf-8'));
+      fs.writeFileSync(
+        markerPath,
+        JSON.stringify({ model: 'fake-other-model', dim: original.dim + 100 }, null, 2),
+      );
+
+      // Fresh VectorStore against the same path should refuse to open.
+      const tampered = new VectorStore(dbPath);
+      await expect(tampered.init()).rejects.toThrow(/Embedding-model mismatch/);
+      // The error must mention BOTH what's there and how to recover —
+      // surfacing only one side leaves the user stuck.
+      await expect(tampered.init()).rejects.toThrow(/fake-other-model/);
+      await expect(tampered.init()).rejects.toThrow(/vectors-cleanup/);
+    });
+
+    it('treats a corrupt marker as missing and rewrites it (legacy-index path)', async () => {
+      const markerPath = path.join(path.dirname(dbPath), 'embedding-model.json');
+      // Garbage content — simulates a partial write / disk corruption.
+      // The pre-marker legacy path took the same shape (no marker at all);
+      // either case should self-heal rather than block users from indexing.
+      fs.writeFileSync(markerPath, '{ this is not json');
+
+      const recovered = new VectorStore(dbPath);
+      await expect(recovered.init()).resolves.not.toThrow();
+
+      const rewritten = JSON.parse(fs.readFileSync(markerPath, 'utf-8'));
+      expect(rewritten).toHaveProperty('model');
+      expect(rewritten).toHaveProperty('dim');
+    });
   });
 
   describe('upsert()', () => {
