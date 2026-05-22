@@ -1,6 +1,6 @@
 # ctxloom benchmark
 
-Generated 2026-05-21T18:49:46.484Z on commit 9c98c78.
+Generated 2026-05-22T06:23:58.346Z on commit 66f9a3d.
 Stage: **full**.
 
 Reproduce locally:
@@ -13,7 +13,7 @@ npm run bench:full
 
 | Repos | PRs | Avg F1 | Avg Precision | Avg Recall | Avg Source Recall | Avg Graph Reachability | Avg Symbol Coverage | Avg Import Coverage | Avg Reduction |
 |------:|----:|-------:|--------------:|-----------:|------------------:|----------------------:|-------------------:|-------------------:|--------------:|
-| 5 | 15 | 0.40 | 0.53 | 0.47 | 0.56 | 0.81 | 1.00 | 1.00 | 0.0× |
+| 5 | 15 | 0.42 | 0.47 | 0.52 | 0.61 | 0.94 | 1.00 | 1.00 | 0.0× |
 
 > **Source Recall** = recall computed against only the indexable (source-file) subset of each PR's ground truth — measures the prediction algorithm.
 
@@ -30,7 +30,7 @@ npm run bench:full
 | `express` | 3 | 0.26 | 0.20 | 0.53 | 0.67 | 1.00 | 1.00 | 1.00 | 0.0× |
 | `fastapi` | 3 | 0.46 | 0.54 | 0.51 | 0.59 | 0.89 | 1.00 | 1.00 | 0.0× |
 | `flask` | 3 | 0.39 | 0.40 | 0.62 | 0.74 | 0.98 | 1.00 | 1.00 | 0.0× |
-| `gin` | 3 | 0.38 | 0.83 | 0.25 | 0.27 | 0.32 | 1.00 | n/a | 0.0× |
+| `gin` | 3 | 0.47 | 0.55 | 0.47 | 0.49 | 0.95 | 1.00 | n/a | 0.0× |
 | `httpx` | 3 | 0.50 | 0.66 | 0.45 | 0.54 | 0.86 | 1.00 | 1.00 | 0.0× |
 
 ## Per-PR (full data)
@@ -65,9 +65,9 @@ npm run bench:full
 
 | PR | TP | FP | FN | Precision | Recall | F1 | Src TP/GT | Src Recall | Graph Reach. | Naive tok | Graph tok | Reduction |
 |---:|---:|---:|---:|----------:|-------:|---:|----------:|-----------:|-------------:|----------:|----------:|----------:|
-| #3904 | 1 | 1 | 5 | 0.50 | 0.17 | 0.25 | 1/6 | 0.17 | 0.33 | 0 | 0 | 0.0× |
-| #4053 | 3 | 0 | 5 | 1.00 | 0.38 | 0.55 | 3/7 | 0.43 | 0.43 | 0 | 0 | 0.0× |
-| #4491 | 1 | 0 | 4 | 1.00 | 0.20 | 0.33 | 1/5 | 0.20 | 0.20 | 0 | 0 | 0.0× |
+| #3904 | 3 | 9 | 3 | 0.25 | 0.50 | 0.33 | 3/6 | 0.50 | 1.00 | 0 | 0 | 0.0× |
+| #4053 | 4 | 0 | 4 | 1.00 | 0.50 | 0.67 | 4/7 | 0.57 | 0.86 | 0 | 0 | 0.0× |
+| #4491 | 2 | 3 | 3 | 0.40 | 0.40 | 0.40 | 2/5 | 0.40 | 1.00 | 0 | 0 | 0.0× |
 
 ### httpx
 
