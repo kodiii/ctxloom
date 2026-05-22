@@ -83,7 +83,7 @@
   "author": "Codzign",
   "dependencies": {
     "@huggingface/transformers": "^3.0.0",
-    "@lancedb/lancedb": "^0.27.0",
+    "@lancedb/lancedb": "^0.29.0",
     "@modelcontextprotocol/sdk": "^1.12.0",
     "chokidar": "^4.0.0",
     "graphology": "^0.26.0",
