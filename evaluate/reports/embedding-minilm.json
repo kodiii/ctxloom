@@ -1,0 +1,126 @@
+
+=== Embedding recall micro-bench ===
+Model:  sentence-transformers/all-MiniLM-L6-v2
+Dim:    384
+Desc:   General-purpose English sentence embedder (2020). 384-dim. The legacy default.
+
+Scoring SIMILAR pairs (should be HIGH)...
+  0.650  parse JSON safely (try/catch vs Result return)
+  0.640  iterate map and sum values
+  0.735  HTTP GET with JSON response (axios vs fetch)
+  0.675  guard clause for null parameter
+  0.663  binary search on sorted array
+  0.605  singleton pattern
+  0.687  debounce function
+  0.539  extract domain from URL
+  0.444  group array by key
+  0.769  retry with exponential backoff
+
+Scoring DIFFERENT pairs (should be LOW)...
+  0.297  parse JSON vs format date
+  0.489  binary search vs bubble sort
+  0.457  HTTP request vs database query
+  0.625  null guard vs auth check
+  0.307  singleton vs factory
+  0.533  debounce vs throttle (similar shape, different timing)
+  0.160  URL parsing vs CSV parsing
+  0.318  group by vs filter
+  0.572  retry vs rate limit
+  0.095  render template vs send email
+
+=== Summary ===
+Avg SIMILAR    : 0.641  (higher = better, target ≥0.60)
+Avg DIFFERENT  : 0.385  (lower = better, target ≤0.40)
+Discrimination : 0.255  (higher = better, target ≥0.20)
+
+{
+  "model": "sentence-transformers/all-MiniLM-L6-v2",
+  "dim": 384,
+  "simMean": 0.6405138293417346,
+  "diffMean": 0.3853837072169558,
+  "discrimination": 0.2551301221247788,
+  "similar": [
+    {
+      "label": "parse JSON safely (try/catch vs Result return)",
+      "score": 0.6498086796048655
+    },
+    {
+      "label": "iterate map and sum values",
+      "score": 0.6395220824147352
+    },
+    {
+      "label": "HTTP GET with JSON response (axios vs fetch)",
+      "score": 0.7347736453588506
+    },
+    {
+      "label": "guard clause for null parameter",
+      "score": 0.6748293420517117
+    },
+    {
+      "label": "binary search on sorted array",
+      "score": 0.6626795757054896
+    },
+    {
+      "label": "singleton pattern",
+      "score": 0.6049148273114137
+    },
+    {
+      "label": "debounce function",
+      "score": 0.6866672000543387
+    },
+    {
+      "label": "extract domain from URL",
+      "score": 0.5394903353702197
+    },
+    {
+      "label": "group array by key",
+      "score": 0.4437212965829308
+    },
+    {
+      "label": "retry with exponential backoff",
+      "score": 0.7687313089627907
+    }
+  ],
+  "different": [
+    {
+      "label": "parse JSON vs format date",
+      "score": 0.2972487618467002
+    },
+    {
+      "label": "binary search vs bubble sort",
+      "score": 0.48907098000447735
+    },
+    {
+      "label": "HTTP request vs database query",
+      "score": 0.4565218228672832
+    },
+    {
+      "label": "null guard vs auth check",
+      "score": 0.6245322171536983
+    },
+    {
+      "label": "singleton vs factory",
+      "score": 0.30741870654653036
+    },
+    {
+      "label": "debounce vs throttle (similar shape, different timing)",
+      "score": 0.5329753704390187
+    },
+    {
+      "label": "URL parsing vs CSV parsing",
+      "score": 0.16042599463975335
+    },
+    {
+      "label": "group by vs filter",
+      "score": 0.31799828410422376
+    },
+    {
+      "label": "retry vs rate limit",
+      "score": 0.5722122837448315
+    },
+    {
+      "label": "render template vs send email",
+      "score": 0.09543265082304091
+    }
+  ]
+}

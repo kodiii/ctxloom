@@ -1,0 +1,91 @@
+{
+  "model": "jinaai/jina-embeddings-v2-base-code",
+  "dim": 768,
+  "simMean": 0.8931035890554428,
+  "diffMean": 0.4535329599254109,
+  "discrimination": 0.439570629130032,
+  "similar": [
+    {
+      "label": "parse JSON safely (try/catch vs Result return)",
+      "score": 0.9361161317693596
+    },
+    {
+      "label": "iterate map and sum values",
+      "score": 0.8412965336765889
+    },
+    {
+      "label": "HTTP GET with JSON response (axios vs fetch)",
+      "score": 0.7884142519880145
+    },
+    {
+      "label": "guard clause for null parameter",
+      "score": 0.9385387469332293
+    },
+    {
+      "label": "binary search on sorted array",
+      "score": 0.7686228341882613
+    },
+    {
+      "label": "singleton pattern",
+      "score": 0.9157297360380069
+    },
+    {
+      "label": "debounce function",
+      "score": 0.9131949242021747
+    },
+    {
+      "label": "extract domain from URL",
+      "score": 0.9301313697388873
+    },
+    {
+      "label": "group array by key",
+      "score": 0.9270810976831054
+    },
+    {
+      "label": "retry with exponential backoff",
+      "score": 0.9719102643367984
+    }
+  ],
+  "different": [
+    {
+      "label": "parse JSON vs format date",
+      "score": 0.44521891492224286
+    },
+    {
+      "label": "binary search vs bubble sort",
+      "score": 0.4630990325274887
+    },
+    {
+      "label": "HTTP request vs database query",
+      "score": 0.4082033946745646
+    },
+    {
+      "label": "null guard vs auth check",
+      "score": 0.7550266868166553
+    },
+    {
+      "label": "singleton vs factory",
+      "score": 0.22961670217108862
+    },
+    {
+      "label": "debounce vs throttle (similar shape, different timing)",
+      "score": 0.7994315030264599
+    },
+    {
+      "label": "URL parsing vs CSV parsing",
+      "score": 0.17254106512625803
+    },
+    {
+      "label": "group by vs filter",
+      "score": 0.38513493398223875
+    },
+    {
+      "label": "retry vs rate limit",
+      "score": 0.655592241033016
+    },
+    {
+      "label": "render template vs send email",
+      "score": 0.22146512497409518
+    }
+  ]
+}
