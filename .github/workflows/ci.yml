@@ -69,7 +69,7 @@ jobs:
       # version explicitly in the key lets future model swaps
       # (e.g. jina-code default in v1.8.0) invalidate cleanly.
       - name: Cache HuggingFace model
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: node_modules/@huggingface/transformers/.cache
           key: hf-model-${{ matrix.node-version }}-sentence-transformers-all-MiniLM-L6-v2
