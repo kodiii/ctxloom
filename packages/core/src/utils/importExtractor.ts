@@ -53,6 +53,19 @@ export function extractImports(filePath: string, content: string): RawImport[] {
     case '.dart':  return extractDartImports(content);
     case '.ipynb': return extractNotebookImports(filePath, content);
     case '.vue':   return extractVueImports(content);
+    case '.c':
+    case '.cc':
+    case '.cpp':
+    case '.cxx':
+    case '.h':
+    case '.hh':
+    case '.hpp':
+    case '.hxx':   return extractCppImports(content);
+    case '.scala': return extractScalaImports(content);
+    case '.lua':   return extractLuaImports(content);
+    case '.ex':
+    case '.exs':   return extractElixirImports(content);
+    case '.zig':   return extractZigImports(content);
     default:      return [];
   }
 }
@@ -86,9 +99,17 @@ export function resolveImport(
   if (ext === '.dart') return resolveDartImport(fromAbs, fromDir, raw, rootDir);
   if (ext === '.ipynb') return resolvePythonImport(fromAbs, fromDir, raw, rootDir);
   if (ext === '.vue') return resolveVueImport(fromAbs, fromDir, raw, rootDir);
+  if (CPP_EXTENSIONS.has(ext)) return resolveCppImport(fromDir, raw, rootDir);
+  if (ext === '.scala') return resolveScalaImport(fromDir, raw, rootDir);
+  if (ext === '.lua') return resolveLuaImport(fromDir, raw, rootDir);
+  if (ext === '.ex' || ext === '.exs') return resolveElixirImport(fromDir, raw, rootDir);
+  if (ext === '.zig') return resolveZigImport(fromAbs, fromDir, raw, rootDir);
 
   return null;
 }
+
+/** C/C++ source + header extensions handled by extractCppImports/resolveCppImport. */
+const CPP_EXTENSIONS = new Set(['.c', '.cc', '.cpp', '.cxx', '.h', '.hh', '.hpp', '.hxx']);
 
 // ─── Python ──────────────────────────────────────────────────────────────
 
@@ -562,5 +583,199 @@ function resolveVueImport(
     if (!candidate.startsWith(rootResolved + path.sep)) continue; // keep confinement
     if (fs.existsSync(candidate)) return path.relative(rootDir, candidate);
   }
+  return null;
+}
+
+// ─── C / C++ ──────────────────────────────────────────────────────────────
+
+function extractCppImports(content: string): RawImport[] {
+  const results: RawImport[] = [];
+  // #include "foo.h" — local includes (intra-project).
+  // #include <foo.h> intentionally skipped: angle-bracket includes
+  // target system / framework paths the graph can't resolve to local
+  // files without compiler-driver knowledge.
+  const localInclude = /^\s*#\s*include\s+"([^"]+)"/gm;
+  let m: RegExpExecArray | null;
+  while ((m = localInclude.exec(content)) !== null) {
+    results.push({ specifier: m[1], isRelative: true });
+  }
+  return results;
+}
+
+function resolveCppImport(
+  fromDir: string,
+  raw: RawImport,
+  rootDir: string,
+): string | null {
+  // #include path is relative to the includer's directory FIRST, then
+  // falls back to the project root (the common pattern for monorepo
+  // root-include style).
+  const rootResolved = path.resolve(rootDir);
+  const candidates = [
+    path.resolve(fromDir, raw.specifier),
+    path.resolve(rootDir, raw.specifier),
+  ];
+  for (const c of candidates) {
+    if (!c.startsWith(rootResolved + path.sep) && c !== rootResolved) continue;
+    if (fs.existsSync(c)) return path.relative(rootDir, c);
+  }
+  return null;
+}
+
+// ─── Scala ────────────────────────────────────────────────────────────────
+
+function extractScalaImports(content: string): RawImport[] {
+  const results: RawImport[] = [];
+  // Scala 2 + 3: `import com.example.Foo` / `import com.example.{Foo, Bar}`
+  // We strip the brace clause and take the leading package path — same
+  // resolution strategy as Java (dot-to-slash against rootDir). The
+  // `(?:\w+\.)*\w+` shape (not `[\w.]+`) is deliberate: without it the
+  // greedy character class swallows the trailing dot before `{`, leaving
+  // a malformed `com.example.` specifier that the resolver can't match.
+  const importRe = /^\s*import\s+((?:\w+\.)*\w+)(?:\.\{[^}]+\})?/gm;
+  let m: RegExpExecArray | null;
+  while ((m = importRe.exec(content)) !== null) {
+    results.push({ specifier: m[1], isRelative: false });
+  }
+  return results;
+}
+
+function resolveScalaImport(
+  fromDir: string,
+  raw: RawImport,
+  rootDir: string,
+): string | null {
+  // Scala package → file: com.example.Foo → src/main/scala/com/example/Foo.scala
+  // OR rootDir/com/example/Foo.scala for non-sbt layouts.
+  const asPath = raw.specifier.replace(/\./g, path.sep);
+  const candidates = [
+    path.join(rootDir, 'src', 'main', 'scala', asPath + '.scala'),
+    path.join(rootDir, asPath + '.scala'),
+  ];
+  for (const c of candidates) {
+    if (fs.existsSync(c)) return path.relative(rootDir, c);
+  }
+  // Same-directory fallback (rare in Scala but cheap to try).
+  const className = raw.specifier.split('.').pop() ?? raw.specifier;
+  const local = path.join(fromDir, className + '.scala');
+  if (fs.existsSync(local)) return path.relative(rootDir, local);
+  return null;
+}
+
+// ─── Lua ──────────────────────────────────────────────────────────────────
+
+function extractLuaImports(content: string): RawImport[] {
+  const results: RawImport[] = [];
+  // Lua module loading: `require "foo.bar"` or `require("foo.bar")`.
+  // Both forms resolve to <fromDir>/foo/bar.lua via Lua's package.path
+  // (which the default Lua interpreter sets up rooted in the running
+  // script's directory). Conservative: only emit edges for paths that
+  // resolve to a real file inside rootDir.
+  const requireRe = /\brequire\s*\(?\s*['"]([^'"]+)['"]/g;
+  let m: RegExpExecArray | null;
+  while ((m = requireRe.exec(content)) !== null) {
+    results.push({ specifier: m[1], isRelative: false });
+  }
+  return results;
+}
+
+function resolveLuaImport(
+  fromDir: string,
+  raw: RawImport,
+  rootDir: string,
+): string | null {
+  // dot-to-slash: `require "foo.bar"` → foo/bar.lua
+  const asPath = raw.specifier.replace(/\./g, path.sep);
+  const candidates = [
+    path.join(fromDir, asPath + '.lua'),
+    path.join(rootDir, asPath + '.lua'),
+    // Lua's package convention also supports init.lua as a directory
+    // entry point — analogous to Python's __init__.py.
+    path.join(rootDir, asPath, 'init.lua'),
+  ];
+  for (const c of candidates) {
+    if (fs.existsSync(c)) return path.relative(rootDir, c);
+  }
+  return null;
+}
+
+// ─── Elixir ───────────────────────────────────────────────────────────────
+
+function extractElixirImports(content: string): RawImport[] {
+  const results: RawImport[] = [];
+  // Elixir: `alias My.App.Module` / `import My.App.Module` / `use ...`.
+  // Module names are PascalCase dotted — that distinguishes them from
+  // local function refs. We catch all three keywords since they share
+  // the resolve target (a defmodule in some .ex/.exs file).
+  const re = /^\s*(?:alias|import|use|require)\s+([A-Z][\w.]*)/gm;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(content)) !== null) {
+    results.push({ specifier: m[1], isRelative: false });
+  }
+  return results;
+}
+
+function resolveElixirImport(
+  fromDir: string,
+  raw: RawImport,
+  rootDir: string,
+): string | null {
+  // Convention: My.App.Module → lib/my/app/module.ex (Mix/Phoenix
+  // default). Module path is snake_cased per segment.
+  const segments = raw.specifier.split('.').map(s =>
+    s.replace(/([a-z0-9])([A-Z])/g, '$1_$2').toLowerCase(),
+  );
+  const asPath = segments.join(path.sep);
+  const candidates = [
+    path.join(rootDir, 'lib', asPath + '.ex'),
+    path.join(rootDir, 'lib', asPath + '.exs'),
+    path.join(rootDir, asPath + '.ex'),
+    path.join(rootDir, asPath + '.exs'),
+  ];
+  for (const c of candidates) {
+    if (fs.existsSync(c)) return path.relative(rootDir, c);
+  }
+  // Same-dir fallback for ad-hoc scripts.
+  const tail = segments[segments.length - 1];
+  const local = path.join(fromDir, tail + '.ex');
+  if (fs.existsSync(local)) return path.relative(rootDir, local);
+  return null;
+}
+
+// ─── Zig ──────────────────────────────────────────────────────────────────
+
+function extractZigImports(content: string): RawImport[] {
+  const results: RawImport[] = [];
+  // Zig: `@import("./foo.zig")` — only relative-path imports resolve
+  // to local files. Standard library imports like `@import("std")`
+  // target the Zig toolchain's bundled std and are intentionally
+  // skipped (no local file to point to).
+  const importRe = /@import\s*\(\s*"([^"]+)"\s*\)/g;
+  let m: RegExpExecArray | null;
+  while ((m = importRe.exec(content)) !== null) {
+    const spec = m[1];
+    if (spec.endsWith('.zig')) {
+      // Relative if it starts with `.` OR is a bare file ref (Zig
+      // interprets both as relative to the current file).
+      const isRelative = spec.startsWith('.') || !spec.includes('/');
+      results.push({ specifier: spec, isRelative });
+    }
+  }
+  return results;
+}
+
+function resolveZigImport(
+  fromAbs: string,
+  fromDir: string,
+  raw: RawImport,
+  rootDir: string,
+): string | null {
+  void fromAbs;
+  const rootResolved = path.resolve(rootDir);
+  const candidate = path.resolve(fromDir, raw.specifier);
+  if (!candidate.startsWith(rootResolved + path.sep) && candidate !== rootResolved) {
+    return null;
+  }
+  if (fs.existsSync(candidate)) return path.relative(rootDir, candidate);
   return null;
 }
