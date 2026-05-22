@@ -1,0 +1,226 @@
+# Dependabot configuration for ctxloom.
+#
+# Rationale (post-mortem of PR #203 — closed because it bundled
+# postcss security patches with a vite 5 → 8 major upgrade and a
+# broken lockfile):
+#
+#   The default Dependabot behavior groups major + minor + patch
+#   updates of related packages together. That conflates two
+#   fundamentally different kinds of change:
+#
+#     1. Security patches → almost always safe, should land fast.
+#     2. Major-version bumps → may break builds, require migration
+#        work, and need code/config changes alongside the bump.
+#
+#   When those land in one PR, the security patch gets blocked by
+#   the migration work AND the lockfile may end up partially
+#   regenerated (PR #203's actual failure mode: `npm ci` couldn't
+#   resolve vite 8's new transitive deps because lightningcss +
+#   rolldown were absent from the lockfile).
+#
+# This config splits them deliberately:
+#
+#   - Security updates ship as their own PRs (single dependency,
+#     never grouped with anything else)
+#   - Major updates are ignored for the production-runtime packages
+#     where a major bump needs migration (vite, react, typescript,
+#     vitest, eslint, lance, etc.) — Dependabot can still suggest
+#     them via security alerts; humans drive them through manual
+#     migration PRs.
+#   - Patch + minor updates of dev-only tooling can group safely.
+#
+# Reference: docs.github.com/en/code-security/dependabot/working-with-dependabot/dependabot-options-reference
+# Schema: docs.github.com/en/code-security/dependabot/dependabot-version-updates/configuration-options-for-the-dependabot.yml-file
+
+version: 2
+updates:
+  # ─── Root package (ctxloom-pro CLI + MCP server) ────────────────
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "Europe/Lisbon"
+    # Cap concurrent PRs so a burst of bumps doesn't drown the
+    # review queue (we saw 5+ Dependabot PRs land at once during
+    # v1.7.0 work).
+    open-pull-requests-limit: 5
+    # Security updates ALWAYS get their own PR — never grouped.
+    # This is the lesson from #203 (postcss security patches were
+    # held hostage by an unrelated vite major bump).
+    groups:
+      # Dev-tooling minor/patch bumps can safely group — they don't
+      # touch the production code path. Eslint plugins / type
+      # packages / vitest minor updates etc.
+      dev-tooling:
+        applies-to: version-updates
+        dependency-type: "development"
+        update-types:
+          - "minor"
+          - "patch"
+        # Exclude packages where even a "minor" version can ship
+        # behavior changes that break our test suite (vitest in
+        # particular has shipped subtle assertion changes in
+        # minor releases historically).
+        exclude-patterns:
+          - "vitest"
+          - "@vitest/*"
+          - "eslint"
+    # Runtime packages where a major bump needs migration — never
+    # auto-PR a major. Dependabot will still raise SECURITY alerts
+    # for these via the Security tab if a CVE applies; the human
+    # decides whether to do the migration manually.
+    ignore:
+      # Vite ecosystem (PR #203 tried to push vite 5 → 8 alongside
+      # a postcss security patch and a broken lockfile)
+      - dependency-name: "vite"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "@vitejs/*"
+        update-types: ["version-update:semver-major"]
+      # Test framework — minor bumps occasionally ship breaking
+      # assertion changes that look like real test failures
+      - dependency-name: "vitest"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "@vitest/*"
+        update-types: ["version-update:semver-major"]
+      # TypeScript major bumps can reshape strictness — usually
+      # we want to opt into a major TS bump deliberately
+      - dependency-name: "typescript"
+        update-types: ["version-update:semver-major"]
+      # Build tooling
+      - dependency-name: "tsx"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "tsup"
+        update-types: ["version-update:semver-major"]
+      # Vector DB — schema changes possible across majors
+      - dependency-name: "@lancedb/lancedb"
+        update-types: ["version-update:semver-major"]
+      # ONNX runtime — model compat across versions
+      - dependency-name: "onnxruntime-node"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "@huggingface/transformers"
+        update-types: ["version-update:semver-major"]
+      # Tree-sitter (any major reshapes the WASM API)
+      - dependency-name: "web-tree-sitter"
+        update-types: ["version-update:semver-major"]
+      # File watcher — chokidar 4 reshaped its API
+      - dependency-name: "chokidar"
+        update-types: ["version-update:semver-major"]
+      # Eslint — major versions ship config-shape changes
+      - dependency-name: "eslint"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "@typescript-eslint/*"
+        update-types: ["version-update:semver-major"]
+    # Commit message hygiene — mirrors how we phrase our own
+    # commits so the changelog reads consistently.
+    commit-message:
+      prefix: "chore(deps)"
+      prefix-development: "chore(dev-deps)"
+      include: "scope"
+    # Add a marker label so the review queue can filter
+    # Dependabot PRs apart from our own work.
+    labels:
+      - "dependencies"
+      - "automated"
+
+  # ─── Dashboard app (vite + postcss + frontend toolchain) ────────
+  # Same policy as root, separate ecosystem so a dashboard-only
+  # bump doesn't accidentally touch the root lockfile.
+  - package-ecosystem: "npm"
+    directory: "/apps/dashboard"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "Europe/Lisbon"
+    open-pull-requests-limit: 3
+    groups:
+      dashboard-dev-tooling:
+        applies-to: version-updates
+        dependency-type: "development"
+        update-types:
+          - "minor"
+          - "patch"
+    ignore:
+      # See root config — same rationale for vite/typescript/etc.
+      - dependency-name: "vite"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "@vitejs/*"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "typescript"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "react"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "react-dom"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "@types/react"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "@types/react-dom"
+        update-types: ["version-update:semver-major"]
+    commit-message:
+      prefix: "chore(deps)"
+      prefix-development: "chore(dev-deps)"
+      include: "scope"
+    labels:
+      - "dependencies"
+      - "automated"
+      - "dashboard"
+
+  # ─── PR-bot app (GitHub App for risk-scored PR reviews) ─────────
+  - package-ecosystem: "npm"
+    directory: "/apps/pr-bot"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "Europe/Lisbon"
+    open-pull-requests-limit: 3
+    groups:
+      pr-bot-dev-tooling:
+        applies-to: version-updates
+        dependency-type: "development"
+        update-types:
+          - "minor"
+          - "patch"
+    ignore:
+      - dependency-name: "typescript"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "vitest"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "@vitest/*"
+        update-types: ["version-update:semver-major"]
+      # Octokit majors reshape the GitHub API client surface —
+      # never auto-bump
+      - dependency-name: "@octokit/*"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "octokit"
+        update-types: ["version-update:semver-major"]
+    commit-message:
+      prefix: "chore(deps)"
+      prefix-development: "chore(dev-deps)"
+      include: "scope"
+    labels:
+      - "dependencies"
+      - "automated"
+      - "pr-bot"
+
+  # ─── GitHub Actions workflows ───────────────────────────────────
+  # Keep actions/checkout, actions/setup-node, etc. fresh.
+  # These rarely break and the security exposure is real (workflow
+  # actions can leak secrets), so weekly is the right cadence.
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "Europe/Lisbon"
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "chore(ci)"
+      include: "scope"
+    labels:
+      - "dependencies"
+      - "ci"
+      - "automated"
