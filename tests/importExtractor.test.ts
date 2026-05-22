@@ -323,4 +323,176 @@ describe('resolveImport()', () => {
       expect(result).toBe(path.join('handlers', 'mod.rs'));
     });
   });
+
+  // ─── v1.7.0 languages: C/C++, Scala, Lua, Elixir, Zig ───────────────────
+
+  describe('C/C++ (v1.7.0)', () => {
+    let tempDir: string;
+    beforeEach(() => { tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cpp-')); });
+    afterEach(() => { fs.rmSync(tempDir, { recursive: true, force: true }); });
+
+    it('extracts only local "..." includes (not <system>)', () => {
+      const src = `#include <stdio.h>\n#include "foo.h"\n#include "bar/baz.hpp"\n`;
+      const out = extractImports('main.cpp', src);
+      expect(out).toHaveLength(2);
+      expect(out.map(r => r.specifier)).toEqual(['foo.h', 'bar/baz.hpp']);
+    });
+
+    it('resolves include relative to the includer first', () => {
+      fs.mkdirSync(path.join(tempDir, 'src'), { recursive: true });
+      fs.writeFileSync(path.join(tempDir, 'src', 'foo.h'), '');
+      fs.writeFileSync(path.join(tempDir, 'src', 'main.cpp'), '');
+      const result = resolveImport(
+        path.join(tempDir, 'src', 'main.cpp'),
+        { specifier: 'foo.h', isRelative: true },
+        tempDir,
+      );
+      expect(result).toBe(path.join('src', 'foo.h'));
+    });
+
+    it('falls back to rootDir for root-include layouts', () => {
+      fs.mkdirSync(path.join(tempDir, 'include'), { recursive: true });
+      fs.writeFileSync(path.join(tempDir, 'include', 'lib.h'), '');
+      fs.writeFileSync(path.join(tempDir, 'src.cpp'), '');
+      const result = resolveImport(
+        path.join(tempDir, 'src.cpp'),
+        { specifier: 'include/lib.h', isRelative: true },
+        tempDir,
+      );
+      expect(result).toBe(path.join('include', 'lib.h'));
+    });
+  });
+
+  describe('Scala (v1.7.0)', () => {
+    let tempDir: string;
+    beforeEach(() => { tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'scala-')); });
+    afterEach(() => { fs.rmSync(tempDir, { recursive: true, force: true }); });
+
+    it('extracts import com.example.Foo', () => {
+      const out = extractImports('A.scala', 'import com.example.Foo\nimport com.x.Bar\n');
+      expect(out.map(r => r.specifier)).toEqual(['com.example.Foo', 'com.x.Bar']);
+    });
+
+    it('extracts the leading package from brace-grouped imports', () => {
+      const out = extractImports('A.scala', 'import com.example.{Foo, Bar, Baz}\n');
+      expect(out[0].specifier).toBe('com.example');
+    });
+
+    it('resolves to sbt src/main/scala layout', () => {
+      const deep = path.join(tempDir, 'src', 'main', 'scala', 'com', 'example');
+      fs.mkdirSync(deep, { recursive: true });
+      fs.writeFileSync(path.join(deep, 'Foo.scala'), '');
+      fs.writeFileSync(path.join(tempDir, 'caller.scala'), '');
+      const result = resolveImport(
+        path.join(tempDir, 'caller.scala'),
+        { specifier: 'com.example.Foo', isRelative: false },
+        tempDir,
+      );
+      expect(result).toBe(path.join('src', 'main', 'scala', 'com', 'example', 'Foo.scala'));
+    });
+  });
+
+  describe('Lua (v1.7.0)', () => {
+    let tempDir: string;
+    beforeEach(() => { tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'lua-')); });
+    afterEach(() => { fs.rmSync(tempDir, { recursive: true, force: true }); });
+
+    it('extracts both require styles', () => {
+      const out = extractImports('a.lua', `local x = require "foo.bar"\nlocal y = require("baz")\n`);
+      expect(out.map(r => r.specifier)).toEqual(['foo.bar', 'baz']);
+    });
+
+    it('resolves dot-separated path to nested .lua file', () => {
+      fs.mkdirSync(path.join(tempDir, 'foo'), { recursive: true });
+      fs.writeFileSync(path.join(tempDir, 'foo', 'bar.lua'), '');
+      fs.writeFileSync(path.join(tempDir, 'main.lua'), '');
+      const result = resolveImport(
+        path.join(tempDir, 'main.lua'),
+        { specifier: 'foo.bar', isRelative: false },
+        tempDir,
+      );
+      expect(result).toBe(path.join('foo', 'bar.lua'));
+    });
+
+    it('resolves to init.lua for directory-entry modules', () => {
+      fs.mkdirSync(path.join(tempDir, 'mymod'), { recursive: true });
+      fs.writeFileSync(path.join(tempDir, 'mymod', 'init.lua'), '');
+      fs.writeFileSync(path.join(tempDir, 'main.lua'), '');
+      const result = resolveImport(
+        path.join(tempDir, 'main.lua'),
+        { specifier: 'mymod', isRelative: false },
+        tempDir,
+      );
+      expect(result).toBe(path.join('mymod', 'init.lua'));
+    });
+  });
+
+  describe('Elixir (v1.7.0)', () => {
+    let tempDir: string;
+    beforeEach(() => { tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ex-')); });
+    afterEach(() => { fs.rmSync(tempDir, { recursive: true, force: true }); });
+
+    it('extracts alias/import/use/require keywords', () => {
+      const out = extractImports('a.ex', `
+alias My.App.Foo
+import My.App.Bar
+use My.App.Baz
+require My.App.Qux
+`);
+      expect(out.map(r => r.specifier)).toEqual([
+        'My.App.Foo', 'My.App.Bar', 'My.App.Baz', 'My.App.Qux',
+      ]);
+    });
+
+    it('resolves PascalCase modules to snake_case lib/ paths', () => {
+      // My.App.MyMod → lib/my/app/my_mod.ex
+      const deep = path.join(tempDir, 'lib', 'my', 'app');
+      fs.mkdirSync(deep, { recursive: true });
+      fs.writeFileSync(path.join(deep, 'my_mod.ex'), '');
+      fs.writeFileSync(path.join(tempDir, 'caller.ex'), '');
+      const result = resolveImport(
+        path.join(tempDir, 'caller.ex'),
+        { specifier: 'My.App.MyMod', isRelative: false },
+        tempDir,
+      );
+      expect(result).toBe(path.join('lib', 'my', 'app', 'my_mod.ex'));
+    });
+  });
+
+  describe('Zig (v1.7.0)', () => {
+    let tempDir: string;
+    beforeEach(() => { tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'zig-')); });
+    afterEach(() => { fs.rmSync(tempDir, { recursive: true, force: true }); });
+
+    it('extracts only .zig imports (skips std/builtin)', () => {
+      const src = `
+const std = @import("std");
+const foo = @import("./foo.zig");
+const bar = @import("bar.zig");
+`;
+      const out = extractImports('a.zig', src);
+      expect(out.map(r => r.specifier)).toEqual(['./foo.zig', 'bar.zig']);
+    });
+
+    it('resolves relative @import to sibling .zig file', () => {
+      fs.writeFileSync(path.join(tempDir, 'foo.zig'), '');
+      fs.writeFileSync(path.join(tempDir, 'main.zig'), '');
+      const result = resolveImport(
+        path.join(tempDir, 'main.zig'),
+        { specifier: './foo.zig', isRelative: true },
+        tempDir,
+      );
+      expect(result).toBe('foo.zig');
+    });
+
+    it('refuses to escape the project root (path-traversal guard)', () => {
+      fs.writeFileSync(path.join(tempDir, 'main.zig'), '');
+      const result = resolveImport(
+        path.join(tempDir, 'main.zig'),
+        { specifier: '../../../etc/passwd.zig', isRelative: true },
+        tempDir,
+      );
+      expect(result).toBeNull();
+    });
+  });
 });
