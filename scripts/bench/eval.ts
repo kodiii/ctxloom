@@ -31,7 +31,9 @@ import { ensureWorktree } from './repoCheckout.js';
 import { indexRepo, blastRadius, buildOverlay, buildVectorStore } from './predict.js';
 import { computeMetrics, computeGraphReachability, avg } from './metrics.js';
 import { auditSymbolDeclarations, auditImportEdges } from './graph-correctness.js';
+import { measurePRTokens } from './tokens.js';
 import { DependencyGraph } from '@ctxloom/core';
+import { Skeletonizer } from '../../packages/core/src/ast/Skeletonizer.js';
 import { writeReport } from './report.js';
 import type { BenchReport, RepoReport, CorpusEntry, Metrics, TokenMetrics, GraphCorrectnessMetrics } from './types.js';
 
@@ -216,12 +218,42 @@ async function runRepo(entry: CorpusEntry): Promise<RepoReport> {
       `${metrics.graphReachable} reachable)`,
     );
 
-    // Token metrics placeholder — TODO wire scripts/bench/tokens.ts
+    // Token reduction: compare "naive re-read every GT file + 1-hop
+    // imports" against "ctxloom skeletons for predicted files". Same
+    // token estimator the production budget surface uses (chars/4)
+    // so reported numbers line up with end-user budget telemetry, not
+    // a synthetic bench tokenizer.
+    let naiveTokens = 0;
+    let graphTokens = 0;
+    let reduction = 0;
+    if (loaded) {
+      const skeletonizer = new Skeletonizer();
+      await skeletonizer.init();
+      try {
+        const tokenReport = await measurePRTokens(
+          worktree,
+          gt.groundTruthFiles,
+          prediction.predictedFiles,
+          auditGraph,
+          skeletonizer,
+        );
+        naiveTokens = tokenReport.naiveTokens;
+        graphTokens = tokenReport.graphTokens;
+        reduction = tokenReport.reduction;
+        console.error(
+          `    token reduction: ${reduction.toFixed(1)}× ` +
+          `(${naiveTokens.toLocaleString()} naive → ${graphTokens.toLocaleString()} graph)`,
+        );
+      } catch (err) {
+        console.error(`    token measurement failed: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }
+
     perPr.push({
       ...metrics,
-      naiveTokens: 0,
-      graphTokens: 0,
-      reduction: 0,
+      naiveTokens,
+      graphTokens,
+      reduction,
       symbolCoverage,
       astDeclared,
       graphIndexed,
