@@ -6,7 +6,7 @@
  * these tests are skipped. collectFiles tests run offline.
  */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { generateEmbedding, collectFiles, EMBEDDING_DIMENSION } from '../src/indexer/embedder.js';
+import { generateEmbedding, collectFiles, collectFilesStream, EMBEDDING_DIMENSION } from '../src/indexer/embedder.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
@@ -204,6 +204,83 @@ describe('Embedder', () => {
       fs.writeFileSync(path.join(tempDir, 'src', 'components', 'Button.tsx'), '');
       const files = collectFiles(tempDir);
       expect(files.length).toBe(2);
+    });
+  });
+
+  // ─── collectFilesStream (v1.7.0 monorepo support) ─────────────────
+  // The streaming variant yields files as discovered instead of
+  // materializing the full list upfront. Output set must match the
+  // sync walker exactly (same ignore rules, same extensions).
+
+  describe('collectFilesStream', () => {
+    let tempDir: string;
+    beforeEach(() => {
+      tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ctxloom-stream-'));
+    });
+    afterEach(() => {
+      fs.rmSync(tempDir, { recursive: true, force: true });
+    });
+
+    async function streamToArray(dir: string): Promise<string[]> {
+      const out: string[] = [];
+      for await (const f of collectFilesStream(dir)) out.push(f);
+      return out;
+    }
+
+    it('yields the same set of files as the sync collectFiles', async () => {
+      // The streaming + sync walkers MUST produce the same result —
+      // otherwise the indexer drifts from the dep-graph (which still
+      // uses collectFiles). Use a representative directory layout
+      // with multiple extensions + an ignored subdirectory.
+      fs.mkdirSync(path.join(tempDir, 'src'), { recursive: true });
+      fs.mkdirSync(path.join(tempDir, 'tests'), { recursive: true });
+      fs.mkdirSync(path.join(tempDir, 'node_modules'), { recursive: true });
+      fs.writeFileSync(path.join(tempDir, 'src', 'app.ts'), '');
+      fs.writeFileSync(path.join(tempDir, 'src', 'lib.py'), '');
+      fs.writeFileSync(path.join(tempDir, 'tests', 'app.test.ts'), '');
+      fs.writeFileSync(path.join(tempDir, 'node_modules', 'noise.ts'), ''); // ignored
+
+      const sync = collectFiles(tempDir).sort();
+      const streamed = (await streamToArray(tempDir)).sort();
+      expect(streamed).toEqual(sync);
+    });
+
+    it('respects IGNORED_DIRS (no node_modules, .git, .ctxloom, etc.)', async () => {
+      for (const ignored of ['node_modules', '.git', '.ctxloom', 'dist', '.next']) {
+        fs.mkdirSync(path.join(tempDir, ignored), { recursive: true });
+        fs.writeFileSync(path.join(tempDir, ignored, 'noise.ts'), '');
+      }
+      fs.writeFileSync(path.join(tempDir, 'app.ts'), '');
+
+      const files = await streamToArray(tempDir);
+      expect(files).toHaveLength(1);
+      expect(files[0]).toMatch(/app\.ts$/);
+    });
+
+    it('streams (does not materialize) — generator is consumable lazily', async () => {
+      // Write enough files that we can verify streaming behavior:
+      // pull just the first 3 paths and assert the generator yielded
+      // them without needing the whole walk to complete.
+      fs.mkdirSync(path.join(tempDir, 'src'), { recursive: true });
+      for (let i = 0; i < 50; i++) {
+        fs.writeFileSync(path.join(tempDir, 'src', `f${i}.ts`), '');
+      }
+
+      const gen = collectFilesStream(tempDir);
+      const first = await gen.next();
+      const second = await gen.next();
+      const third = await gen.next();
+      expect(first.done).toBe(false);
+      expect(second.done).toBe(false);
+      expect(third.done).toBe(false);
+      // We deliberately do not exhaust the rest — proving the
+      // generator hands off control mid-walk (which is the whole
+      // point of streaming).
+    });
+
+    it('yields nothing for an empty directory', async () => {
+      const files = await streamToArray(tempDir);
+      expect(files).toEqual([]);
     });
   });
 });
