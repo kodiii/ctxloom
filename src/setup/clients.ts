@@ -116,9 +116,16 @@ export const MCP_CLIENTS: MCPClient[] = [
     id: 'cursor',
     name: 'Cursor',
     description: 'Cursor AI code editor',
+    // Vendor docs (Cursor team, verified 2026-05) list TWO canonical paths:
+    //   - `<repo>/.cursor/mcp.json` (project-scoped — the documented default)
+    //   - `~/.cursor/mcp.json`       (user-scoped, applies to every project)
+    // The XDG-style paths in the old list were speculative; Cursor never
+    // shipped them. Project-root scope goes FIRST so a per-project install
+    // matches the canonical workflow before we touch the user-wide config.
     configPaths: [
-      path.join(xdgConfig(), 'Cursor', 'User', 'globalStorage', 'cursor-mcp', 'mcp.json'),
+      path.join(process.cwd(), '.cursor', 'mcp.json'),
       path.join(HOME, '.cursor', 'mcp.json'),
+      path.join(xdgConfig(), 'Cursor', 'User', 'globalStorage', 'cursor-mcp', 'mcp.json'),
       path.join(xdgConfig(), 'Cursor', 'mcp.json'),
     ],
     cliBinaries: ['cursor'],
@@ -281,6 +288,81 @@ export const MCP_CLIENTS: MCPClient[] = [
     appBundles: ['com.jetbrains.intellij'],
     usesMcpServersFormat: true,
     serversPath: 'mcpServers',
+  },
+
+  // ─── Zed ────────────────────────────────────────────────
+  // Zed's MCP config lives under the main settings.json, NOT a
+  // dedicated mcp.json. Critical wrinkle: the key is `context_servers`,
+  // not the conventional `mcpServers` — silently ignored otherwise.
+  // Verified against zed.dev/docs/ai/mcp (2026-05).
+  {
+    id: 'zed',
+    name: 'Zed',
+    description: 'Zed high-performance code editor',
+    configPaths: [
+      path.join(xdgConfig(), 'zed', 'settings.json'),
+      path.join(HOME, '.config', 'zed', 'settings.json'),
+    ],
+    cliBinaries: ['zed'],
+    appBundles: ['dev.zed.Zed', 'dev.zed.Zed-Preview'],
+    usesMcpServersFormat: true,
+    serversPath: 'context_servers',
+  },
+
+  // ─── Gemini CLI ─────────────────────────────────────────
+  // Google's Gemini CLI tool. Workspace config wins over user config
+  // when both exist; we list the workspace path first so a project
+  // install lands where the user expects. Schema is standard
+  // `mcpServers` per google-gemini/gemini-cli docs/cli/settings.md.
+  {
+    id: 'gemini-cli',
+    name: 'Gemini CLI',
+    description: 'Google Gemini command-line AI agent',
+    configPaths: [
+      path.join(process.cwd(), '.gemini', 'settings.json'),
+      path.join(HOME, '.gemini', 'settings.json'),
+    ],
+    cliBinaries: ['gemini'],
+    appBundles: [],
+    usesMcpServersFormat: true,
+    serversPath: 'mcpServers',
+  },
+
+  // ─── Kiro ───────────────────────────────────────────────
+  // Kiro IDE (kiro.dev). Both workspace + user configs are honored;
+  // workspace overrides user per Kiro's docs. Schema is standard
+  // `mcpServers`.
+  {
+    id: 'kiro',
+    name: 'Kiro',
+    description: 'Kiro AI-first IDE',
+    configPaths: [
+      path.join(process.cwd(), '.kiro', 'settings', 'mcp.json'),
+      path.join(HOME, '.kiro', 'settings', 'mcp.json'),
+    ],
+    cliBinaries: ['kiro'],
+    appBundles: ['dev.kiro.Kiro'],
+    usesMcpServersFormat: true,
+    serversPath: 'mcpServers',
+  },
+
+  // ─── OpenCode ───────────────────────────────────────────
+  // Project-root configured. Critical wrinkle: the key is `mcp`
+  // (not `mcpServers`) — code-review-graph's PLATFORMS dict had
+  // this wrong; verified against opencode.ai/docs/mcp-servers.
+  // Supports both .json and .jsonc extensions.
+  {
+    id: 'opencode',
+    name: 'OpenCode',
+    description: 'OpenCode agentic coding tool',
+    configPaths: [
+      path.join(process.cwd(), 'opencode.json'),
+      path.join(process.cwd(), 'opencode.jsonc'),
+    ],
+    cliBinaries: ['opencode'],
+    appBundles: [],
+    usesMcpServersFormat: true,
+    serversPath: 'mcp',
   },
 ];
 
