@@ -5,7 +5,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
-import { MCP_CLIENTS, detectInstalledClients, addCtxloomToConfig, removeCtxloomFromConfig, yamlEscape, type DetectedClient } from '../src/setup/clients.js';
+import { MCP_CLIENTS, detectInstalledClients, addCtxloomToConfig, removeCtxloomFromConfig, yamlEscape, tomlString, type DetectedClient } from '../src/setup/clients.js';
 
 const HOME = os.homedir();
 
@@ -414,5 +414,205 @@ describe('Continue per-server YAML writer', () => {
     };
     const result = addCtxloomToConfig(detected);
     expect(result.message).toMatch(/already configured/);
+  });
+});
+
+// ─── v1.7.0: Codex TOML (shared-file customWriter) ─────────────────
+// Codex's config.toml is shared with other settings (model, auth,
+// sandbox). Unlike Continue's per-server YAML, we cannot just write
+// the whole file — we must surgically add/update only the
+// [mcp_servers.ctxloom] block while preserving everything else.
+
+describe('tomlString', () => {
+  it('wraps every string in double quotes (no bare form)', () => {
+    expect(tomlString('ctxloom')).toBe('"ctxloom"');
+    expect(tomlString('npx')).toBe('"npx"');
+  });
+
+  it('escapes backslashes and double-quotes', () => {
+    expect(tomlString('C:\\path')).toBe('"C:\\\\path"');
+    expect(tomlString('say "hi"')).toBe('"say \\"hi\\""');
+  });
+
+  it('escapes control characters', () => {
+    expect(tomlString('line1\nline2')).toBe('"line1\\nline2"');
+    expect(tomlString('col1\tcol2')).toBe('"col1\\tcol2"');
+  });
+});
+
+describe('Codex TOML writer', () => {
+  let tempDir: string;
+  let originalCwd: string;
+  const codex = MCP_CLIENTS.find((c) => c.id === 'codex')!;
+
+  beforeEach(() => {
+    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'codex-toml-'));
+    originalCwd = process.cwd();
+    process.chdir(tempDir);
+  });
+
+  afterEach(() => {
+    process.chdir(originalCwd);
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  });
+
+  function withCodex(targetPath: string): DetectedClient {
+    return {
+      client: { ...codex, configPaths: [targetPath, ...codex.configPaths.slice(1)] },
+      configPath: targetPath,
+      configExists: fs.existsSync(targetPath),
+      alreadyConfigured: false,
+    };
+  }
+
+  it('writes the corrected TOML path (NOT the old JSON path)', () => {
+    // The OLD path was ~/.codex/mcp.json — silently failed on current
+    // Codex. New canonical path: .codex/config.toml (workspace-scoped).
+    expect(codex.configPaths[0]).toMatch(/\.codex.*config\.toml$/);
+    // The old JSON path is still detected (legacy users with that file)
+    // but it's NOT configPaths[0] — we never write to it.
+    expect(codex.configPaths.some((p) => p.endsWith('mcp.json'))).toBe(true);
+    expect(codex.configPaths[0]).not.toMatch(/mcp\.json$/);
+  });
+
+  it('uses the snake_case `mcp_servers` schema key (NOT `mcpServers`)', () => {
+    expect(codex.serversPath).toBe('mcp_servers');
+  });
+
+  it('creates a fresh config.toml with the ctxloom block when file missing', () => {
+    const target = path.join(tempDir, '.codex', 'config.toml');
+    addCtxloomToConfig(withCodex(target));
+    const content = fs.readFileSync(target, 'utf-8');
+    expect(content).toContain('[mcp_servers.ctxloom]');
+    expect(content).toMatch(/^command = "/m);
+    expect(content).toMatch(/^args = \[/m);
+  });
+
+  it('PRESERVES existing TOML content when appending the ctxloom block', () => {
+    // Simulate a real user's config.toml: model selection, auth, and
+    // some other MCP server already registered. Pre-fix our writer
+    // would (a) write the wrong path AND (b) the proposed writer must
+    // not clobber unrelated entries.
+    const target = path.join(tempDir, '.codex', 'config.toml');
+    fs.mkdirSync(path.dirname(target), { recursive: true });
+    const existing = [
+      'model = "gpt-5"',
+      '',
+      '[auth]',
+      'provider = "openai"',
+      '',
+      '[mcp_servers.other-tool]',
+      'command = "other"',
+      'args = ["--flag"]',
+      '',
+    ].join('\n');
+    fs.writeFileSync(target, existing);
+
+    addCtxloomToConfig(withCodex(target));
+    const after = fs.readFileSync(target, 'utf-8');
+
+    // Every line of the pre-existing config must still be present.
+    expect(after).toContain('model = "gpt-5"');
+    expect(after).toContain('[auth]');
+    expect(after).toContain('provider = "openai"');
+    expect(after).toContain('[mcp_servers.other-tool]');
+    expect(after).toContain('command = "other"');
+    // AND our entry was appended.
+    expect(after).toContain('[mcp_servers.ctxloom]');
+  });
+
+  it('replaces (not duplicates) an existing [mcp_servers.ctxloom] block on re-add', () => {
+    const target = path.join(tempDir, '.codex', 'config.toml');
+    fs.mkdirSync(path.dirname(target), { recursive: true });
+    fs.writeFileSync(target, [
+      '[mcp_servers.ctxloom]',
+      'command = "stale-old-command"',
+      'args = []',
+      '',
+    ].join('\n'));
+
+    addCtxloomToConfig(withCodex(target));
+    const after = fs.readFileSync(target, 'utf-8');
+
+    // Stale block must be gone, not appended-after.
+    expect(after).not.toContain('stale-old-command');
+    // Only ONE [mcp_servers.ctxloom] TABLE HEADER should exist
+    // (line-anchored — the writer's own comment includes the literal
+    // string in prose, so a non-anchored match would false-positive).
+    const headerMatches = after.match(/^\[mcp_servers\.ctxloom\]$/gm) ?? [];
+    expect(headerMatches).toHaveLength(1);
+  });
+
+  it('customInstalledCheck detects ctxloom by TOML block header (not file existence)', () => {
+    const target = path.join(tempDir, '.codex', 'config.toml');
+    fs.mkdirSync(path.dirname(target), { recursive: true });
+    // File exists but ONLY contains unrelated Codex config — must NOT
+    // be reported as "already configured" or we'd silently skip install.
+    fs.writeFileSync(target, 'model = "gpt-5"\n[auth]\nprovider = "openai"\n');
+    expect(codex.customInstalledCheck!(target)).toBe(false);
+
+    // Add our block — now the check should report true.
+    fs.appendFileSync(target, '\n[mcp_servers.ctxloom]\ncommand = "ctxloom"\nargs = []\n');
+    expect(codex.customInstalledCheck!(target)).toBe(true);
+  });
+
+  it('customRemove surgically removes only the ctxloom block', () => {
+    const original = [
+      'model = "gpt-5"',
+      '',
+      '# ctxloom — added by `ctxloom setup`. Safe to edit; the',
+      '# installer only ever modifies the [mcp_servers.ctxloom]',
+      '# block and never touches the rest of this file.',
+      '[mcp_servers.ctxloom]',
+      'command = "ctxloom"',
+      'args = []',
+      '',
+      '[mcp_servers.other-tool]',
+      'command = "other"',
+      '',
+    ].join('\n');
+    const after = codex.customRemove!(original);
+    expect(typeof after).toBe('string');
+    expect(after).not.toContain('mcp_servers.ctxloom');
+    expect(after).toContain('model = "gpt-5"');
+    expect(after).toContain('[mcp_servers.other-tool]');
+  });
+
+  it('customRemove returns null when the file becomes empty after removal', () => {
+    // If config.toml only ever had our block, removing it leaves an
+    // empty file — better to delete than leave a zero-byte artifact.
+    const onlyOurs = [
+      '[mcp_servers.ctxloom]',
+      'command = "ctxloom"',
+      'args = []',
+      '',
+    ].join('\n');
+    expect(codex.customRemove!(onlyOurs)).toBeNull();
+  });
+
+  it('full add → remove → file is deleted (when our block was the only content)', () => {
+    const target = path.join(tempDir, '.codex', 'config.toml');
+    const det = withCodex(target);
+    addCtxloomToConfig(det);
+    expect(fs.existsSync(target)).toBe(true);
+
+    const removeResult = removeCtxloomFromConfig({ ...det, configExists: true, alreadyConfigured: true });
+    expect(removeResult.success).toBe(true);
+    expect(fs.existsSync(target)).toBe(false);
+  });
+
+  it('full add (on existing config) → remove → file kept, other content preserved', () => {
+    const target = path.join(tempDir, '.codex', 'config.toml');
+    fs.mkdirSync(path.dirname(target), { recursive: true });
+    fs.writeFileSync(target, 'model = "gpt-5"\n');
+
+    const det = withCodex(target);
+    addCtxloomToConfig({ ...det, configExists: true });
+    expect(fs.readFileSync(target, 'utf-8')).toContain('[mcp_servers.ctxloom]');
+
+    removeCtxloomFromConfig({ ...det, configExists: true, alreadyConfigured: true });
+    const after = fs.readFileSync(target, 'utf-8');
+    expect(after).toContain('model = "gpt-5"');
+    expect(after).not.toContain('mcp_servers.ctxloom');
   });
 });

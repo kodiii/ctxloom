@@ -48,6 +48,29 @@ export const CTXLOOM_SERVER: MCPServerEntry = {
 };
 
 /**
+ * Quote a string for safe TOML scalar emission. The Codex config.toml
+ * writer needs to render only string-valued fields (command, env
+ * values) — TOML basic-strings wrap in double quotes and escape
+ * `\`, `"`, and the standard control chars. We never need multi-line
+ * or literal strings for our fixed-shape MCP server block.
+ *
+ * Exported only for tests — the symbol is internal to the TOML writer.
+ */
+export function tomlString(s: string): string {
+  // TOML basic-string escapes: backslash, double-quote, newline/tab.
+  // Other control chars get \uXXXX (rare in MCP configs but cheap).
+  const escaped = s
+    .replace(/\\/g, '\\\\')
+    .replace(/"/g, '\\"')
+    .replace(/\n/g, '\\n')
+    .replace(/\r/g, '\\r')
+    .replace(/\t/g, '\\t')
+    // eslint-disable-next-line no-control-regex
+    .replace(/[\x00-\x1f\x7f]/g, (c) => `\\u${c.charCodeAt(0).toString(16).padStart(4, '0')}`);
+  return `"${escaped}"`;
+}
+
+/**
  * Quote a string for safe YAML scalar emission. We deliberately avoid
  * pulling in a YAML library — the only emit case is the per-server
  * Continue file with a fixed shape (command string + args array of
@@ -101,17 +124,45 @@ export interface MCPClient {
    * Override for clients whose config layout doesn't fit the "merge a
    * server entry into a JSON file" model (Continue's per-server YAML
    * files, Codex's TOML, etc.). When defined:
-   *   - addCtxloomToConfig() writes `customWriter(targetPath, entry)`
-   *     verbatim to `targetPath` instead of doing a JSON merge.
-   *   - The "already configured" check uses fs.existsSync against the
-   *     target path — these formats are one file per server, so file
-   *     presence IS the configuration signal.
+   *   - addCtxloomToConfig() reads existing content (or null if no
+   *     file), calls customWriter, and writes the returned string
+   *     back to `targetPath`.
+   *   - The "already configured" check uses customInstalledCheck if
+   *     provided, else falls back to fs.existsSync against the target.
    *
    * `targetPath` is the FIRST entry in `configPaths` — by convention
    * the workspace-scoped path so the install lands in the project the
    * user is in. Each client documents its own `configPaths[0]`.
+   *
+   * `existingContent` is the file's current contents (or null if no
+   * file exists). Single-purpose hosts like Continue ignore it (each
+   * file == one server entry, no merge); shared-file hosts like Codex
+   * (config.toml may contain model/auth settings too) read it,
+   * append-or-update their own block, and return the merged result.
    */
-  customWriter?: (targetPath: string, entry: MCPServerEntry) => string;
+  customWriter?: (
+    targetPath: string,
+    entry: MCPServerEntry,
+    existingContent: string | null,
+  ) => string;
+  /**
+   * Override for "is ctxloom already in this file?" — defaults to
+   * fs.existsSync(configPaths[0]). Required for shared-file customWriter
+   * hosts (Codex TOML) where the file existing doesn't mean ctxloom
+   * is in it.
+   */
+  customInstalledCheck?: (targetPath: string) => boolean;
+  /**
+   * Override for uninstall on customWriter hosts. Receives the current
+   * file content and returns:
+   *   - a string → write this content (block removed, file kept)
+   *   - null     → delete the file entirely
+   *
+   * Defaults to "delete the file" (Continue's per-server YAML case —
+   * the whole file IS ctxloom's entry). Shared-file hosts must define
+   * this to surgically remove just their block.
+   */
+  customRemove?: (existingContent: string) => string | null;
 }
 
 export const MCP_CLIENTS: MCPClient[] = [
@@ -257,7 +308,11 @@ export const MCP_CLIENTS: MCPClient[] = [
     appBundles: [],
     usesMcpServersFormat: false,
     serversPath: 'mcpServers',
-    customWriter: (_targetPath, entry) => {
+    customWriter: (_targetPath, entry, _existingContent) => {
+      // Continue ignores existingContent — each YAML file is single-
+      // purpose (one MCP server per file), so we always render the
+      // whole thing fresh. The new signature is shared with shared-file
+      // writers like Codex.
       // Each YAML file has its own root. Continue's loader treats each
       // file as a single-element mcpServers array. We never need to
       // merge with existing content — if the file exists, it's ours
@@ -299,18 +354,106 @@ export const MCP_CLIENTS: MCPClient[] = [
   },
 
   // ─── Codex CLI (OpenAI) ─────────────────────────────────
+  // v1.7.0 fix: current Codex (2026+) uses **TOML at config.toml**,
+  // NOT JSON at mcp.json. The schema key is `mcp_servers` (snake_case
+  // TOML), NOT `mcpServers`. Writing JSON to the old `.codex/mcp.json`
+  // path silently fails on current Codex — the file is never read.
+  // Verified against developers.openai.com/codex/config-reference
+  // (2026-05).
+  //
+  // config.toml is SHARED with other Codex settings (model selection,
+  // auth, sandbox prefs), so the writer reads existing content,
+  // appends/updates ONLY the `[mcp_servers.ctxloom]` block, and
+  // preserves everything else. We deliberately avoid pulling in a
+  // TOML parser library — the only mutation is a single named-table
+  // block, which append-or-replace by string match handles safely.
   {
     id: 'codex',
     name: 'Codex CLI',
     description: 'OpenAI Codex CLI agent',
+    // Workspace path FIRST (canonical per Codex docs); user-scoped
+    // path second (preserves detection on machines with Codex
+    // installed but no project-local config yet).
     configPaths: [
+      path.join(process.cwd(), '.codex', 'config.toml'),
+      path.join(HOME, '.codex', 'config.toml'),
+      // Legacy detection only — won't be written to. Kept so users
+      // who created these in earlier ctxloom versions still get
+      // detected (they need to migrate, but at least we surface them).
       path.join(HOME, '.codex', 'mcp.json'),
       path.join(xdgConfig(), 'codex', 'mcp.json'),
     ],
     cliBinaries: ['codex'],
     appBundles: [],
-    usesMcpServersFormat: true,
-    serversPath: 'mcpServers',
+    usesMcpServersFormat: false,
+    serversPath: 'mcp_servers',
+    customInstalledCheck: (target) => {
+      // "Already configured" iff the file contains a literal
+      // `[mcp_servers.ctxloom]` table header. Robust to extra
+      // whitespace per the TOML spec; not a full parser, but
+      // sufficient for the only block we care about.
+      try {
+        const content = fs.readFileSync(target, 'utf-8');
+        return /^\s*\[mcp_servers\.ctxloom\]\s*$/m.test(content);
+      } catch {
+        return false;
+      }
+    },
+    customWriter: (_targetPath, entry, existingContent) => {
+      // Render our standard block. We deliberately use the
+      // table-of-tables form (`[mcp_servers.ctxloom]` + key/value
+      // lines + optional `[mcp_servers.ctxloom.env]` subtable)
+      // rather than inline tables — readable diffs, friendly to
+      // `git blame` on the user's config.toml.
+      const lines: string[] = [
+        '# ctxloom — added by `ctxloom setup`. Safe to edit; the',
+        '# installer only ever modifies the [mcp_servers.ctxloom]',
+        '# block and never touches the rest of this file.',
+        '[mcp_servers.ctxloom]',
+        `command = ${tomlString(entry.command)}`,
+        `args = [${(entry.args ?? []).map(tomlString).join(', ')}]`,
+      ];
+      if (entry.env && Object.keys(entry.env).length > 0) {
+        lines.push('');
+        lines.push('[mcp_servers.ctxloom.env]');
+        for (const [k, v] of Object.entries(entry.env)) {
+          lines.push(`${k} = ${tomlString(v)}`);
+        }
+      }
+      const newBlock = lines.join('\n') + '\n';
+
+      if (!existingContent) {
+        // Fresh file: just our block.
+        return newBlock;
+      }
+
+      // Replace an existing [mcp_servers.ctxloom] block if present,
+      // else append. The match is anchored on the table header and
+      // runs until the next top-level table or end of file. Subtable
+      // `[mcp_servers.ctxloom.env]` is captured by this range too,
+      // so the replacement cleanly swaps the whole entry.
+      const blockRegex =
+        /(^|\n)(?:#[^\n]*\n)*\[mcp_servers\.ctxloom\][\s\S]*?(?=\n\[(?!mcp_servers\.ctxloom)|$)/;
+      if (blockRegex.test(existingContent)) {
+        return existingContent.replace(blockRegex, (_m, leading) =>
+          (leading === '\n' ? '\n' : '') + newBlock.trimEnd(),
+        );
+      }
+      // Append with one blank-line separator from prior content.
+      const sep = existingContent.endsWith('\n') ? '\n' : '\n\n';
+      return existingContent + sep + newBlock;
+    },
+    customRemove: (existingContent) => {
+      // Surgical removal of the [mcp_servers.ctxloom] block AND its
+      // leading installer-comment header (the `# ctxloom — added by...`
+      // lines). Everything else in config.toml is preserved verbatim.
+      const blockWithLeadingComments =
+        /(^|\n)(?:#[^\n]*\n)*\[mcp_servers\.ctxloom\][\s\S]*?(?=\n\[(?!mcp_servers\.ctxloom)|$)/;
+      const stripped = existingContent.replace(blockWithLeadingComments, (_m, leading) => leading);
+      // If the file is now empty (or just whitespace), delete it.
+      if (stripped.trim() === '') return null;
+      return stripped;
+    },
   },
 
   // ─── Kimi ───────────────────────────────────────────────
@@ -462,17 +605,17 @@ export function detectInstalledClients(): DetectedClient[] {
         configPath = cp;
         configExists = true;
 
-        // customWriter clients (Continue per-server YAML, etc.) have
-        // a 1:1 "file == server entry" relationship. If the target
-        // file exists at all, ctxloom is already configured for that
-        // host. We DO NOT JSON.parse the file — it's YAML/TOML/etc.
+        // customWriter clients have non-JSON formats — defer to the
+        // host's own "is ctxloom installed?" check when provided.
+        // Defaults to file-existence-at-canonical-path (correct for
+        // single-purpose files like Continue's per-server YAML; wrong
+        // for shared files like Codex's config.toml that may exist
+        // without ctxloom's block).
         if (client.customWriter) {
-          // Only treat the FIRST configPath (the workspace-scoped
-          // canonical write target) as the "already configured"
-          // signal. Fallback paths in the list are detection-only
-          // for legacy config layouts that we don't write to anymore.
           if (cp === client.configPaths[0]) {
-            alreadyConfigured = true;
+            alreadyConfigured = client.customInstalledCheck
+              ? client.customInstalledCheck(cp)
+              : true;
           }
           break;
         }
@@ -600,13 +743,17 @@ export function addCtxloomToConfig(detected: DetectedClient): { success: boolean
   }
 
   // ── customWriter branch (Continue per-server YAML, Codex TOML, etc.)
-  // These formats don't fit the "merge a server entry into a JSON object"
-  // model — each file is single-purpose and we render the whole thing.
-  // The target path is `configPaths[0]` by convention (workspace-scoped).
+  // The writer receives the existing file contents (or null if no file)
+  // so shared-file hosts like Codex can append/update their block without
+  // clobbering unrelated config. Single-purpose hosts like Continue
+  // ignore the existing content and return the whole file.
   if (client.customWriter) {
     const targetPath = client.configPaths[0];
     const serverEntry = getServerEntry();
-    const content = client.customWriter(targetPath, serverEntry);
+    const existingContent = fs.existsSync(targetPath)
+      ? fs.readFileSync(targetPath, 'utf-8')
+      : null;
+    const content = client.customWriter(targetPath, serverEntry, existingContent);
     const dir = path.dirname(targetPath);
     if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
     try {
@@ -671,15 +818,30 @@ export function removeCtxloomFromConfig(detected: DetectedClient): { success: bo
     return { success: true, message: `No config file found for ${client.name}` };
   }
 
-  // customWriter clients (Continue per-server YAML, etc.) use one
-  // file per server — uninstall is a file removal, not a JSON edit.
-  // We only remove the canonical workspace-scoped path (configPaths[0]);
-  // legacy paths are detection-only and not safe to delete.
+  // customWriter clients: dispatch to the host's customRemove hook
+  // when provided (shared-file hosts like Codex TOML need surgical
+  // block removal), or fall back to "delete the file" (single-purpose
+  // hosts like Continue's per-server YAML).
   if (client.customWriter) {
     const targetPath = client.configPaths[0];
     if (!fs.existsSync(targetPath)) {
       return { success: true, message: `ctxloom not found in ${client.name} config` };
     }
+    if (client.customRemove) {
+      try {
+        const existingContent = fs.readFileSync(targetPath, 'utf-8');
+        const newContent = client.customRemove(existingContent);
+        if (newContent === null) {
+          fs.unlinkSync(targetPath);
+        } else {
+          fs.writeFileSync(targetPath, newContent, 'utf-8');
+        }
+        return { success: true, message: `Removed ctxloom from ${client.name} (${targetPath})` };
+      } catch (err) {
+        return { success: false, message: `Failed to update config at ${targetPath}: ${err}` };
+      }
+    }
+    // Default: delete the file entirely (Continue's per-server YAML).
     try {
       fs.unlinkSync(targetPath);
       return { success: true, message: `Removed ctxloom from ${client.name} (${targetPath})` };
