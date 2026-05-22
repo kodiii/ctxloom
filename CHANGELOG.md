@@ -5,6 +5,98 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
 ---
 
+## [1.7.0] — 2026-05-23
+
+**Major release** — graph quality, language reach, and benchmark rigor.
+Skips the 1.6.x line (the work happened on the 1.6 internal branch but
+never shipped as its own npm release).
+
+Full release notes: [`docs/v1.7.0-release-notes.md`](docs/v1.7.0-release-notes.md).
+Long-form post: [`blog/v1.7.0-the-honest-numbers-post.md`](blog/v1.7.0-the-honest-numbers-post.md).
+
+### Numbers we can defend
+
+Measured on a 5-repo × 3-PR external-oracle benchmark (15 merged PRs from
+expressjs/express, tiangolo/fastapi, pallets/flask, gin-gonic/gin,
+encode/httpx — ground truth = the human-authored merged-PR diff from
+GitHub, **not** the graph's own traversal):
+
+| Metric | Value |
+|---|---:|
+| **Avg F1** | **0.42** |
+| Avg source recall | 0.61 |
+| **Avg graph reachability** | **0.94** |
+| **Avg symbol coverage** | **1.00** |
+| **Avg import coverage** | **1.00** |
+| **Avg token reduction** | **24.6×** |
+
+Reproduce: `npm run bench:full`. Methodology: `evaluate/methodology.md`.
+
+### Highlights
+
+- **External-oracle benchmark** (PRs #186, #187, #189-191, #194). Symbol-
+  declaration coverage, import-edge coverage, token-reduction column, all
+  measured against the merged PR diff from GitHub. Not the graph as its
+  own oracle — that's tautological.
+- **Go resolver fan-out** (PR #189). One `import "github.com/foo/bar/pkg"`
+  statement now resolves to every non-test .go file in the package
+  (Go's compile-unit semantics) plus bidirectional `_test.go ↔ source`
+  edges. Lifts gin's graphReachability from **0.32 → 0.95** (~3× improvement).
+- **18 languages with full import resolution + symbol indexing**
+  (PR #193) — added C/C++, Scala, Lua, Elixir, Zig. Previously 13.
+- **17 MCP host adapters with auto-detect** (PRs #195-197). Includes
+  v1.7.0 vendor-path corrections for the three silently-broken hosts:
+  Continue (per-server YAML), Codex (TOML), OpenCode (`mcp` schema key).
+- **Monorepo support** (PR #198) — streaming file walk + batched LanceDB
+  upserts. 50k+ file repos no longer stall; Next.js completes (previously
+  hung at ~18%).
+- **FD baseline fix** (PR #199) — FileWatcher and indexer ignore lists
+  unified; eliminates the secondary node_modules-walk leak that caused
+  MCP server boot to hit macOS's 256-FD ceiling on repos containing
+  `.vscode-test` / `.code-review-graph` / `.claude/worktrees/`.
+- **Pluggable embedding model** (PR #192) with `CTXLOOM_EMBEDDING_MODEL`
+  env var. Default stays MiniLM (zero existing-user impact); opt into
+  `jina-code` for **+72.5% better discrimination** on code-semantic
+  queries (validated via dedicated micro-bench, PR #194). LanceDB
+  marker-file guard catches dimension mismatch and tells the user to
+  re-index — silent table-layout corruption is impossible.
+- **Batch ONNX inference** (PR #204) — single inference call per
+  batch instead of N per file. **3-10× faster indexing** depending on
+  model size. Same vectors, same privacy story, no UX change.
+- **Operating principles** in CLAUDE.md preamble + skills (PR #188).
+  Adapted from multica-ai/andrej-karpathy-skills (MIT). Four principles
+  (Think Before Coding · Simplicity First · Surgical Changes ·
+  Goal-Driven Execution) framed alongside the ctxloom tools that
+  operationalize them.
+- **Marketing surface refresh** (PR #205 + ContextMeshApp PR #37) —
+  external-oracle bench section on the home page, full v1.7.0 release
+  notes + long-form blog post, README headline metrics updated.
+
+### Quality & infrastructure
+
+- **Dependabot policy hardened** (PRs #207 / #224 / #239 / #248) —
+  ~42 packages explicitly ignored across npm + github-actions
+  ecosystems. Security patches still flow normally; major-version
+  bumps require focused migration PRs.
+- **postcss security patches** (PR #206) — XSS in `</style>` (CVE
+  in 8.5.10), arbitrary file read via crafted CSS (CVE in 8.5.12).
+  Pulled out of a rejected Dependabot mega-bump that bundled them with
+  a vite 5→8 migration.
+- **CI: cache + pre-warm MiniLM model** (PR #225) — eliminates the
+  "Protobuf parsing failed" race that flaked CI 8+ times during the
+  cycle. Cache hit on subsequent runs; pre-warm on cache miss.
+
+### Migration notes
+
+- Most users: nothing to do. `npm install -g ctxloom-pro@1.7.0`; re-indexing
+  is automatic on first use.
+- Opting into jina-code: set `CTXLOOM_EMBEDDING_MODEL=jina-code`, run
+  `ctxloom vectors-cleanup --reset` once, then re-index.
+- Continue / Codex / OpenCode users: re-run `ctxloom setup` once to
+  land MCP config at the paths the current vendors actually read from.
+
+---
+
 ## [1.5.3] — 2026-05-19
 
 Patch release — silent-failure graph-quality fixes. Three bugs that
