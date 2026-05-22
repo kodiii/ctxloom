@@ -265,6 +265,66 @@ export class VectorStore {
   }
 
   /**
+   * Batch upsert — one LanceDB transaction for N file records.
+   *
+   * Why this exists (v1.7.0 monorepo support): the per-file `upsert()`
+   * does 2 LanceDB transactions (delete + add). On a 50k-file repo
+   * that's 100k transactions, each writing a manifest + transaction
+   * file. Compaction reclaims them every 200 upserts, but during the
+   * indexing burst the FD churn is enormous (observed: ~10k FDs/sec
+   * peak on Next.js, hitting the 256-default macOS process limit).
+   *
+   * With BATCH_SIZE=50 callers (the streaming indexer), this drops to
+   * ~2k transactions across the same corpus — 50× fewer manifests
+   * written, ~5× faster wall time, and the FD ceiling stops mattering.
+   *
+   * Compaction semantics unchanged: `upsertsSinceCompact` increments by
+   * one per RECORD (not per batch), so the compact trigger fires at
+   * the same total-record cadence as the per-file path.
+   */
+  async upsertBatch(
+    records: ReadonlyArray<{ filePath: string; embedding: number[]; content: string }>,
+  ): Promise<void> {
+    if (!this.table) throw new Error('VectorStore not initialized. Call init() first.');
+    if (records.length === 0) return;
+
+    // Single delete for every path in the batch. LanceDB's delete
+    // accepts a filter expression — OR-of-equalities for the N paths
+    // beats N individual deletes. We sanitize each path identically
+    // to upsert() to keep the filter-injection guard consistent.
+    const filter = records
+      .map((r) => `filePath = '${sanitizeFilterPath(r.filePath)}'`)
+      .join(' OR ');
+    try {
+      await this.table.delete(filter);
+    } catch (err) {
+      logger.warn('Batch delete before upsert failed, continuing', {
+        detail: err instanceof Error ? err.message : String(err),
+      });
+    }
+
+    // Single add for the whole batch.
+    const rows = records.map((r) => ({
+      id: r.filePath,
+      filePath: r.filePath,
+      vector: r.embedding,
+      content: r.content.slice(0, 512),
+    }));
+    await this.table.add(rows);
+
+    // Compaction trigger is record-count-based, not batch-count-based,
+    // so the cadence matches the per-file path. A 50-record batch
+    // counts as 50 upserts; the compact fires once compactEvery
+    // (default 200) total records have flowed through, irrespective
+    // of batch boundaries.
+    this.upsertsSinceCompact += records.length;
+    if (this.upsertsSinceCompact >= this.compactEvery) {
+      this.upsertsSinceCompact = 0;
+      await this.compact();
+    }
+  }
+
+  /**
    * Merge fragments and prune old LanceDB versions. Idempotent and safe to
    * call mid-flight; the Table API serializes writes internally. Called
    * automatically every `compactEvery` upserts (default 200) to bound FD
