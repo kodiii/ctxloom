@@ -1,10 +1,32 @@
 # ctxloom — The Universal Code Context Engine
 
-A local-first MCP server that gives AI coding assistants deep structural understanding of your codebase through hybrid **Vector + AST + Graph** search, with **Skeletonization** for 92% token reduction.
+A local-first MCP server that gives AI coding assistants deep structural understanding of your codebase through hybrid **Vector + AST + Graph** search, with **Skeletonization** for ~96% token reduction.
 
 No cloud indexing. No Python. Everything runs on your machine.
 
 > **ctxloom requires a license.** Start a free 7-day trial — no credit card required.
+
+## v1.7.0 — what we can defend with numbers
+
+Measured on a **5-repo × 3-PR external-oracle benchmark** (15 merged PRs from expressjs/express, tiangolo/fastapi, pallets/flask, gin-gonic/gin, encode/httpx — ground truth = the human-authored diff from GitHub, **not** the graph's own traversal):
+
+| Metric                  | Value     | What it means |
+|-------------------------|----------:|---------------|
+| **Graph reachability**  | **0.94**  | 94% of source-file ground truth is reachable from the entry point via BFS |
+| **Source recall**       | **0.61**  | 61% of indexable PR files surfaced by the prediction algorithm |
+| **Avg F1**              | **0.42**  | Honest. We report it instead of cherry-picking a prettier number. |
+| **Symbol coverage**     | **1.00**  | Every AST-declared function/class/method/interface is in the symbol index |
+| **Import coverage**     | **1.00**  | Every AST-found relative import resolves to a graph edge |
+| **Token reduction**     | **24.6×** | Naive baseline (full files + 1-hop imports) vs skeleton view — same production code path |
+
+Plus:
+
+- **18 languages** with import resolution + symbol indexing (TS/JS/Py/Go/Rust/Java/C#/Ruby/Kotlin/Swift/PHP/Dart/Vue/Jupyter/C/C++/Scala/Lua/Elixir/Zig)
+- **17 MCP host adapters** with corrected paths for Continue, Codex, OpenCode (three hosts whose vendor docs had drifted)
+- **Monorepo support** — streaming file walk + batched LanceDB upserts; 50k+ file repos no longer stall
+- **Code-specific embedding upgrade** (opt-in via `CTXLOOM_EMBEDDING_MODEL=jina-code`) — +72.5% better discrimination on code-semantic queries
+
+**Reproduce every number**: `npm run bench:full`. Full methodology in [`evaluate/methodology.md`](evaluate/methodology.md). Release notes in [`docs/v1.7.0-release-notes.md`](docs/v1.7.0-release-notes.md). Long-form rationale in [`blog/v1.7.0-the-honest-numbers-post.md`](blog/v1.7.0-the-honest-numbers-post.md).
 
 ## Multi-Project Support (v1.1.0)
 
