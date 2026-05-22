@@ -105,9 +105,12 @@ updates:
         update-types: ["version-update:semver-major"]
       - dependency-name: "@huggingface/transformers"
         update-types: ["version-update:semver-major"]
-      # Tree-sitter (any major reshapes the WASM API)
+      # Tree-sitter — pre-1.0 package; semver MINOR is breaking
+      # (the WASM API and grammar binding shape can shift across
+      # 0.x.y minors). PR #241 (0.25 → 0.26) would have risked
+      # silent grammar incompatibility — block minor too.
       - dependency-name: "web-tree-sitter"
-        update-types: ["version-update:semver-major"]
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
       # File watcher — chokidar 4 reshaped its API
       - dependency-name: "chokidar"
         update-types: ["version-update:semver-major"]
@@ -144,6 +147,27 @@ updates:
       - dependency-name: "recharts"
         update-types: ["version-update:semver-major"]
       - dependency-name: "jsdom"
+        update-types: ["version-update:semver-major"]
+      # ── Round-3 additions (PRs #240-#247 from Monday's run) ───────
+      # tailwind v4 is the "Oxide" rewrite — CSS-first config, new
+      # PostCSS plugin shape, breaks the entire build pipeline.
+      - dependency-name: "tailwindcss"
+        update-types: ["version-update:semver-major"]
+      # apache-arrow is a LanceDB transitive; arrow majors reshape
+      # the array layout and have broken LanceDB table interop
+      # historically. PR #246 proposed bumping THREE majors at once
+      # (18 → 21) — the kind of change that needs focused validation.
+      - dependency-name: "apache-arrow"
+        update-types: ["version-update:semver-major"]
+      # `open` is used by ctxloom dashboard to launch URLs in the
+      # default browser. v11 changes the cross-platform launcher
+      # signatures; major needs deliberate testing.
+      - dependency-name: "open"
+        update-types: ["version-update:semver-major"]
+      # @types/express must match the runtime express version. We
+      # ignore express majors above, so the matching types-major
+      # would silently mismatch the runtime — block it too.
+      - dependency-name: "@types/express"
         update-types: ["version-update:semver-major"]
     commit-message:
       prefix: "chore(deps)"
@@ -211,6 +235,15 @@ updates:
       - dependency-name: "recharts"
         update-types: ["version-update:semver-major"]
       - dependency-name: "jsdom"
+        update-types: ["version-update:semver-major"]
+      # ── Round-3 additions (PRs #243, #245, #247) ──────────────────
+      # See root config for the same rationales — these packages
+      # surfaced from the dashboard side of the Monday weekly run.
+      - dependency-name: "tailwindcss"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "open"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "@types/express"
         update-types: ["version-update:semver-major"]
     commit-message:
       prefix: "chore(deps)"
