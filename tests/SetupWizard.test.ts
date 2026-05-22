@@ -5,7 +5,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
-import { MCP_CLIENTS, detectInstalledClients, addCtxloomToConfig, removeCtxloomFromConfig, type DetectedClient } from '../src/setup/clients.js';
+import { MCP_CLIENTS, detectInstalledClients, addCtxloomToConfig, removeCtxloomFromConfig, yamlEscape, type DetectedClient } from '../src/setup/clients.js';
 
 const HOME = os.homedir();
 
@@ -180,23 +180,13 @@ describe('addCtxloomToConfig', () => {
     expect(result.message).toContain('already configured');
   });
 
-  it('should handle Continue.dev custom format', () => {
-    const configPath = path.join(tmpDir, 'config.json');
-    const detected: DetectedClient = {
-      client: MCP_CLIENTS.find(c => c.id === 'continue')!,
-      configPath,
-      configExists: false,
-      alreadyConfigured: false,
-    };
-
-    const result = addCtxloomToConfig(detected);
-    expect(result.success).toBe(true);
-
-    const written = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
-    const continueEntry = written.experimental?.mcpServers?.ctxloom;
-    expect(continueEntry).toBeDefined();
-    expect(continueEntry.transport).toBe('stdio');
-  });
+  // (Note: the Continue.dev format was migrated in v1.7.0 from
+  //  experimental.mcpServers JSON to per-server YAML files at
+  //  .continue/mcpServers/<name>.yaml. The replacement coverage
+  //  lives under the "Continue per-server YAML writer" describe
+  //  block at the end of this file — it exercises the customWriter
+  //  path, idempotency, file-based "already configured" detection,
+  //  and uninstall via file removal.)
 
   it('should handle VS Code servers format', () => {
     const configPath = path.join(tmpDir, 'mcp.json');
@@ -262,5 +252,167 @@ describe('removeCtxloomFromConfig', () => {
 
     const result = removeCtxloomFromConfig(detected);
     expect(result.success).toBe(true);
+  });
+});
+
+
+// ─── v1.7.0: Continue per-server YAML (customWriter) ────────────────
+// Continue's current format is fundamentally different from the
+// JSON-merge model: one YAML file per MCP server at
+// .continue/mcpServers/<name>.yaml. These tests pin the wire format
+// because (a) regressing to the old JSON path would silently fail on
+// current Continue, and (b) malformed YAML emit would break parsing
+// without an obvious error.
+
+describe('yamlEscape', () => {
+  it('emits bare strings for safe alphanumeric values', () => {
+    expect(yamlEscape('ctxloom')).toBe('ctxloom');
+    expect(yamlEscape('npx')).toBe('npx');
+    expect(yamlEscape('./bin/cmd-1')).toBe('./bin/cmd-1');
+  });
+
+  it('quotes strings with whitespace or YAML-meaningful chars', () => {
+    expect(yamlEscape('hello world')).toBe('"hello world"');
+    expect(yamlEscape('value: with colon')).toBe('"value: with colon"');
+    expect(yamlEscape('')).toBe('""');
+  });
+
+  it('escapes embedded double-quotes and backslashes', () => {
+    expect(yamlEscape('say "hi"')).toBe('"say \\"hi\\""');
+    expect(yamlEscape('C:\\path')).toBe('"C:\\\\path"');
+  });
+});
+
+describe('Continue per-server YAML writer', () => {
+  let tempDir: string;
+  let originalCwd: string;
+
+  beforeEach(() => {
+    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'continue-yaml-'));
+    originalCwd = process.cwd();
+    process.chdir(tempDir);
+  });
+
+  afterEach(() => {
+    process.chdir(originalCwd);
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  });
+
+  it('writes .continue/mcpServers/ctxloom.yaml on add (the corrected path)', () => {
+    // Continue's MCP_CLIENTS entry uses customWriter — the workspace
+    // path must lead configPaths so it gets picked up here.
+    const client = MCP_CLIENTS.find((c) => c.id === 'continue')!;
+    const expectedPath = path.join(tempDir, '.continue', 'mcpServers', 'ctxloom.yaml');
+    // We can't easily reconstruct the dynamic configPath here because
+    // the registry captured process.cwd() at module load — instead,
+    // call addCtxloomToConfig with a manually-built detected object
+    // whose first configPath points at our temp dir.
+    const detected: DetectedClient = {
+      client: {
+        ...client,
+        configPaths: [
+          expectedPath,
+          ...client.configPaths.slice(1),
+        ],
+      },
+      configPath: expectedPath,
+      configExists: false,
+      alreadyConfigured: false,
+    };
+
+    const result = addCtxloomToConfig(detected);
+    expect(result.success).toBe(true);
+    expect(fs.existsSync(expectedPath)).toBe(true);
+
+    // Pin the emitted shape — Continue parses each file as a single
+    // mcpServers array entry. The "name: ctxloom" line + the
+    // mcpServers: root are non-negotiable per Continue's schema.
+    const content = fs.readFileSync(expectedPath, 'utf-8');
+    expect(content).toContain('mcpServers:');
+    expect(content).toContain('- name: ctxloom');
+    expect(content).toMatch(/^\s*command:/m);
+  });
+
+  it('produces valid YAML structure (no smashed indentation)', () => {
+    const client = MCP_CLIENTS.find((c) => c.id === 'continue')!;
+    const expectedPath = path.join(tempDir, '.continue', 'mcpServers', 'ctxloom.yaml');
+    addCtxloomToConfig({
+      client: { ...client, configPaths: [expectedPath, ...client.configPaths.slice(1)] },
+      configPath: expectedPath,
+      configExists: false,
+      alreadyConfigured: false,
+    });
+
+    const lines = fs.readFileSync(expectedPath, 'utf-8').split('\n');
+    // Root key has no leading indent.
+    expect(lines.find((l) => l.startsWith('mcpServers:'))).toBeDefined();
+    // YAML structural alignment: the `name:` key starts at column 4
+    // ("  - " is 2 spaces + dash + space) and its siblings start at
+    // column 4 (4 literal spaces). They look "aligned" in a YAML viewer
+    // even though `name:` has only 2 chars of LITERAL leading whitespace
+    // (the dash isn't whitespace). Assert each line's structure separately:
+    //   - The list-item line starts with the canonical YAML list marker
+    //   - Sibling keys (command, args) start with 4 literal spaces — if
+    //     anything is at 2 spaces, YAML re-interprets it as a new list
+    //     entry instead of a key of the existing one.
+    const nameLine = lines.find((l) => l.includes('name: ctxloom'));
+    expect(nameLine).toMatch(/^  - name: ctxloom$/);
+    const cmdLine = lines.find((l) => l.match(/^\s+command:/));
+    expect(cmdLine?.match(/^\s*/)?.[0].length).toBe(4);
+  });
+
+  it('add is idempotent: re-running produces identical file contents', () => {
+    const client = MCP_CLIENTS.find((c) => c.id === 'continue')!;
+    const expectedPath = path.join(tempDir, '.continue', 'mcpServers', 'ctxloom.yaml');
+    const detected: DetectedClient = {
+      client: { ...client, configPaths: [expectedPath, ...client.configPaths.slice(1)] },
+      configPath: expectedPath,
+      configExists: false,
+      alreadyConfigured: false,
+    };
+    addCtxloomToConfig(detected);
+    const firstWrite = fs.readFileSync(expectedPath, 'utf-8');
+    addCtxloomToConfig({ ...detected, configExists: true });
+    const secondWrite = fs.readFileSync(expectedPath, 'utf-8');
+    expect(secondWrite).toBe(firstWrite);
+  });
+
+  it('remove deletes the file (not just an entry inside it)', () => {
+    const client = MCP_CLIENTS.find((c) => c.id === 'continue')!;
+    const expectedPath = path.join(tempDir, '.continue', 'mcpServers', 'ctxloom.yaml');
+    const baseDetected = {
+      client: { ...client, configPaths: [expectedPath, ...client.configPaths.slice(1)] },
+      configPath: expectedPath,
+    };
+    addCtxloomToConfig({ ...baseDetected, configExists: false, alreadyConfigured: false });
+    expect(fs.existsSync(expectedPath)).toBe(true);
+
+    const result = removeCtxloomFromConfig({
+      ...baseDetected,
+      configExists: true,
+      alreadyConfigured: true,
+    });
+    expect(result.success).toBe(true);
+    expect(fs.existsSync(expectedPath)).toBe(false);
+  });
+
+  it('detects "already configured" by file presence (not by JSON parse)', () => {
+    const client = MCP_CLIENTS.find((c) => c.id === 'continue')!;
+    const expectedPath = path.join(tempDir, '.continue', 'mcpServers', 'ctxloom.yaml');
+    fs.mkdirSync(path.dirname(expectedPath), { recursive: true });
+    fs.writeFileSync(expectedPath, 'mcpServers:\n  - name: ctxloom\n', 'utf-8');
+
+    // Walking the actual detection function against a custom-writer
+    // client would need real CWD manipulation; we simulate the
+    // post-detection contract here. The key invariant is the writer's
+    // behavior, not the global detection scan.
+    const detected: DetectedClient = {
+      client: { ...client, configPaths: [expectedPath, ...client.configPaths.slice(1)] },
+      configPath: expectedPath,
+      configExists: true,
+      alreadyConfigured: true,
+    };
+    const result = addCtxloomToConfig(detected);
+    expect(result.message).toMatch(/already configured/);
   });
 });
