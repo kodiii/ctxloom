@@ -34,7 +34,7 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with: { node-version: '20', cache: 'npm' }
       - run: npm ci
       - run: node scripts/cli-tarballs/build-cli-tarballs.mjs --platform=${{ matrix.platform }}
@@ -54,7 +54,7 @@ jobs:
     continue-on-error: true
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with: { node-version: '20', cache: 'npm' }
       - run: npm ci
       - run: node scripts/cli-tarballs/build-cli-tarballs.mjs --platform=darwin-x64
