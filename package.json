@@ -93,7 +93,7 @@
     "picomatch": "^4.0.4",
     "simple-git": "^3.36.0",
     "tree-sitter-typescript": "^0.23.2",
-    "web-tree-sitter": "^0.25.0",
+    "web-tree-sitter": "^0.26.9",
     "zod": "^3.23.0"
   },
   "devDependencies": {
