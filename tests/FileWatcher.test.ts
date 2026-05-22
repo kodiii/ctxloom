@@ -127,4 +127,54 @@ describe('FileWatcher', () => {
     watcher.stop();
     expect(watcher.isRunning()).toBe(false);
   });
+
+  // ─── v1.7.0: ignore-list parity with indexer (task #13) ────────────
+  // The watcher's chokidar ignore list MUST stay in lockstep with the
+  // indexer's INDEXER_IGNORED_DIRS — pre-fix they were maintained
+  // separately and drifted (entries like `target`, `.turbo`, `.nuxt`,
+  // `.vscode-test`, `.code-review-graph`, `.claude` were ignored by
+  // the indexer but not the watcher). On any repo containing them,
+  // chokidar opened thousands of FDs to watch directories the indexer
+  // never touched — the "secondary node_modules-walk leak".
+
+  it('does not emit add events for files inside any INDEXER_IGNORED_DIRS', async () => {
+    // Create one file inside EVERY ignored directory + one source file
+    // at the project root. The watcher must surface ONLY the source
+    // file — every ignored-dir file must be silently dropped.
+    const { INDEXER_IGNORED_DIRS } = await import('../packages/core/src/indexer/embedder.js');
+
+    for (const dir of INDEXER_IGNORED_DIRS) {
+      fs.mkdirSync(path.join(tempDir, dir), { recursive: true });
+      fs.writeFileSync(path.join(tempDir, dir, 'leak.ts'), 'export const x = 1;');
+    }
+    fs.writeFileSync(path.join(tempDir, 'app.ts'), 'export const real = 1;');
+
+    const watcher = new FileWatcher(tempDir, (absPath, event) => {
+      changes.push({ path: absPath, event });
+    });
+    watcher.start();
+    await watcher.ready();
+    await new Promise((r) => setTimeout(r, 200));
+
+    // Trigger a change on every file (both the source and the
+    // ignored-dir files) to force the watcher's event path.
+    fs.writeFileSync(path.join(tempDir, 'app.ts'), 'export const real = 2;');
+    for (const dir of INDEXER_IGNORED_DIRS) {
+      fs.writeFileSync(path.join(tempDir, dir, 'leak.ts'), 'export const x = 2;');
+    }
+
+    await new Promise((r) => setTimeout(r, 600));
+    watcher.stop();
+
+    // Source file MUST be reported (the watcher works).
+    const sourceEvents = changes.filter((c) => c.path.endsWith('app.ts'));
+    expect(sourceEvents.length).toBeGreaterThan(0);
+
+    // No ignored-dir file may produce an event. We use endsWith
+    // checks per-dir for a clear failure message if drift returns.
+    for (const dir of INDEXER_IGNORED_DIRS) {
+      const dirLeaks = changes.filter((c) => c.path.includes(`/${dir}/`));
+      expect(dirLeaks, `chokidar leaked events for ignored dir: ${dir}`).toEqual([]);
+    }
+  });
 });
