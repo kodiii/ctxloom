@@ -1,6 +1,6 @@
 # ctxloom benchmark
 
-Generated 2026-05-22T07:31:24.797Z on commit 009f7c6.
+Generated 2026-05-22T12:47:49.451Z on commit 38fee83.
 Stage: **full**.
 
 Reproduce locally:
