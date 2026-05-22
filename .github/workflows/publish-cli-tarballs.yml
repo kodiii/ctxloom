@@ -92,7 +92,7 @@ jobs:
               echo "::warning::Platform ${plat} missing from this release (build leg failed or stalled). Users on this platform should fall back to 'npm install -g ctxloom-pro'."
             fi
           done
-      - uses: softprops/action-gh-release@v2
+      - uses: softprops/action-gh-release@v3
         with:
           files: dist-cli/ctxloom-cli-*.tar.gz*
           tag_name: ${{ github.ref_name }}
