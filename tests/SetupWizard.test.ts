@@ -15,11 +15,63 @@ describe('MCP Clients Registry', () => {
       'claude-desktop', 'claude-code', 'cursor', 'vscode',
       'windsurf', 'augment', 'kilo-code', 'continue',
       'aider', 'codex', 'kimi', 'qwen', 'jetbrains',
+      // v1.7.0 additions per docs/host-adapters-verification.md
+      'zed', 'gemini-cli', 'kiro', 'opencode',
     ];
     const actualIds = MCP_CLIENTS.map(c => c.id);
     for (const id of expectedIds) {
       expect(actualIds).toContain(id);
     }
+  });
+
+  // ── v1.7.0: 4 new hosts (Zed, Gemini CLI, Kiro, OpenCode) ──────────
+  // Each registry entry must agree with docs/host-adapters-verification.md.
+  // Pin the critical wrinkles below — they're the bugs we found in
+  // code-review-graph's PLATFORMS dict that we explicitly avoided
+  // replicating.
+
+  it('Zed uses `context_servers` (NOT the conventional `mcpServers`)', () => {
+    const zed = MCP_CLIENTS.find((c) => c.id === 'zed');
+    expect(zed).toBeDefined();
+    // The wrong key here would land the MCP config in a file Zed silently
+    // ignores. Pinning the key in a test catches accidental "fix" reverts.
+    expect(zed!.serversPath).toBe('context_servers');
+  });
+
+  it('OpenCode uses `mcp` (NOT the conventional `mcpServers`)', () => {
+    const oc = MCP_CLIENTS.find((c) => c.id === 'opencode');
+    expect(oc).toBeDefined();
+    // Same trap as Zed — code-review-graph's PLATFORMS dict has this wrong.
+    expect(oc!.serversPath).toBe('mcp');
+    // Both .json and .jsonc extensions are valid per opencode docs.
+    expect(oc!.configPaths.some((p) => p.endsWith('opencode.json'))).toBe(true);
+    expect(oc!.configPaths.some((p) => p.endsWith('opencode.jsonc'))).toBe(true);
+  });
+
+  it('Gemini CLI checks workspace-scoped path before user-scoped', () => {
+    const g = MCP_CLIENTS.find((c) => c.id === 'gemini-cli');
+    expect(g).toBeDefined();
+    // Workspace wins per vendor docs — list it first so detectInstalledClients
+    // picks it up before the user-wide settings file.
+    expect(g!.configPaths[0]).toContain('.gemini');
+    expect(g!.serversPath).toBe('mcpServers');
+  });
+
+  it('Kiro splits config under settings/ subdirectory', () => {
+    const k = MCP_CLIENTS.find((c) => c.id === 'kiro');
+    expect(k).toBeDefined();
+    // Kiro nests its MCP config one level deeper than most hosts:
+    // `.kiro/settings/mcp.json` (NOT `.kiro/mcp.json`).
+    expect(k!.configPaths.some((p) => p.includes(path.join('.kiro', 'settings', 'mcp.json')))).toBe(true);
+  });
+
+  it('Cursor v1.7.0 now detects the project-root `.cursor/mcp.json` path', () => {
+    const c = MCP_CLIENTS.find((c) => c.id === 'cursor');
+    expect(c).toBeDefined();
+    // The canonical Cursor workflow is per-project — without this entry
+    // we'd auto-detect Cursor at the user level but never install ctxloom
+    // in the project's local cursor config where users actually expect it.
+    expect(c!.configPaths.some((p) => p === path.join(process.cwd(), '.cursor', 'mcp.json'))).toBe(true);
   });
 
   it('each client should have required fields', () => {
