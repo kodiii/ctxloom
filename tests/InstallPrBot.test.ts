@@ -43,7 +43,7 @@ describe('installPrBotWorkflow', () => {
 
     const body = fs.readFileSync(expected, 'utf8');
     expect(body).toContain('name: ctxloom review');
-    expect(body).toContain('uses: kodiii/ctxloom/apps/pr-bot@v1');
+    expect(body).toContain('uses: kodiii/ctxloom-pr-bot@v1');
     expect(body).toContain('fetch-depth: 0');
     expect(body).toContain('pull-requests: write');
   });
@@ -64,7 +64,7 @@ describe('installPrBotWorkflow', () => {
     expect(result.status).toBe('installed');
     if (result.status !== 'installed') return;
     const body = fs.readFileSync(result.path, 'utf8');
-    expect(body).toContain('uses: kodiii/ctxloom/apps/pr-bot@v1.2.1');
+    expect(body).toContain('uses: kodiii/ctxloom-pr-bot@v1.2.1');
   });
 
   it('does not overwrite an existing workflow without --force', () => {

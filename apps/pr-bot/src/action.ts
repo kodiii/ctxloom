@@ -2,10 +2,15 @@
  * ctxloom-action — GitHub Action entrypoint.
  *
  * This script is the executable surface of the ctxloom PR review.
- * Distributed as a JavaScript Action: users reference
- *   `uses: kodiii/ctxloom/apps/pr-bot@v1`
+ * Distributed via the GitHub Marketplace listing at the public mirror
+ * repo (kodiii/ctxloom-pr-bot). Users reference
+ *   `uses: kodiii/ctxloom-pr-bot@v1`
  * in their `.github/workflows/*.yml`, and GitHub runs this single
  * bundled file (`dist/index.js`) inside an `actions/checkout`'d repo.
+ *
+ * The monorepo path `kodiii/ctxloom/apps/pr-bot@v1` also worked
+ * historically (during the redirect window before the Marketplace
+ * listing went live). New installs go through the mirror.
  *
  * Inputs (set via `with:` in the workflow, surfaced as `INPUT_*` env vars):
  *   - github-token   GitHub token (default: ${{ secrets.GITHUB_TOKEN }})

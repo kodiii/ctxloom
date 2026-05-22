@@ -97,15 +97,17 @@ The listing will appear at `https://github.com/marketplace/actions/ctxloom-pr-re
 
 ## Reverting the redirect
 
-Once the Marketplace listing is live, the `uses:` ref in
-[`src/setup/install-pr-bot.ts`](../../src/setup/install-pr-bot.ts) and
-[`README.md`](./README.md) should be updated from
-`kodiii/ctxloom/apps/pr-bot@v1` → `kodiii/ctxloom-pr-bot@v1` so that
-freshly-installed workflows resolve against the public mirror.
+**Done** in v1.7.2 (commit on `main`). The `uses:` ref in
+[`src/setup/install-pr-bot.ts`](../../src/setup/install-pr-bot.ts),
+[`README.md`](./README.md), [`action.ts`](./src/action.ts), and the
+self-installed [`ctxloom-review.yml`](../../.github/workflows/ctxloom-review.yml)
+all point at `kodiii/ctxloom-pr-bot@v1` so that freshly-installed
+workflows resolve against the public mirror (the Marketplace listing).
 
-That's a separate code change (and a coordinated `ctxloom-pro` minor
-bump on npm), not part of the mirror infrastructure itself — defer
-until after step 5 above is confirmed working.
+The monorepo path `kodiii/ctxloom/apps/pr-bot@v1` still works (the
+release tag's `action.yml` is still present in the source repo) —
+existing installations don't need to migrate. New installs go
+through the mirror automatically.
 
 ## Token rotation
 
