@@ -13,6 +13,7 @@ import type { Connection, Table } from '@lancedb/lancedb';
 import path from 'node:path';
 import fs from 'node:fs';
 import { logger } from '../utils/logger.js';
+import { EMBEDDING_DIMENSION, EMBEDDING_MODEL_ID } from '../indexer/embedder.js';
 
 export interface VectorSearchResult {
   filePath: string;
@@ -114,17 +115,37 @@ export class VectorStore {
 
     this.db = await lance.connect(this.dbPath);
 
+    // ── Embedding-model marker file ─────────────────────────────────
+    // The LanceDB table is shaped to the embedding dimension at
+    // first-create time and cannot change without a destructive
+    // rebuild. Without a guard, a user who flips
+    // CTXLOOM_EMBEDDING_MODEL on an existing project gets a confusing
+    // type/cast error at upsert time AFTER the model has loaded — and
+    // worse, partially-mixed-dimension rows are unrecoverable.
+    //
+    // Solution: write a tiny marker file next to the LanceDB dir
+    // recording the model that built the index. On open we compare
+    // to the active model. Mismatch → fail-fast with a clear error
+    // telling the user to wipe + re-index. Legacy indexes without
+    // a marker (built before this commit) are assumed to be MiniLM
+    // (the only model that existed at the time) and the marker is
+    // written so subsequent runs are guarded.
+    const markerPath = path.join(path.dirname(this.dbPath), 'embedding-model.json');
+    this.assertModelCompatibility(markerPath);
+
     // Create or open table
     const existingTables = await this.db.tableNames();
     if (existingTables.includes('code_embeddings')) {
       this.table = await this.db.openTable('code_embeddings');
     } else {
-      // Create with a seed record using arrow table format
+      // Create with a seed record using arrow table format. Vector
+      // length is the ACTIVE model's dim (not hard-coded 384) so the
+      // table layout matches whatever embedder the user picked.
       const seedTable = makeArrowTable([
         {
           id: '__seed__',
           filePath: '__seed__',
-          vector: new Array(384).fill(0),
+          vector: new Array(EMBEDDING_DIMENSION).fill(0),
           content: '',
         },
       ]);
@@ -134,6 +155,53 @@ export class VectorStore {
     }
 
     this.initialized = true;
+  }
+
+  /**
+   * Compare the active embedding model against the marker file written
+   * when the index was first built. Three cases:
+   *
+   *   1. Marker missing  → legacy index (pre-v1.7.0). Assume MiniLM
+   *      and write the marker so future runs are guarded.
+   *   2. Marker matches  → proceed silently.
+   *   3. Marker differs  → throw with a clear migration instruction.
+   *      We don't auto-wipe — silently dropping a user's index because
+   *      they set an env var is exactly the footgun the marker exists
+   *      to prevent.
+   */
+  private assertModelCompatibility(markerPath: string): void {
+    const active = { model: EMBEDDING_MODEL_ID, dim: EMBEDDING_DIMENSION };
+
+    let existing: { model?: unknown; dim?: unknown } | null = null;
+    if (fs.existsSync(markerPath)) {
+      try {
+        existing = JSON.parse(fs.readFileSync(markerPath, 'utf-8'));
+      } catch (err) {
+        logger.warn('Embedding-model marker is corrupt; treating as missing', {
+          path: markerPath,
+          detail: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }
+
+    if (!existing) {
+      // Legacy index OR fresh install — write the marker and proceed.
+      fs.writeFileSync(markerPath, JSON.stringify(active, null, 2));
+      return;
+    }
+
+    if (existing.model === active.model && existing.dim === active.dim) {
+      return; // happy path
+    }
+
+    throw new Error(
+      `Embedding-model mismatch: vector index at ${this.dbPath} was built ` +
+      `with "${existing.model}" (${existing.dim}-dim) but the active model is ` +
+      `"${active.model}" (${active.dim}-dim). Re-index required:\n\n` +
+      `    ctxloom vectors-cleanup --reset\n` +
+      `    ctxloom index\n\n` +
+      `Or revert CTXLOOM_EMBEDDING_MODEL to "${existing.model}" to keep the existing index.`,
+    );
   }
 
   /**
