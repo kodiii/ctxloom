@@ -6,20 +6,44 @@
  * Ignores common non-source directories.
  */
 import chokidar, { FSWatcher } from 'chokidar';
+import { INDEXER_IGNORED_DIRS } from '../indexer/embedder.js';
 import { logger } from '../utils/logger.js';
 
 export type ChangeCallback = (absolutePath: string, event: 'add' | 'change' | 'unlink') => void | Promise<void>;
 
-const IGNORED = [
-  '**/node_modules/**',
-  '**/.git/**',
-  '**/dist/**',
-  '**/build/**',
-  '**/.ctxloom/**',
-  '**/coverage/**',
-  '**/.next/**',
-  '**/.cache/**',
-];
+/**
+ * Chokidar ignore predicate derived from the SAME ignore set the indexer
+ * uses (see embedder.ts:INDEXER_IGNORED_DIRS). Pre-fix this list was
+ * maintained separately AS GLOB PATTERNS and silently drifted — entries
+ * like `target` (Rust), `out` (Next.js export), `.turbo`, `.nuxt`,
+ * `.vscode-test`, `.code-review-graph`, and `.claude` were ignored by
+ * the indexer but NOT by the watcher. On any repo that contained them
+ * (a single `.vscode-test/Visual Studio Code.app/...` tree, or another
+ * tool's working state at `.code-review-graph/` with worktree copies
+ * of the user's source), chokidar opened thousands of FDs to watch
+ * directories the indexer never touched — pushing the MCP server past
+ * the macOS 256-FD default at boot and causing the "secondary
+ * node_modules-walk leak" tracked under task #13.
+ *
+ * Using a function (not glob patterns) over the shared set:
+ *   1. Eliminates glob-escape / path-normalization edge cases where
+ *      `**\/node_modules/**` failed to match paths chokidar normalized
+ *      without the leading separator (observed in regression tests).
+ *   2. Stays in lockstep with the indexer's set — adding a dir to
+ *      INDEXER_IGNORED_DIRS automatically updates the watcher.
+ *
+ * The path segment check is exact (no substring match) so a dir
+ * literally named `node_modules` is ignored at any depth, but a file
+ * named `node_modules.json` is NOT.
+ */
+function isIgnoredPath(absPath: string): boolean {
+  const segments = absPath.split(/[\\/]/);
+  for (const seg of segments) {
+    if (INDEXER_IGNORED_DIRS.has(seg)) return true;
+  }
+  return false;
+}
+const IGNORED = isIgnoredPath;
 
 export class FileWatcher {
   private root: string;

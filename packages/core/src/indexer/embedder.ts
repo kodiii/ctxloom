@@ -362,10 +362,15 @@ export async function* collectFilesStream(dir: string): AsyncGenerator<string> {
 /**
  * Shared ignore + extension constants — kept at module scope so both
  * `collectFiles` (sync, back-compat) and `collectFilesStream` (async,
- * new in v1.7.0) reference the same source of truth. If you update one,
- * the other inherits the change automatically.
+ * new in v1.7.0) reference the same source of truth. Also exported
+ * (as `INDEXER_IGNORED_DIRS`) so the FileWatcher derives its chokidar
+ * ignore patterns from the same list — without this single-source-of-
+ * truth the watcher silently watches directories the indexer never
+ * touches (leaking thousands of FDs on repos that have `.vscode-test`
+ * or `.code-review-graph` directories with full VS Code distributions
+ * or duplicated worktrees inside them).
  */
-const INDEX_IGNORED_DIRS = new Set([
+export const INDEXER_IGNORED_DIRS: ReadonlySet<string> = new Set([
   // Build artifacts + dependency caches
   'node_modules', 'dist', 'build', 'out', 'target',
   'coverage', '.cache', '.turbo', '.next', '.nuxt',
@@ -374,6 +379,9 @@ const INDEX_IGNORED_DIRS = new Set([
   // Other tools' working state (often contains duplicated source)
   '.claude', '.code-review-graph', '.vscode-test',
 ]);
+// Internal alias kept for the two existing local references — same
+// data, different name to preserve the diff history.
+const INDEX_IGNORED_DIRS = INDEXER_IGNORED_DIRS;
 const INDEX_SUPPORTED_EXTENSIONS = new Set([
   '.ts', '.tsx', '.js', '.jsx', '.mjs', '.vue',
   '.py', '.rs', '.go', '.java', '.cs', '.rb', '.kt', '.kts', '.swift', '.php', '.dart',
