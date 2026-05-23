@@ -111,12 +111,17 @@ those instead of guessing.
 | \`ctx_architecture_overview\` | High-level codebase map |
 | \`ctx_refactor_preview\` / \`ctx_apply_refactor\` | Plan a rename |
 
-### Hooks keep the graph fresh
+### How the graph stays fresh
 
-\`ctxloom init\` installed a PostToolUse hook on \`Write|Edit\` that
-runs \`ctxloom update --incremental --quiet\` — so the graph is
-always up to date when you query it. No "did the index update yet?"
-guessing.`;
+The ctxloom MCP server's built-in \`FileWatcher\` (chokidar with 200ms
+debounce) keeps the graph + vectors in sync in real time as you edit
+files — no manual reindex needed. A belt-and-suspenders PostToolUse
+hook (\`ctxloom update --incremental --quiet\`) is also installed; in
+v1.7.3+ it's a no-op that exits cleanly. In earlier versions the
+\`update\` subcommand silently didn't exist, which made the hook spawn
+orphan MCP servers and accumulate LanceDB fragments — if you ever see
+\`ctx_search\` stalling for minutes, run \`ctxloom vectors-cleanup\`
+to fix.`;
 
 /**
  * Header line written at the top of session-start.sh so users

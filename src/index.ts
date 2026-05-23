@@ -463,6 +463,13 @@ async function main(): Promise<void> {
   await checkLicense();
 
   switch (command) {
+    case undefined: {
+      // No positional argument → start MCP server (stdio transport).
+      // This is the only path that should ever start the server.
+      await startServer({ withGit, gitWindowDays });
+      break;
+    }
+
     case 'trial': {
       await runTrial();
       break;
@@ -1264,10 +1271,47 @@ Tools Exposed:
       break;
     }
 
-    default: {
-      // Start MCP server
-      await startServer({ withGit, gitWindowDays });
+    case 'update': {
+      // Belt-and-suspenders no-op for the `ctxloom init`-installed
+      // PostToolUse hook. The MCP server's built-in FileWatcher
+      // (packages/core/src/watcher/FileWatcher.ts, 200ms-debounced
+      // chokidar) already keeps the graph + vectors fresh in real
+      // time, so any running MCP server picks up file changes
+      // autonomously — the hook just needs to exit cleanly so it
+      // doesn't fall through to `default:` and accidentally spawn
+      // a *second* MCP server (which is exactly the bug that
+      // accumulated 56k+ LanceDB transaction files in v1.7.2 and
+      // earlier when this command silently didn't exist).
+      //
+      // Accepts --incremental and --quiet for compat with the
+      // existing hook command. Future: implement a real one-shot
+      // mtime-based delta update via DependencyGraph.updateFile()
+      // for use when no MCP server is running. Tracked for v1.8.
+      const isQuiet = args.includes('--quiet');
+      if (!isQuiet) {
+        process.stdout.write(
+          `${fmtSuccess('ctxloom update: no-op (MCP server FileWatcher handles incremental updates)')}\n`,
+        );
+      }
       break;
+    }
+
+    default: {
+      // Reject unknown commands explicitly instead of falling through
+      // to the MCP-server `default:` branch. The pre-v1.7.3 silent
+      // fall-through is what made the broken `ctxloom update` hook so
+      // catastrophic — every PostToolUse fire spawned an orphan MCP
+      // server that held LanceDB FDs and flooded the vectors store.
+      //
+      // MCP-server mode is now ONLY entered via `command === undefined`
+      // (no positional argument), which is handled above before this
+      // switch runs.
+      process.stderr.write(
+        `${fmtError(`Unknown command: ${style.bold(String(command))}`)}\n` +
+          `\n  Run ${style.highlight('ctxloom --help')} for the list of available commands.\n` +
+          `  To start the MCP server, run ${style.highlight('ctxloom')} with no arguments.\n\n`,
+      );
+      process.exit(1);
     }
   }
 }

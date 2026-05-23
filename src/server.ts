@@ -43,6 +43,8 @@ import {
   captureError,
   hashProjectRoot,
   EmittedOnceTracker,
+  inspectVectorsDb,
+  collectFiles,
 } from '@ctxloom/core';
 
 // ─── Server startup options ──────────────────────────────────────────────────
@@ -496,6 +498,58 @@ export async function startServer(opts: ServerOptions = {}): Promise<void> {
     }
   } catch {
     /* best-effort; ulimit not available on this platform */
+  }
+
+  // ── LanceDB fragment safety brake ────────────────────────────────────
+  // In v1.7.2 and earlier the `ctxloom init` PostToolUse hook fired
+  // `ctxloom update --incremental --quiet` on every Write|Edit, but no
+  // `update` subcommand existed — the CLI silently fell through to MCP
+  // server mode, spawning an orphan server on every edit. Each orphan
+  // opened LanceDB, re-upserted files, and held FDs until the hook's
+  // 30s timeout. Repro: 63-file Python project accumulated 56,710 .txn
+  // files across days of Claude Code activity, making the first real
+  // `ctx_search` call take 30+ minutes as the live server crawled the
+  // version tree.
+  //
+  // v1.7.3 closes the spawn-on-unknown-command door (see src/index.ts),
+  // but anyone who already hit the bug needs to know — they have a
+  // poisoned vectors.lancedb sitting on disk that will choke their MCP
+  // server every startup until they run `ctxloom vectors-cleanup`.
+  // This brake measures fragment-count vs source-file-count and warns
+  // loudly when the ratio is bonkers. Best-effort; never throws.
+  if (PROJECT_ROOT) {
+    try {
+      const fragCounts = inspectVectorsDb(PROJECT_ROOT);
+      const fragTotal = fragCounts.txn + fragCounts.manifest + fragCounts.lance;
+      // Skip the FS-walk cost on healthy stores: if there are obviously
+      // few fragments, the project is fine regardless of source size.
+      if (fragTotal > 500) {
+        const sourceFileCount = collectFiles(PROJECT_ROOT).length;
+        // 50× ratio = a project with 100 source files holds >5000
+        // fragments. That's an order of magnitude past anything healthy
+        // compaction would produce (typically <2× even under churn).
+        const FRAGMENT_RATIO_THRESHOLD = 50;
+        if (sourceFileCount > 0 && fragTotal > sourceFileCount * FRAGMENT_RATIO_THRESHOLD) {
+          const mb = (fragCounts.totalBytes / 1024 / 1024).toFixed(0);
+          logger.warn(
+            'LanceDB fragment count is pathological — MCP tools may stall for minutes on first call. ' +
+              'Run `ctxloom vectors-cleanup` (close other ctxloom MCP servers first) to fix.',
+            {
+              sourceFiles: sourceFileCount,
+              fragments: fragTotal,
+              ratio: Math.round(fragTotal / sourceFileCount),
+              ratioThreshold: FRAGMENT_RATIO_THRESHOLD,
+              sizeMB: Number(mb),
+              txn: fragCounts.txn,
+              manifest: fragCounts.manifest,
+              lance: fragCounts.lance,
+            },
+          );
+        }
+      }
+    } catch {
+      /* best-effort; never block server startup on the brake */
+    }
   }
 
   if (!ctx.noDefaultMode) {
