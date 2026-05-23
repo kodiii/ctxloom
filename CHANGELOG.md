@@ -7,6 +7,26 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
 ## [Unreleased]
 
+- + **Graph snapshot hot-reload** — the MCP server now watches
+  `.ctxloom/graph-snapshot.json` for external rewrites and
+  atomically rehydrates its in-memory graph when the file changes.
+  Real repro: a user ran `rm -rf .ctxloom && ctxloom index` from a
+  terminal while a Claude Desktop MCP server was live; the terminal
+  rebuild produced a healthy 70-file snapshot on disk but the MCP
+  server kept serving its pre-wipe in-memory graph (`Files: 2`)
+  until the user closed and reopened Claude Desktop. With this
+  change the rehydrate happens automatically within ~200 ms.
+  Implementation: `DependencyGraph` exposes `startSnapshotWatcher()`
+  / `stopSnapshotWatcher()`; `src/server.ts` starts the watcher
+  after `buildFromDirectory` and `disposeProjectState` releases the
+  FD on project eviction. Own-write echoes are suppressed via mtime
+  tracking so the watcher doesn't fire on the server's own
+  `saveSnapshot()` calls.
+
+---
+
+## [1.7.4] — 2026-05-23
+
 - + **Python project hygiene** — `INDEXER_IGNORED_DIRS` now covers the
   standard Python virtualenv + cache directories: `.venv`, `venv`,
   `env`, `__pycache__`, `.pytest_cache`, `.ruff_cache`, `.mypy_cache`,
