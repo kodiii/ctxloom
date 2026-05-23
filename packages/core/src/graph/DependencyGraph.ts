@@ -28,6 +28,80 @@ const PY_EXTENSIONS = new Set(['.py', '.ipynb']);
 /** Extensions handled by the AST parser (all 13 supported languages). */
 const AST_EXTENSIONS = new Set(['.ts', '.tsx', '.js', '.jsx', '.mjs', '.py', '.go', '.rs', '.java', '.cs', '.rb', '.kt', '.kts', '.swift', '.ipynb', '.php', '.dart']);
 
+// Build-time version constant injected by the root tsup config
+// (see tsup.config.ts: `define: { __CTXLOOM_VERSION__: ... }`).
+// Mirrors the pattern in packages/core/src/license/telemetry.ts so the
+// bundled CLI gets the real version stamped in and unbuilt `tsx` runs
+// fall back to 'dev'. Used by the graph snapshot writer so we can detect
+// "snapshot from older ctxloom" on subsequent loads and force a rebuild —
+// otherwise a snapshot written by a binary that pre-dated (say) absolute
+// Python import resolution silently re-hydrates with empty edges after
+// the user upgrades. See SNAPSHOT_SCHEMA_VERSION bump notes below.
+declare const __CTXLOOM_VERSION__: string | undefined;
+const CTXLOOM_VERSION: string =
+  typeof __CTXLOOM_VERSION__ === 'string' && __CTXLOOM_VERSION__.length > 0
+    ? __CTXLOOM_VERSION__
+    : 'dev';
+
+/**
+ * Graph snapshot schema version.
+ *
+ *   1 → 2: added `ctxloomVersion` field so the loader can invalidate
+ *          snapshots written by an older binary. Snapshots without this
+ *          field are treated as legacy and unconditionally rebuilt.
+ */
+const SNAPSHOT_SCHEMA_VERSION = 2;
+
+/**
+ * Compare two ctxloom version strings ("1.7.1", "1.6.0", "dev").
+ *
+ * Returns `'older'` when `snapshotVer` is strictly less than `currentVer`,
+ * `'newer'` when strictly greater, `'same'` when equal, and `'unknown'`
+ * when the two sides can't be meaningfully ordered.
+ *
+ * 'dev' handling (the constant a `tsx`-driven unbuilt run gets):
+ *
+ *   - Both 'dev'  → 'same'    — keep dev loops fast; no signal to invalidate on.
+ *   - Current 'dev', snapshot real → 'older' — a dev binary may have a
+ *                                              schema/resolver change a
+ *                                              prior release didn't know
+ *                                              about, so invalidate to be safe.
+ *   - Snapshot 'dev', current real → 'unknown' — the snapshot was written by
+ *                                                an unknown binary; safest to
+ *                                                trust it (don't trigger a
+ *                                                rebuild storm for users who
+ *                                                briefly ran a local dev build).
+ *
+ * Intentionally inline (no `semver` dep): the writer only emits
+ * MAJOR.MINOR.PATCH strings straight from package.json, so a 12-line
+ * splitter is both sufficient and dependency-free.
+ */
+function compareCtxloomVersions(
+  snapshotVer: string,
+  currentVer: string,
+): 'older' | 'newer' | 'same' | 'unknown' {
+  if (snapshotVer === currentVer) return 'same';
+  // Snapshot from an unknown dev binary — don't second-guess it.
+  if (snapshotVer === 'dev') return 'unknown';
+  // Current is dev, snapshot is a real release → treat snapshot as older.
+  // Rationale: a dev binary almost always represents "next version under
+  // development", so any prior release's snapshot is by definition older.
+  if (currentVer === 'dev') return 'older';
+  const parse = (v: string): [number, number, number] | null => {
+    const parts = v.split('.').map((s) => Number.parseInt(s, 10));
+    if (parts.length < 3 || parts.some((n) => !Number.isFinite(n))) return null;
+    return [parts[0] ?? 0, parts[1] ?? 0, parts[2] ?? 0];
+  };
+  const a = parse(snapshotVer);
+  const b = parse(currentVer);
+  if (!a || !b) return 'unknown';
+  for (let i = 0; i < 3; i++) {
+    if (a[i] < b[i]) return 'older';
+    if (a[i] > b[i]) return 'newer';
+  }
+  return 'same';
+}
+
 export interface GraphEdge {
   from: string;
   to: string;
@@ -689,7 +763,12 @@ export class DependencyGraph {
     }
 
     const data = {
-      version: 1,
+      version: SNAPSHOT_SCHEMA_VERSION,
+      // Build-time ctxloom version. The loader uses this to invalidate
+      // snapshots written by an older binary (e.g. one that pre-dated
+      // absolute Python import resolution) so users don't get stuck with
+      // an empty graph after `npm i -g ctxloom-pro@latest`.
+      ctxloomVersion: CTXLOOM_VERSION,
       builtAt: Date.now(),
       fileCount: this.forwardEdges.size,
       forwardEdges: Object.fromEntries(
@@ -722,6 +801,8 @@ export class DependencyGraph {
   /** M-2: Validate snapshot shape before hydrating to prevent prototype pollution. */
   private isValidSnapshot(data: unknown): data is {
     version: number;
+    /** Present in schema v2+; absent in legacy v1 snapshots (treated as 'unknown'). */
+    ctxloomVersion?: string;
     forwardEdges: Record<string, string[]>;
     reverseEdges: Record<string, string[]>;
     fileCount?: number;
@@ -730,6 +811,9 @@ export class DependencyGraph {
     if (!data || typeof data !== 'object') return false;
     const d = data as Record<string, unknown>;
     if (typeof d['version'] !== 'number') return false;
+    // ctxloomVersion is optional for forward-compat with legacy v1 snapshots.
+    // Loader handles the "missing → invalidate" case explicitly.
+    if (d['ctxloomVersion'] !== undefined && typeof d['ctxloomVersion'] !== 'string') return false;
     if (!d['forwardEdges'] || typeof d['forwardEdges'] !== 'object') return false;
     if (!d['reverseEdges'] || typeof d['reverseEdges'] !== 'object') return false;
     // Validate that edge values are arrays of strings
@@ -756,6 +840,38 @@ export class DependencyGraph {
       }
 
       const data = raw;
+
+      // Version staleness check (added in schema v2): if the snapshot was
+      // written by an older ctxloom binary — OR is a legacy v1 snapshot
+      // with no ctxloomVersion field at all — force a rebuild. This
+      // closes the "0 edges after upgrade" foot-gun where a snapshot
+      // written before, say, absolute Python import resolution landed
+      // would silently re-hydrate with empty edges on the next run.
+      //
+      // 'newer' is a no-op (downgrade isn't expected but shouldn't
+      // crash); 'same' and 'unknown' (e.g. either side is 'dev') both
+      // fall through to the file-count check below.
+      const snapshotVer = data.ctxloomVersion;
+      if (snapshotVer === undefined) {
+        logger.info('Graph snapshot has no ctxloomVersion (legacy v1), rebuilding under current ctxloom', {
+          current: CTXLOOM_VERSION,
+        });
+        return false;
+      }
+      const cmp = compareCtxloomVersions(snapshotVer, CTXLOOM_VERSION);
+      if (cmp === 'older') {
+        logger.info('Graph snapshot from older ctxloom, rebuilding', {
+          snapshot: snapshotVer,
+          current: CTXLOOM_VERSION,
+        });
+        return false;
+      }
+      if (cmp === 'newer') {
+        logger.warn('Graph snapshot from newer ctxloom than installed binary; reusing but watch for shape drift', {
+          snapshot: snapshotVer,
+          current: CTXLOOM_VERSION,
+        });
+      }
 
       // Staleness check: if file count changed, force rebuild
       if (currentFileCount !== undefined && data.fileCount !== undefined) {

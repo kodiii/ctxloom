@@ -5,6 +5,20 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
 ---
 
+## [Unreleased]
+
+- ~ Graph snapshot now version-stamped — old snapshots auto-invalidate
+  after a ctxloom upgrade (no more "0 edges after upgrade" surprises).
+  `.ctxloom/graph-snapshot.json` schema bumped to `version: 2` with a
+  new `ctxloomVersion` field; legacy v1 snapshots are unconditionally
+  rebuilt on first load. Closes the foot-gun where a snapshot written
+  by a pre-v1.6.0 binary (before absolute Python import resolution
+  landed) would silently re-hydrate with empty edges on a newer
+  ctxloom. No manual action required — the rebuild happens once,
+  transparently, on the next `ctxloom index`.
+
+---
+
 ## [1.7.1] — 2026-05-23
 
 **Patch release** — single fix for the pr-bot GitHub Marketplace listing.
