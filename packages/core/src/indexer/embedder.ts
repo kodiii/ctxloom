@@ -349,23 +349,11 @@ export function collectFiles(dir: string, results: string[] = []): string[] {
   //     identical copies of every large function in find-large-functions.
   //   - The ctxloom-owned `.ctxloom` directory itself — we never embed
   //     our own snapshots back into the index.
-  const IGNORED_DIRS = new Set([
-    // Build artifacts + dependency caches
-    'node_modules', 'dist', 'build', 'out', 'target',
-    'coverage', '.cache', '.turbo', '.next', '.nuxt',
-    // Version control + ctxloom state
-    '.git', '.ctxloom',
-    // Other tools' working state (often contains duplicated source)
-    '.claude', '.code-review-graph', '.vscode-test',
-  ]);
-
-  const SUPPORTED_EXTENSIONS = new Set([
-    '.ts', '.tsx', '.js', '.jsx', '.mjs', '.vue',
-    '.py', '.rs', '.go', '.java', '.cs', '.rb', '.kt', '.kts', '.swift', '.php', '.dart',
-    '.c', '.cpp', '.h',
-    '.md', '.json', '.yaml', '.yml', '.toml',
-    '.ipynb',
-  ]);
+  // Pulled into module-level INDEXER_IGNORED_DIRS / INDEX_SUPPORTED_EXTENSIONS
+  // below so the synchronous walker, the streaming walker, and the chokidar
+  // FileWatcher all use the same single source of truth — without that, the
+  // walker silently indexes directories the watcher never watches (and vice
+  // versa). See INDEXER_IGNORED_DIRS doc comment for the divergence history.
 
   const entries = fs.readdirSync(dir, { withFileTypes: true });
 
@@ -373,12 +361,12 @@ export function collectFiles(dir: string, results: string[] = []): string[] {
     const fullPath = path.join(dir, entry.name);
 
     if (entry.isDirectory()) {
-      if (!IGNORED_DIRS.has(entry.name)) {
+      if (!isIgnoredDir(entry.name)) {
         collectFiles(fullPath, results);
       }
     } else if (entry.isFile()) {
       const ext = path.extname(entry.name);
-      if (SUPPORTED_EXTENSIONS.has(ext)) {
+      if (INDEX_SUPPORTED_EXTENSIONS.has(ext)) {
         results.push(fullPath);
       }
     }
@@ -410,7 +398,7 @@ export async function* collectFilesStream(dir: string): AsyncGenerator<string> {
   for (const entry of entries) {
     const fullPath = path.join(dir, entry.name);
     if (entry.isDirectory()) {
-      if (!INDEX_IGNORED_DIRS.has(entry.name)) {
+      if (!isIgnoredDir(entry.name)) {
         yield* collectFilesStream(fullPath);
       }
     } else if (entry.isFile()) {
@@ -433,9 +421,18 @@ export async function* collectFilesStream(dir: string): AsyncGenerator<string> {
  * or duplicated worktrees inside them).
  */
 export const INDEXER_IGNORED_DIRS: ReadonlySet<string> = new Set([
-  // Build artifacts + dependency caches
+  // Build artifacts + dependency caches (JS/TS, Rust, Java)
   'node_modules', 'dist', 'build', 'out', 'target',
   'coverage', '.cache', '.turbo', '.next', '.nuxt',
+  // Python virtualenvs + caches. Real-world repro: EasyMoney (a 63-
+  // source-file FastAPI project) had a `.venv/` with 8,192 installed-
+  // package files. Pre-fix, `ctxloom index` reported 8,120 files /
+  // 14,138 edges instead of the expected 63 / 97, because none of the
+  // standard Python virtualenv/cache directory names were in this set.
+  // The `__pycache__` + `.pytest_cache` + `.ruff_cache` + `.mypy_cache`
+  // additions catch the bulk of Python noise on top of the venv.
+  '.venv', 'venv', 'env', '__pycache__',
+  '.pytest_cache', '.ruff_cache', '.mypy_cache', '.tox',
   // Version control + ctxloom state
   '.git', '.ctxloom',
   // Other tools' working state (often contains duplicated source)
@@ -444,6 +441,23 @@ export const INDEXER_IGNORED_DIRS: ReadonlySet<string> = new Set([
 // Internal alias kept for the two existing local references — same
 // data, different name to preserve the diff history.
 const INDEX_IGNORED_DIRS = INDEXER_IGNORED_DIRS;
+
+/**
+ * Test whether a directory name should be skipped by the indexer.
+ *
+ * Uses an exact-match set for fixed names (node_modules, .venv, etc.)
+ * PLUS a suffix check for Python's `*.egg-info` directories. setuptools
+ * generates one per installable package (so `src/easymoney.egg-info/`,
+ * `mylib.egg-info/`, etc.) — the name varies per project but the suffix
+ * is canonical. Cheaper to suffix-check at the call site than to enumerate
+ * every possible egg-info name at module init.
+ */
+export function isIgnoredDir(name: string): boolean {
+  if (INDEXER_IGNORED_DIRS.has(name)) return true;
+  // Python setuptools artifacts: <package>.egg-info, <package>.dist-info
+  if (name.endsWith('.egg-info') || name.endsWith('.dist-info')) return true;
+  return false;
+}
 const INDEX_SUPPORTED_EXTENSIONS = new Set([
   '.ts', '.tsx', '.js', '.jsx', '.mjs', '.vue',
   '.py', '.rs', '.go', '.java', '.cs', '.rb', '.kt', '.kts', '.swift', '.php', '.dart',

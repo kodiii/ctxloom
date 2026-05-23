@@ -75,7 +75,7 @@ export { ASTParser } from './ast/ASTParser.js';
 export { Skeletonizer } from './ast/Skeletonizer.js';
 
 // ─── Indexer ─────────────────────────────────────────────────────────────────
-export { generateEmbedding, collectFiles, indexDirectory, EMBEDDING_DIMENSION } from './indexer/embedder.js';
+export { generateEmbedding, collectFiles, indexDirectory, EMBEDDING_DIMENSION, isIgnoredDir, INDEXER_IGNORED_DIRS } from './indexer/embedder.js';
 
 // ─── Database ────────────────────────────────────────────────────────────────
 export type { VectorSearchResult, VectorStoreOptions } from './db/VectorStore.js';

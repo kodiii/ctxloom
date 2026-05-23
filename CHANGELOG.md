@@ -7,6 +7,23 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
 ## [Unreleased]
 
+- + **Python project hygiene** — `INDEXER_IGNORED_DIRS` now covers the
+  standard Python virtualenv + cache directories: `.venv`, `venv`,
+  `env`, `__pycache__`, `.pytest_cache`, `.ruff_cache`, `.mypy_cache`,
+  `.tox`. Plus suffix matching for setuptools artifacts
+  (`*.egg-info`, `*.dist-info`). Real repro on EasyMoney (63 source
+  files): pre-fix `ctxloom index` reported **8,120 files / 14,138
+  edges / 370s / 347 MB** because the entire `.venv/` got crawled;
+  post-fix **62 files / 97 edges / 3.2s / 188 KB**. The fix also
+  deduplicates the previously-divergent local + exported ignore
+  lists in `embedder.ts` so the synchronous walker, streaming
+  walker, and chokidar FileWatcher all share a single source of
+  truth via a new `isIgnoredDir()` helper.
+
+---
+
+## [1.7.3] — 2026-05-23
+
 - ! **Critical fix** — `ctxloom update` is now a real (no-op)
   subcommand and unknown commands exit 1 with a clear error. Before
   v1.7.3 the `ctxloom init`-installed PostToolUse hook
