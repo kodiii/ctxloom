@@ -106,6 +106,13 @@ export async function disposeProjectState(state: ProjectState): Promise<void> {
     await state.watcher?.stop();
   } catch { /* best-effort */ }
   try {
+    // v1.7.5: release the snapshot hot-reload watcher's FD. The graph
+    // promise may not have resolved yet (project evicted before first
+    // tool call) — only call stop if we actually have a graph.
+    const graph = state.graphPromise ? await state.graphPromise.catch(() => null) : null;
+    graph?.stopSnapshotWatcher();
+  } catch { /* best-effort */ }
+  try {
     const store = state.storePromise ? await state.storePromise : null;
     await store?.close();
   } catch { /* best-effort */ }

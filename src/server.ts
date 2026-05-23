@@ -129,6 +129,15 @@ async function initGraph(state: ProjectState): Promise<DependencyGraph> {
         const graph = new DependencyGraph();
         graph.setParser(parser);
         await graph.buildFromDirectory(state.projectRoot);
+        // v1.7.5 hot-reload: detect external rewrites of
+        // .ctxloom/graph-snapshot.json (typically when the user runs
+        // `ctxloom index` from a terminal against this same project)
+        // and atomically swap the in-memory graph. Without this, the
+        // MCP server keeps serving the graph it loaded at startup
+        // until the client restarts. Best-effort — silently no-ops
+        // if the snapshot file doesn't exist yet or fs.watch is
+        // unavailable on this platform.
+        graph.startSnapshotWatcher();
         state.graphInitialized = true;
         return graph;
       } catch (err) {

@@ -161,6 +161,29 @@ export class DependencyGraph {
   private tsPathsResolver: TsConfigPathsResolver | null = null;
 
   /**
+   * fs.watch handle on `.ctxloom/graph-snapshot.json`. When the file is
+   * rewritten externally (e.g. the user runs `ctxloom index` from a
+   * terminal while an MCP server is live), this watcher triggers an
+   * in-memory rehydrate so subsequent tool calls reflect the new graph
+   * without needing the user to restart their MCP client.
+   *
+   * Real repro that motivated this (v1.7.5): EasyMoney user ran
+   * `rm -rf .ctxloom && ctxloom index` from the terminal but the
+   * Claude Desktop MCP server kept serving the pre-wipe in-memory
+   * graph (`Files: 2`) because there was no mechanism to detect the
+   * fresh snapshot on disk. Confusing diagnostic loop.
+   */
+  private snapshotWatcher: fs.FSWatcher | null = null;
+  /** Debounce timer for snapshot-change events. */
+  private snapshotReloadTimer: NodeJS.Timeout | null = null;
+  /**
+   * Tracks the snapshot mtime we last loaded from disk so the watcher
+   * can suppress its own-write echo. saveSnapshot() updates this just
+   * before writing; the watcher ignores any change whose mtime <= this.
+   */
+  private lastLoadedSnapshotMtimeMs: number = 0;
+
+  /**
    * Build the graph from all supported files in rootDir using AST parsing.
    */
   async buildFromDirectory(
@@ -445,6 +468,119 @@ export class DependencyGraph {
     this.rootDir = rootDir;
     this.snapshotDir = path.join(rootDir, '.ctxloom');
     return this.loadSnapshot();
+  }
+
+  /**
+   * Start watching `.ctxloom/graph-snapshot.json` for external rewrites.
+   * When the user runs `ctxloom index` (or any other tool) from a
+   * terminal against the same project root, the watcher detects the
+   * new mtime, reloads the snapshot, and atomically swaps the
+   * in-memory graph — so subsequent MCP tool calls see the fresh
+   * graph without requiring an MCP client restart.
+   *
+   * Own writes (via saveSnapshot) update lastLoadedSnapshotMtimeMs
+   * BEFORE the rename completes, so the watcher's own-write echo is
+   * filtered out by the mtime check.
+   *
+   * Debounced 200 ms — matches the FileWatcher cadence and absorbs
+   * the burst of fs.watch events some platforms emit for a single
+   * write (Linux can fire `rename` + `change`, macOS sometimes
+   * fires multiple `change` for atomic rename).
+   *
+   * Idempotent: calling twice is harmless (re-uses the existing
+   * watcher). Call stopSnapshotWatcher() before disposing the graph
+   * to release the FD.
+   */
+  startSnapshotWatcher(debounceMs: number = 200): void {
+    if (this.snapshotWatcher) return;
+    if (!this.snapshotDir) {
+      logger.warn('startSnapshotWatcher: no snapshotDir set, call buildFromDirectory first');
+      return;
+    }
+    const snapshotPath = this.getSnapshotPath();
+    if (!fs.existsSync(snapshotPath)) {
+      // Watching a non-existent file errors on most platforms; the
+      // first saveSnapshot will create it, but by then the caller
+      // missed the start window. Bail with a warn — caller can retry
+      // after buildFromDirectory completes the first save.
+      logger.warn('startSnapshotWatcher: snapshot file does not exist yet', { path: snapshotPath });
+      return;
+    }
+    try {
+      this.snapshotWatcher = fs.watch(snapshotPath, { persistent: false }, (eventType) => {
+        // Debounce: collapse a burst of events from a single rewrite
+        // into one reload. clearTimeout returns silently for a null
+        // ref so this is safe to call unconditionally.
+        if (this.snapshotReloadTimer) clearTimeout(this.snapshotReloadTimer);
+        this.snapshotReloadTimer = setTimeout(() => {
+          this.snapshotReloadTimer = null;
+          void this.maybeReloadSnapshot(eventType);
+        }, debounceMs);
+      });
+      // fs.watch can emit `error` events; log without crashing the server.
+      this.snapshotWatcher.on('error', (err) => {
+        logger.warn('snapshot watcher error', { detail: err instanceof Error ? err.message : String(err) });
+      });
+      logger.info('Graph snapshot hot-reload watcher started', { path: snapshotPath });
+    } catch (err) {
+      logger.warn('startSnapshotWatcher: failed to attach fs.watch', {
+        detail: err instanceof Error ? err.message : String(err),
+      });
+      this.snapshotWatcher = null;
+    }
+  }
+
+  /**
+   * Stop the snapshot watcher and clear any pending debounce timer.
+   * Call before disposing the graph to release the FD held by fs.watch.
+   * Idempotent.
+   */
+  stopSnapshotWatcher(): void {
+    if (this.snapshotReloadTimer) {
+      clearTimeout(this.snapshotReloadTimer);
+      this.snapshotReloadTimer = null;
+    }
+    if (this.snapshotWatcher) {
+      try {
+        this.snapshotWatcher.close();
+      } catch {
+        /* best-effort */
+      }
+      this.snapshotWatcher = null;
+    }
+  }
+
+  /**
+   * Internal: called from the debounced watcher. Compares on-disk
+   * mtime against `lastLoadedSnapshotMtimeMs` to filter own-write
+   * echoes, then re-hydrates the in-memory maps from disk via
+   * loadSnapshot(). Atomic from the perspective of MCP tool calls
+   * because Node's event loop ensures loadSnapshot's map assignments
+   * happen in a single tick (no other code interleaves).
+   */
+  private async maybeReloadSnapshot(eventType: string): Promise<void> {
+    const snapshotPath = this.getSnapshotPath();
+    let currentMtime = 0;
+    try {
+      currentMtime = fs.statSync(snapshotPath).mtimeMs;
+    } catch {
+      // File was deleted; nothing to reload.
+      return;
+    }
+    if (currentMtime <= this.lastLoadedSnapshotMtimeMs) {
+      // Echo of our own saveSnapshot — already in sync.
+      return;
+    }
+    const ok = await this.loadSnapshot();
+    if (ok) {
+      logger.info('Graph snapshot hot-reloaded', {
+        event: eventType,
+        files: this.forwardEdges.size,
+        edges: this.edgeCount(),
+      });
+    } else {
+      logger.warn('Graph snapshot hot-reload skipped (snapshot invalid or version-stale)');
+    }
   }
 
   /**
@@ -790,6 +926,18 @@ export class DependencyGraph {
     fs.writeFileSync(tmpPath, JSON.stringify(data, null, 2));
     fs.renameSync(tmpPath, snapshotPath);
 
+    // Own-write suppression for the hot-reload watcher: stamp the
+    // mtime we just wrote so the watcher's change handler can compare
+    // and skip echoes of our own save. Done AFTER rename so the
+    // recorded mtime is the post-rename mtime (the only one that
+    // matters). Best-effort; statSync may fail under unusual FS
+    // conditions but the worst case is one extra harmless reload.
+    try {
+      this.lastLoadedSnapshotMtimeMs = fs.statSync(snapshotPath).mtimeMs;
+    } catch {
+      /* leave at previous value; watcher will see strict-greater externally */
+    }
+
     // Save call graph snapshot alongside import graph snapshot
     const callData = this.callGraphIndex.toJSON();
     const callPath = path.join(this.snapshotDir, 'call-graph-snapshot.json');
@@ -901,6 +1049,16 @@ export class DependencyGraph {
         } catch {
           this.callGraphIndex = new CallGraphIndex();
         }
+      }
+
+      // Record the loaded snapshot's mtime so the hot-reload watcher
+      // can suppress own-write echoes (our own saveSnapshot updates
+      // this BEFORE writing, so any externally-driven write produces
+      // a strictly newer mtime).
+      try {
+        this.lastLoadedSnapshotMtimeMs = fs.statSync(snapshotPath).mtimeMs;
+      } catch {
+        /* stat failed — leave at 0, worst case is one extra reload */
       }
 
       return true;
