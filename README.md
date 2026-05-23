@@ -69,7 +69,7 @@ The full first-run flow is **one install + one trial + one init per project.** E
 npm install -g ctxloom-pro
 ```
 
-> **For local trial / dev use the unpinned command above is fine.** For unattended CI usage, pin to the exact version (`ctxloom-pro@1.7.2`) so future CLI releases don't silently desync your agent-spec coverage — see the workflow example below.
+> **For local trial / dev use the unpinned command above is fine.** For unattended CI usage, pin to the exact version (`ctxloom-pro@1.7.3`) so future CLI releases don't silently desync your agent-spec coverage — see the workflow example below.
 
 ### 2 — Start your free trial (once per email)
 
@@ -383,7 +383,7 @@ jobs:
       # Exact pin (not `@^1`) so future CLI releases that add/remove MCP
       # tools don't silently desync your reviewer-agent specs. Bump on
       # every release; see CHANGELOG.md for the live version table.
-      - run: npm install -g ctxloom-pro@1.7.2
+      - run: npm install -g ctxloom-pro@1.7.3
       - run: ctxloom index
       - run: ctxloom rules check --json
 ```
