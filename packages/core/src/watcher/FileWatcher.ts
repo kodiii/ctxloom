@@ -6,7 +6,7 @@
  * Ignores common non-source directories.
  */
 import chokidar, { FSWatcher } from 'chokidar';
-import { INDEXER_IGNORED_DIRS } from '../indexer/embedder.js';
+import { INDEXER_IGNORED_DIRS, isIgnoredDir } from '../indexer/embedder.js';
 import { logger } from '../utils/logger.js';
 
 export type ChangeCallback = (absolutePath: string, event: 'add' | 'change' | 'unlink') => void | Promise<void>;
@@ -39,10 +39,18 @@ export type ChangeCallback = (absolutePath: string, event: 'add' | 'change' | 'u
 function isIgnoredPath(absPath: string): boolean {
   const segments = absPath.split(/[\\/]/);
   for (const seg of segments) {
-    if (INDEXER_IGNORED_DIRS.has(seg)) return true;
+    // isIgnoredDir handles exact-match (INDEXER_IGNORED_DIRS) AND
+    // suffix patterns like `*.egg-info` / `*.dist-info` — using it
+    // here keeps watcher behavior in lockstep with the indexer walker
+    // so a Python project's `easymoney.egg-info/` isn't watched but
+    // silently re-indexed (or vice versa).
+    if (isIgnoredDir(seg)) return true;
   }
   return false;
 }
+// Re-export to satisfy the existing INDEXER_IGNORED_DIRS-only import
+// path; the doc-only reference is preserved for IDE jump-to-definition.
+void INDEXER_IGNORED_DIRS;
 const IGNORED = isIgnoredPath;
 
 export class FileWatcher {
