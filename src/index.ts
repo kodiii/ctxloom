@@ -213,7 +213,37 @@ function buildActivityFromOverlay(store: GitOverlayStore): CandidateActivity[] {
 // just to inspect local telemetry would be hostile during license-
 // recovery scenarios (expired/revoked/network-failing-validate).
 // Added to bypass set per TEST-135-3 follow-up.
-const LICENSE_GATE_BYPASS_COMMANDS = new Set(['trial', 'activate', 'deactivate', 'status', 'budget-stats', '--help']);
+const LICENSE_GATE_BYPASS_COMMANDS = new Set(['trial', 'activate', 'deactivate', 'status', 'budget-stats', '--help', 'update']);
+
+/**
+ * Every subcommand the CLI dispatches in main()'s switch — used by
+ * the upstream unknown-command guard so a typo (or a broken hook like
+ * the pre-v1.7.3 `ctxloom update`) is rejected with a clear "Unknown
+ * command" message *before* the license gate runs. This matters because:
+ *
+ *   1. License validation can fail closed (exit 2) for unrelated
+ *      reasons in CI / offline scenarios, masking the real "you
+ *      typed a typo" signal users actually need.
+ *
+ *   2. Pre-v1.7.3, an unknown command silently fell through to the
+ *      `default:` branch of the switch, which started a *new* MCP
+ *      server. The PostToolUse hook in `ctxloom init` triggered this
+ *      on every Write|Edit and spawned orphan servers that ate disk
+ *      (`vectors.lancedb` ballooned to 56k+ fragments on real repros).
+ *      Centralizing the known-command list makes that whole bug class
+ *      impossible to reintroduce.
+ *
+ * Keep this in sync with the switch in main(). `undefined` (no
+ * positional arg → MCP server) is intentionally not in this set; it
+ * is handled by an explicit early-return in the unknown-command guard.
+ */
+const KNOWN_COMMANDS = new Set([
+  'trial', 'activate', 'deactivate', 'status', 'init', 'index',
+  'setup', 'install-pr-bot', 'register', 'repos', 'grammars',
+  'vectors-cleanup', 'budget-stats', 'dashboard', 'review-suggest',
+  'authors-sync', 'rules', 'update',
+  '--help', '-h',
+]);
 
 async function checkLicense(): Promise<void> {
   if (command !== undefined && LICENSE_GATE_BYPASS_COMMANDS.has(command)) return;
@@ -460,9 +490,34 @@ async function main(): Promise<void> {
   if (command !== undefined && shouldEmitInstallCompleted()) {
     track('install_completed', { command });
   }
+
+  // Unknown-command guard: reject typos / removed-command references
+  // BEFORE the license gate. Two reasons (see KNOWN_COMMANDS doc):
+  //   1. CI / offline runs without a valid license would exit 2 with a
+  //      license error, hiding the real "you typed something invalid".
+  //   2. The pre-v1.7.3 silent fall-through to MCP-server mode (which
+  //      spawned orphan ctxloom processes on every PostToolUse hook
+  //      fire and bloated vectors.lancedb to 56k+ fragments) is now
+  //      structurally impossible.
+  if (command !== undefined && !KNOWN_COMMANDS.has(command)) {
+    process.stderr.write(
+      `${fmtError(`Unknown command: ${style.bold(String(command))}`)}\n` +
+        `\n  Run ${style.highlight('ctxloom --help')} for the list of available commands.\n` +
+        `  To start the MCP server, run ${style.highlight('ctxloom')} with no arguments.\n\n`,
+    );
+    process.exit(1);
+  }
+
   await checkLicense();
 
   switch (command) {
+    case undefined: {
+      // No positional argument → start MCP server (stdio transport).
+      // This is the only path that should ever start the server.
+      await startServer({ withGit, gitWindowDays });
+      break;
+    }
+
     case 'trial': {
       await runTrial();
       break;
@@ -1264,10 +1319,42 @@ Tools Exposed:
       break;
     }
 
-    default: {
-      // Start MCP server
-      await startServer({ withGit, gitWindowDays });
+    case 'update': {
+      // Belt-and-suspenders no-op for the `ctxloom init`-installed
+      // PostToolUse hook. The MCP server's built-in FileWatcher
+      // (packages/core/src/watcher/FileWatcher.ts, 200ms-debounced
+      // chokidar) already keeps the graph + vectors fresh in real
+      // time, so any running MCP server picks up file changes
+      // autonomously — the hook just needs to exit cleanly so it
+      // doesn't fall through to `default:` and accidentally spawn
+      // a *second* MCP server (which is exactly the bug that
+      // accumulated 56k+ LanceDB transaction files in v1.7.2 and
+      // earlier when this command silently didn't exist).
+      //
+      // Accepts --incremental and --quiet for compat with the
+      // existing hook command. Future: implement a real one-shot
+      // mtime-based delta update via DependencyGraph.updateFile()
+      // for use when no MCP server is running. Tracked for v1.8.
+      const isQuiet = args.includes('--quiet');
+      if (!isQuiet) {
+        process.stdout.write(
+          `${fmtSuccess('ctxloom update: no-op (MCP server FileWatcher handles incremental updates)')}\n`,
+        );
+      }
       break;
+    }
+
+    default: {
+      // Unreachable — the upstream KNOWN_COMMANDS guard in main()
+      // rejects anything that doesn't match a case here. Kept as a
+      // belt-and-suspenders safety net so a future case addition that
+      // forgets to update KNOWN_COMMANDS still fails closed (exit 1)
+      // rather than silently spawning an MCP server.
+      process.stderr.write(
+        `${fmtError(`Internal error: unhandled command '${String(command)}' reached switch default. ` +
+          'This indicates KNOWN_COMMANDS and the switch are out of sync.')}\n`,
+      );
+      process.exit(1);
     }
   }
 }

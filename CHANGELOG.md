@@ -7,6 +7,30 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
 ## [Unreleased]
 
+- ! **Critical fix** — `ctxloom update` is now a real (no-op)
+  subcommand and unknown commands exit 1 with a clear error. Before
+  v1.7.3 the `ctxloom init`-installed PostToolUse hook
+  (`ctxloom update --incremental --quiet`) fired on every Write|Edit
+  but no `update` subcommand existed — the CLI silently fell through
+  to `default:` which started a *new* MCP server. Each PostToolUse fire
+  spawned an orphan server that held LanceDB FDs and re-upserted files.
+  Repro on a 63-file Python project: `.ctxloom/vectors.lancedb` grew
+  to **56,710 `.txn` files + 347 MB**, and `ctx_search` first-touch
+  stalled for **30+ minutes**. v1.7.3 closes both holes. If you were
+  affected, run `ctxloom vectors-cleanup` once (after closing other
+  ctxloom MCP servers) — the bug stops accumulating immediately and
+  the existing cleanup tool fixes the poisoned state.
+- + Startup safety brake — MCP server now logs a loud warning when
+  `.ctxloom/vectors.lancedb` fragment count exceeds 50× the project's
+  source-file count, pointing users at `ctxloom vectors-cleanup`. This
+  catches any user who hit the pre-1.7.3 bug and still has a poisoned
+  store on disk.
+- ~ Updated CLAUDE.md install template to describe the real freshness
+  mechanism (the MCP server's built-in chokidar FileWatcher with
+  200ms debounce) rather than the broken hook.
+- ~ Bumped stale `ctxloom-pro@1.7.1` pins in README.md and
+  apps/pr-bot/examples/.github/workflows/claude-review.yml that were
+  missed in the 1.7.2 cut.
 - ~ Graph snapshot now version-stamped — old snapshots auto-invalidate
   after a ctxloom upgrade (no more "0 edges after upgrade" surprises).
   `.ctxloom/graph-snapshot.json` schema bumped to `version: 2` with a
