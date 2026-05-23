@@ -194,6 +194,98 @@ describe('DependencyGraph snapshot', () => {
     // Graph should have been rebuilt (may have more or equal edges)
     expect(graph2.edgeCount()).toBeGreaterThanOrEqual(edges1);
   });
+
+  // ── Version-stamp staleness (schema v2) ─────────────────────────────
+  // Real-world repro: a user upgraded from a pre-v1.6.0 ctxloom on a
+  // FastAPI-style Python project and `ctxloom index` re-hydrated an
+  // empty snapshot (every forwardEdges entry was `[]`) because the file
+  // count hadn't drifted. These tests pin the version-based rebuild.
+
+  it('should stamp ctxloomVersion and schema version 2 into the snapshot', async () => {
+    const graph = new DependencyGraph();
+    await graph.buildFromDirectory(tempDir);
+
+    const snapshotPath = path.join(tempDir, '.ctxloom', 'graph-snapshot.json');
+    const data = JSON.parse(fs.readFileSync(snapshotPath, 'utf-8'));
+    expect(data.version).toBe(2);
+    expect(typeof data.ctxloomVersion).toBe('string');
+    expect(data.ctxloomVersion.length).toBeGreaterThan(0);
+  });
+
+  it('should invalidate a legacy v1 snapshot (no ctxloomVersion) and rebuild', async () => {
+    // Seed a snapshot in the pre-v2 shape: schema version 1, no
+    // ctxloomVersion field, file count matches current to defeat the
+    // file-count staleness check, and all forwardEdges intentionally
+    // empty — mirroring the EasyMoney repro shape.
+    const snapshotPath = path.join(tempDir, '.ctxloom', 'graph-snapshot.json');
+    const legacy = {
+      version: 1,
+      builtAt: Date.now() - 86_400_000,
+      fileCount: 2, // matches `a.ts` + `b.ts` so file-count check passes
+      forwardEdges: { 'a.ts': [], 'b.ts': [] },
+      reverseEdges: { 'a.ts': [], 'b.ts': [] },
+      symbolIndex: {},
+    };
+    fs.writeFileSync(snapshotPath, JSON.stringify(legacy));
+
+    const graph = new DependencyGraph();
+    await graph.buildFromDirectory(tempDir);
+
+    // After rebuild, the b.ts → a.ts edge must be there (proof we
+    // didn't just hydrate the empty legacy snapshot).
+    expect(graph.edgeCount()).toBeGreaterThan(0);
+
+    // Snapshot on disk should now be v2 with a ctxloomVersion field.
+    const fresh = JSON.parse(fs.readFileSync(snapshotPath, 'utf-8'));
+    expect(fresh.version).toBe(2);
+    expect(typeof fresh.ctxloomVersion).toBe('string');
+  });
+
+  it('should invalidate a snapshot from an older ctxloomVersion', async () => {
+    // First build to produce a real, well-shaped v2 snapshot.
+    const graph1 = new DependencyGraph();
+    await graph1.buildFromDirectory(tempDir);
+    const realEdges = graph1.edgeCount();
+    expect(realEdges).toBeGreaterThan(0);
+
+    // Now overwrite the snapshot in place with an artificially-aged
+    // ctxloomVersion + emptied edges. fileCount stays correct so only
+    // the version check can save us.
+    const snapshotPath = path.join(tempDir, '.ctxloom', 'graph-snapshot.json');
+    const real = JSON.parse(fs.readFileSync(snapshotPath, 'utf-8'));
+    fs.writeFileSync(
+      snapshotPath,
+      JSON.stringify({
+        ...real,
+        ctxloomVersion: '0.0.1',
+        forwardEdges: Object.fromEntries(Object.keys(real.forwardEdges).map((k) => [k, []])),
+        reverseEdges: Object.fromEntries(Object.keys(real.reverseEdges).map((k) => [k, []])),
+      }),
+    );
+
+    const graph2 = new DependencyGraph();
+    await graph2.buildFromDirectory(tempDir);
+
+    // Rebuild kicked in → real edges restored.
+    expect(graph2.edgeCount()).toBe(realEdges);
+  });
+
+  it('should reuse a snapshot from a same-or-newer ctxloomVersion (no crash)', async () => {
+    const graph1 = new DependencyGraph();
+    await graph1.buildFromDirectory(tempDir);
+    const realEdges = graph1.edgeCount();
+    expect(realEdges).toBeGreaterThan(0);
+
+    const snapshotPath = path.join(tempDir, '.ctxloom', 'graph-snapshot.json');
+    const real = JSON.parse(fs.readFileSync(snapshotPath, 'utf-8'));
+    // Force a version far in the future to exercise the 'newer' branch
+    // (which warns but still hydrates the snapshot as-is).
+    fs.writeFileSync(snapshotPath, JSON.stringify({ ...real, ctxloomVersion: '999.0.0' }));
+
+    const graph2 = new DependencyGraph();
+    await graph2.buildFromDirectory(tempDir);
+    expect(graph2.edgeCount()).toBe(realEdges);
+  });
 });
 
 describe('buildFromDirectory afterReady callback', () => {
