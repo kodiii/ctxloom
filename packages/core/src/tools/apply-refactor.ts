@@ -116,8 +116,14 @@ export function registerApplyRefactorTool(registry: ToolRegistry, ctx: ServerCon
       const results: FileResult[] = [];
       let totalOccurrences = 0;
 
+      // Write to the root the graph was built against, not ctx.projectRoot
+      // (the server default). Critical for apply-refactor: a root mismatch
+      // here doesn't just return 0 — it would mutate files under the WRONG
+      // project if a path happened to collide. See full-text-search.ts for
+      // the full rationale.
+      const rootDir = graph.getRootDir() || ctx.projectRoot;
       for (const relPath of candidates) {
-        const absPath = path.join(ctx.projectRoot, relPath);
+        const absPath = path.join(rootDir, relPath);
         const count = applyToFile(absPath, symbol, new_name, dry_run);
         if (count > 0) {
           results.push({ filePath: relPath, occurrences: count, written: !dry_run });

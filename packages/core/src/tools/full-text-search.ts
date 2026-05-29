@@ -177,10 +177,25 @@ export function registerFullTextSearchTool(registry: ToolRegistry, ctx: ServerCo
       const graph = await ctx.getGraph(project_root);
       const files = graph.allFiles();
 
+      // Read files from the SAME root the graph was built against, not
+      // ctx.projectRoot (the server's default). Pre-fix this used
+      // ctx.projectRoot, so any call passing an explicit project_root
+      // different from the default — every multi-project / Claude-Desktop
+      // call, or any no-default server — joined relpaths against the
+      // wrong directory, every readFileSync failed, and the tool returned
+      // 0 results for identifiers that plainly exist. Misdiagnosed in the
+      // field as a "tokenizer drops leading-underscore identifiers" bug;
+      // it was a root mismatch. graph.getRootDir() is the exact root the
+      // graph indexed. Fall back to ctx.projectRoot only when the graph
+      // has no recorded root (manually-constructed graphs in tests that
+      // never called buildFromDirectory); the real server always builds
+      // via buildFromDirectory so getRootDir() is populated in prod.
+      const rootDir = graph.getRootDir() || ctx.projectRoot;
+
       const keywordResults: Array<{ filePath: string; score: number; matchCount: number; snippets: string[] }> = [];
 
       for (const relPath of files) {
-        const absPath = path.join(ctx.projectRoot, relPath);
+        const absPath = path.join(rootDir, relPath);
         const hit = scanFile(absPath, pattern, context_lines);
         if (hit) {
           keywordResults.push({
