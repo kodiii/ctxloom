@@ -141,8 +141,13 @@ export function registerRefactorPreviewTool(registry: ToolRegistry, ctx: ServerC
       const fileChanges: FileChange[] = [];
       let totalOccurrences = 0;
 
+      // Read from the root the graph was built against (see
+      // full-text-search.ts for the full root-mismatch rationale):
+      // ctx.projectRoot is the server default and is wrong whenever an
+      // explicit project_root was passed.
+      const rootDir = graph.getRootDir() || ctx.projectRoot;
       for (const relPath of candidates) {
-        const absPath = path.join(ctx.projectRoot, relPath);
+        const absPath = path.join(rootDir, relPath);
         const occurrences = scanFile(absPath, symbol, new_name);
         if (occurrences.length > 0) {
           fileChanges.push({ filePath: relPath, occurrences });

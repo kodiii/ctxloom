@@ -584,6 +584,20 @@ export class DependencyGraph {
   }
 
   /**
+   * Absolute root directory this graph was built/loaded against.
+   *
+   * Tools that read file CONTENTS off disk (full-text scan, refactor
+   * preview/apply) must join relpaths against THIS root, not against a
+   * server-level default like ctx.projectRoot — otherwise a call that
+   * passes an explicit project_root different from the default reads
+   * from the wrong directory and silently finds nothing. Returns '' if
+   * the graph was never built (defensive; callers should have a graph).
+   */
+  getRootDir(): string {
+    return this.rootDir;
+  }
+
+  /**
    * Get files that the given file directly imports.
    */
   getImports(fileRel: string): string[] {
