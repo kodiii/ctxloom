@@ -100,10 +100,16 @@ export function registerContextPacketTool(registry: ToolRegistry, ctx: ServerCon
       const imports = graph.getImports(parsed.target_file);
       const importers = graph.getImporters(parsed.target_file);
 
+      // Resolve dependency skeletons against the graph's own root, not
+      // ctx.projectRoot (the server default). With an explicit
+      // project_root differing from the default, ctx.projectRoot points
+      // at the wrong project and every dep skeleton silently fails to
+      // resolve (same #257 root-mismatch class).
+      const rootDir = graph.getRootDir() || ctx.projectRoot;
       const skeletons = await Promise.all(
         imports.map(async (dep) => {
           try {
-            const absDep = path.resolve(ctx.projectRoot, dep);
+            const absDep = path.resolve(rootDir, dep);
             const sk = await skeletonizer.skeletonize(absDep);
             return `\n<!-- ${dep} -->\n${sk}`;
           } catch {
