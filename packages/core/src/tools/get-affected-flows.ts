@@ -156,16 +156,21 @@ export function registerGetAffectedFlowsTool(registry: ToolRegistry, ctx: Server
     async (args) => {
       const { changed_files, use_git, depth, max_flows, max_steps_per_flow, project_root } = Schema.parse(args);
 
+      // Build the graph first so git auto-detection runs against the
+      // project the caller asked for, not ctx.projectRoot (the server
+      // default). See detect-changes.ts for the full git-cwd rationale.
+      const graph = await ctx.getGraph(project_root);
+      const gitRoot = graph.getRootDir() || ctx.projectRoot;
+
       let files = changed_files ?? [];
       if (files.length === 0 && use_git) {
-        files = await detectChangedFiles(ctx.projectRoot);
+        files = await detectChangedFiles(gitRoot);
       }
 
       if (files.length === 0) {
         return '<affected_flows changed_files="0" total_flows="0">\n  <!-- No changed files detected -->\n</affected_flows>';
       }
 
-      const graph = await ctx.getGraph(project_root);
       const callIdx = graph.getCallGraphIndex();
 
       // Collect all symbols defined in the changed files
