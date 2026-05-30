@@ -89,16 +89,24 @@ export function registerDetectChangesTool(registry: ToolRegistry, ctx: ServerCon
     async (args) => {
       const { changed_files, use_git, detail_level, project_root } = Schema.parse(args);
 
+      // Build the graph first so git auto-detection runs against the
+      // SAME project the caller asked for. Pre-fix detectChangedFiles
+      // used ctx.projectRoot (the server default), so a call passing an
+      // explicit project_root diffed the WRONG repo in multi-project /
+      // Claude-Desktop sessions. graph.getRootDir() is that project's
+      // real root (#257 root-mismatch class, git-cwd variant).
+      const graph = await ctx.getGraph(project_root);
+      const gitRoot = graph.getRootDir() || ctx.projectRoot;
+
       let files = changed_files ?? [];
       if (files.length === 0 && use_git) {
-        files = await detectChangedFiles(ctx.projectRoot);
+        files = await detectChangedFiles(gitRoot);
       }
 
       if (files.length === 0) {
         return '<detect_changes count="0">\n  <!-- No changed files detected -->\n</detect_changes>';
       }
 
-      const graph = await ctx.getGraph(project_root);
       const { changedFiles: scored, summary } = detectChanges({
         graph,
         overlay: ctx.overlay,
