@@ -71,10 +71,19 @@ async function getFileDiff(projectRoot: string, file: string): Promise<string> {
   }
 }
 
-async function trySkeletonize(ctx: ServerContext, filePath: string, projectRoot?: string): Promise<string> {
+async function trySkeletonize(
+  ctx: ServerContext,
+  filePath: string,
+  projectRoot: string | undefined,
+  rootDir: string,
+): Promise<string> {
   try {
     const sk = await ctx.getSkeletonizer(projectRoot);
-    const absPath = `${ctx.projectRoot}/${filePath}`;
+    // Read the file from the graph's own root (passed as rootDir), not
+    // ctx.projectRoot (the server default). With an explicit project_root
+    // the default is the wrong project and skeletonize reads nothing
+    // (same #257 root-mismatch class).
+    const absPath = `${rootDir}/${filePath}`;
     return await sk.skeletonize(absPath);
   } catch {
     return '';
@@ -176,7 +185,7 @@ export function registerGitDiffReviewTool(registry: ToolRegistry, ctx: ServerCon
         const diffContent = truncated
           ? [...diffLines.slice(0, max_diff_lines), `... (${diffLines.length - max_diff_lines} more lines)`].join('\n')
           : rawDiff;
-        const skeleton = include_skeletons ? await trySkeletonize(ctx, file, project_root) : '';
+        const skeleton = include_skeletons ? await trySkeletonize(ctx, file, project_root, graph.getRootDir() || ctx.projectRoot) : '';
         return { file, diffLines, truncated, diffContent, skeleton };
       }));
 
@@ -184,7 +193,7 @@ export function registerGitDiffReviewTool(registry: ToolRegistry, ctx: ServerCon
       const directImporterSkeletons: Array<{ file: string; skeleton: string }> = await Promise.all(
         blast.directImporters.map(async (file, i) => ({
           file,
-          skeleton: include_skeletons && i < skeletonLimit ? await trySkeletonize(ctx, file, project_root) : '',
+          skeleton: include_skeletons && i < skeletonLimit ? await trySkeletonize(ctx, file, project_root, graph.getRootDir() || ctx.projectRoot) : '',
         })),
       );
 

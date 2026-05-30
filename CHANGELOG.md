@@ -7,6 +7,25 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
 ## [Unreleased]
 
+## [1.7.6] — 2026-05-23
+
+- ! **Fix** — the three file-reading tools (`ctx_full_text_search`,
+  `ctx_refactor_preview`, `ctx_apply_refactor`) now read files from the
+  root the graph was built against (`graph.getRootDir()`) instead of
+  `ctx.projectRoot` (the server's default root). Pre-fix, any call that
+  passed an explicit `project_root` different from the default — every
+  multi-project / Claude-Desktop session, or any no-default server —
+  joined relpaths against the wrong directory: `ctx_full_text_search`
+  returned 0 results for identifiers that plainly exist (misdiagnosed
+  in the field as a "tokenizer drops leading-underscore identifiers"
+  bug — there is no tokenizer; keyword mode is a plain regex scan),
+  `ctx_refactor_preview` produced empty previews, and
+  `ctx_apply_refactor` could skip files or mutate the wrong project.
+  Adds `DependencyGraph.getRootDir()` and a divergent-root regression
+  test the existing suite never exercised. Reference: PR #257.
+
+## [1.7.5] — 2026-05-23
+
 - + **Graph snapshot hot-reload** — the MCP server now watches
   `.ctxloom/graph-snapshot.json` for external rewrites and
   atomically rehydrates its in-memory graph when the file changes.
