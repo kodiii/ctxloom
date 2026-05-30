@@ -128,13 +128,21 @@ export function registerGitDiffReviewTool(registry: ToolRegistry, ctx: ServerCon
       // they can't escape the project root or contain shell metacharacters
       // that would survive into downstream string interpolations.
       const validator = ctx.getPathValidator(project_root);
+      // Build the graph up front so git operations (auto-detect + per-file
+      // diff) run against the project the caller asked for, not
+      // ctx.projectRoot (the server default). Pre-fix, every git call here
+      // used ctx.projectRoot, so an explicit project_root diffed the wrong
+      // repo in multi-project / Claude-Desktop sessions (#257 root-mismatch
+      // class, git-cwd variant). graph.getRootDir() is that project's root.
+      const graph = await ctx.getGraph(project_root);
+      const gitRoot = graph.getRootDir() || ctx.projectRoot;
       let files = (changed_files ?? []).filter(f => validator.isWithinRoot(f));
       if (files.length === 0 && use_git) {
         try {
           const { stdout } = await execFileAsync(
             'git',
             ['diff', 'HEAD~1', '--name-only'],
-            { cwd: ctx.projectRoot, maxBuffer: 10 * 1024 * 1024 },
+            { cwd: gitRoot, maxBuffer: 10 * 1024 * 1024 },
           );
           files = stdout.trim().split('\n').filter(Boolean);
         } catch {
@@ -159,11 +167,10 @@ export function registerGitDiffReviewTool(registry: ToolRegistry, ctx: ServerCon
         return maybeBudget(`<git_diff_review changed_files="0">\n  <!-- No changed files detected -->\n</git_diff_review>`);
       }
 
-      const graph = await ctx.getGraph(project_root);
       const blast = await computeBlastRadius({
         changedFiles: files,
         depth,
-        projectRoot: ctx.projectRoot,
+        projectRoot: gitRoot,
         graph,
       });
 
@@ -179,13 +186,13 @@ export function registerGitDiffReviewTool(registry: ToolRegistry, ctx: ServerCon
         skeleton: string;
       }
       const changedFileData: ChangedFileData[] = await Promise.all(files.map(async (file) => {
-        const rawDiff = use_git ? await getFileDiff(ctx.projectRoot, file) : '';
+        const rawDiff = use_git ? await getFileDiff(gitRoot, file) : '';
         const diffLines = rawDiff ? rawDiff.split('\n') : [];
         const truncated = diffLines.length > max_diff_lines;
         const diffContent = truncated
           ? [...diffLines.slice(0, max_diff_lines), `... (${diffLines.length - max_diff_lines} more lines)`].join('\n')
           : rawDiff;
-        const skeleton = include_skeletons ? await trySkeletonize(ctx, file, project_root, graph.getRootDir() || ctx.projectRoot) : '';
+        const skeleton = include_skeletons ? await trySkeletonize(ctx, file, project_root, gitRoot) : '';
         return { file, diffLines, truncated, diffContent, skeleton };
       }));
 
@@ -193,7 +200,7 @@ export function registerGitDiffReviewTool(registry: ToolRegistry, ctx: ServerCon
       const directImporterSkeletons: Array<{ file: string; skeleton: string }> = await Promise.all(
         blast.directImporters.map(async (file, i) => ({
           file,
-          skeleton: include_skeletons && i < skeletonLimit ? await trySkeletonize(ctx, file, project_root, graph.getRootDir() || ctx.projectRoot) : '',
+          skeleton: include_skeletons && i < skeletonLimit ? await trySkeletonize(ctx, file, project_root, gitRoot) : '',
         })),
       );
 

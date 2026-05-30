@@ -170,17 +170,22 @@ export function registerBlastRadiusTool(registry: ToolRegistry, ctx: ServerConte
     async (args) => {
       const { changed_files, depth, use_git, detail_level, project_root } = Schema.parse(args);
 
+      // Build the graph first so git auto-detection runs against the
+      // project the caller asked for, not ctx.projectRoot (the server
+      // default). See detect-changes.ts for the full git-cwd rationale.
+      const graph = await ctx.getGraph(project_root);
+      const gitRoot = graph.getRootDir() || ctx.projectRoot;
+
       let files = changed_files ?? [];
       if (files.length === 0 && use_git) {
-        files = await detectChangedFiles(ctx.projectRoot);
+        files = await detectChangedFiles(gitRoot);
       }
 
       if (files.length === 0) {
         return '<blast_radius changed_files="0">\n  <!-- No changed files detected -->\n</blast_radius>';
       }
 
-      const graph = await ctx.getGraph(project_root);
-      const result = await computeBlastRadius({ changedFiles: files, depth, projectRoot: ctx.projectRoot, graph });
+      const result = await computeBlastRadius({ changedFiles: files, depth, projectRoot: gitRoot, graph });
 
       // Derive historical coupling via the lib layer (overlay-aware)
       const report = getImpactRadius({ graph, overlay: ctx.overlay, changedFiles: files, depth });
