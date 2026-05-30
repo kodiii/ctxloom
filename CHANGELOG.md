@@ -7,22 +7,42 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
 ## [Unreleased]
 
-## [1.7.6] — 2026-05-23
+## [1.7.6] — 2026-05-30
 
-- ! **Fix** — the three file-reading tools (`ctx_full_text_search`,
-  `ctx_refactor_preview`, `ctx_apply_refactor`) now read files from the
-  root the graph was built against (`graph.getRootDir()`) instead of
-  `ctx.projectRoot` (the server's default root). Pre-fix, any call that
-  passed an explicit `project_root` different from the default — every
-  multi-project / Claude-Desktop session, or any no-default server —
-  joined relpaths against the wrong directory: `ctx_full_text_search`
-  returned 0 results for identifiers that plainly exist (misdiagnosed
-  in the field as a "tokenizer drops leading-underscore identifiers"
-  bug — there is no tokenizer; keyword mode is a plain regex scan),
-  `ctx_refactor_preview` produced empty previews, and
-  `ctx_apply_refactor` could skip files or mutate the wrong project.
-  Adds `DependencyGraph.getRootDir()` and a divergent-root regression
-  test the existing suite never exercised. Reference: PR #257.
+**Multi-project root-mismatch sweep.** Every tool that read files or ran
+git used `ctx.projectRoot` (the server's *default* root) instead of the
+root the graph was actually built against. With an explicit
+`project_root` — i.e. every multi-project / Claude-Desktop session, or
+any no-default server — those tools operated on the *wrong* project:
+file reads silently failed (0 results) and git ran in the wrong repo.
+This release fixes all three surfaces.
+
+- ! **File reads (#257)** — `ctx_full_text_search`,
+  `ctx_refactor_preview`, `ctx_apply_refactor` now read files from
+  `graph.getRootDir()` instead of `ctx.projectRoot`. Pre-fix,
+  `ctx_full_text_search` returned 0 results for identifiers that plainly
+  exist (misdiagnosed in the field as a "tokenizer drops
+  leading-underscore identifiers" bug — there is no tokenizer; keyword
+  mode is a plain regex scan), `ctx_refactor_preview` produced empty
+  previews, and `ctx_apply_refactor` could skip files or mutate the
+  wrong project. Adds `DependencyGraph.getRootDir()` and a divergent-root
+  regression test the existing suite never exercised.
+- ! **Skeleton reads (#258)** — `ctx_get_context_packet` dependency
+  skeletons and `ctx_git_diff_review` skeletons resolved against the
+  wrong root; both now use the graph root. `trySkeletonize` gained an
+  explicit `rootDir` param.
+- ! **Git cwd (#260)** — `ctx_detect_changes`, `ctx_blast_radius`,
+  `ctx_get_affected_flows`, `ctx_suggested_questions`,
+  `ctx_git_diff_review` ran `git diff HEAD~1` with cwd set to the default
+  project even when an explicit `project_root` was passed — diffing the
+  wrong repo. All git operations now route through the queried project's
+  root.
+
+Note on the field-reported "ctx_get_call_graph empty on first call":
+investigated, not a graph race — the call-graph snapshot loads
+synchronously and first-touch awaits the full build. The empty-first
+behavior was this same root-mismatch class at the call site, fixed by
+the above.
 
 ## [1.7.5] — 2026-05-23
 
