@@ -7,6 +7,21 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
 ## [Unreleased]
 
+## [1.7.7] — 2026-05-31
+
+- ! **Fix (#261)** — class method names are now indexed in `symbolIndex`,
+  so `ctx_get_call_graph {symbol: aMethod}` and `ctx_refactor_preview`
+  resolve them correctly. Pre-fix, TS/JS class methods were parsed onto
+  the class node's `methodRanges` array, not as standalone `method`
+  nodes — so the `node.type === 'method'` branch in the symbol-indexing
+  loops never fired for class methods. Methods were absent from
+  `symbolIndex`, so `lookupSymbol()` (which `ctx_get_call_graph` uses
+  to resolve the start file) returned `[]` for every method name even
+  when the call-graph index had real edges for it. Surfaced via the
+  v1.7.6 34-tool smoke test (`ctx_get_call_graph {symbol: getRootDir}`
+  returned 0 despite 9 callers existing).
+- ~ Dependabot bump: `qs 6.15.1 → 6.15.2` (#259).
+
 ## [1.7.6] — 2026-05-30
 
 **Multi-project root-mismatch sweep.** Every tool that read files or ran
