@@ -7,6 +7,8 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
 ## [Unreleased]
 
+## [1.7.9] — 2026-05-31
+
 - ! **Vector-store corruption is now legible.** A corrupt LanceDB store
   (manifest referencing a pruned data fragment) used to hide completely:
   `count()` returned a stale row count, `ctx_status` reported
