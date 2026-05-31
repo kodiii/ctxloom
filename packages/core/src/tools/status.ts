@@ -16,7 +16,7 @@ export interface RenderStatusInput {
   registry: { list(): Pick<RegisteredRepo, 'root' | 'alias' | 'name' | 'dbPath' | 'registeredAt'>[] };
 }
 
-export function renderStatusXml(input: RenderStatusInput): string {
+export async function renderStatusXml(input: RenderStatusInput): Promise<string> {
   const { defaultRoot, manager, registry } = input;
   const lines = ['<ctx_status>'];
 
@@ -39,10 +39,28 @@ export function renderStatusXml(input: RenderStatusInput): string {
     const reg = registry.list().find((r) => r.root === s.projectRoot);
     const alias = reg?.alias ? ` alias="${escapeXML(reg.alias)}"` : '';
     const graphState = s.graphInitialized ? 'ready' : s.graphPromise ? 'building' : 'cold';
-    const vectorsState = s.vectorsInitialized ? 'ready' : s.storePromise ? 'building' : 'cold';
+    let vectorsState = s.vectorsInitialized ? 'ready' : s.storePromise ? 'building' : 'cold';
+    let vectorsHint = '';
+    // "ready" only means the store was opened — NOT that it's readable. A
+    // corrupt LanceDB store (manifest referencing a pruned fragment) opens
+    // fine and reports a stale row count via count(), yet every search
+    // throws. Do a cheap 1-row probe READ on warm stores and downgrade to
+    // "corrupt". Best-effort: never let the probe throw out of ctx_status;
+    // a non-corruption probe failure leaves the optimistic state.
+    if (s.vectorsInitialized && s.storePromise) {
+      try {
+        const store = await s.storePromise;
+        await store.probe();
+      } catch (probeErr) {
+        if (isCorruptionError(probeErr)) {
+          vectorsState = 'corrupt';
+          vectorsHint = ' vectors_hint="run: ctxloom vectors-cleanup &amp;&amp; ctxloom index"';
+        }
+      }
+    }
     lines.push(
       `    <project root="${escapeXML(s.projectRoot)}"${alias} ` +
-      `pinned="${s.pinned}" graph="${graphState}" vectors="${vectorsState}" ` +
+      `pinned="${s.pinned}" graph="${graphState}" vectors="${vectorsState}"${vectorsHint} ` +
       `last_touched_at="${new Date(s.lastTouchedAt).toISOString()}" />`,
     );
   }
