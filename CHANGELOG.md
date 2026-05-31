@@ -7,6 +7,8 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
 ## [Unreleased]
 
+## [1.7.8] — 2026-05-31
+
 - + **Vector store hot-reload** — a live MCP server now picks up an
   external `ctxloom index` rewrite of `.ctxloom/vectors.lancedb` on the
   next `ctx_search` / `ctx_similar_files`, without an MCP restart. This
