@@ -4,6 +4,7 @@ import type { ServerContext } from './context.js';
 import { ProjectRootField, PROJECT_ROOT_JSON_SCHEMA } from './projectRootParam.js';
 import type { ProjectStateManager } from '../server/ProjectStateManager.js';
 import type { RegisteredRepo } from './cross-repo-search.js';
+import { isCorruptionError } from '../db/VectorStore.js';
 
 function escapeXML(text: string): string {
   return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
@@ -81,7 +82,7 @@ export function registerStatusTool(registry: ToolRegistry, ctx: ServerContext): 
     async (args) => {
       const { project_root } = Schema.parse(args ?? {});
       void project_root; // used in Phase 6 for per-project view
-      return renderStatusXml({
+      return await renderStatusXml({
         defaultRoot: ctx.noDefaultMode ? null : ctx.projectRoot,
         manager: ctx.stateManager,
         registry: ctx.registry,

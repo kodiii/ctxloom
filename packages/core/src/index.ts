@@ -79,7 +79,7 @@ export { generateEmbedding, collectFiles, indexDirectory, EMBEDDING_DIMENSION, i
 
 // ─── Database ────────────────────────────────────────────────────────────────
 export type { VectorSearchResult, VectorStoreOptions } from './db/VectorStore.js';
-export { VectorStore } from './db/VectorStore.js';
+export { VectorStore, isCorruptionError } from './db/VectorStore.js';
 export type {
   VectorsCleanupOptions,
   VectorsCleanupReport,

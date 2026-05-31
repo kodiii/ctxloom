@@ -50,6 +50,39 @@ function sanitizeFilterPath(filePath: string): string {
   return filePath.replace(/[^a-zA-Z0-9/._\- ]/g, '_');
 }
 
+/**
+ * The recovery incantation for a corrupt vector store. `vectors-cleanup`
+ * renames the LanceDB dir to a timestamped `.bak` (see vectorsCleanup.ts);
+ * the subsequent `index` rebuilds embeddings from scratch. NOTE: there is
+ * NO `--reset` flag (the only flags are `--dry-run` and `--force`); earlier
+ * copy referenced a non-existent `--reset` — kept correct here as the single
+ * source of truth for both the model-mismatch and corruption messages.
+ */
+const VECTOR_RECOVERY_CMD = 'ctxloom vectors-cleanup && ctxloom index';
+
+/**
+ * Distinguish LanceDB store corruption (manifest references a data fragment
+ * that no longer exists on disk) from a benign empty / unindexed store.
+ *
+ * Why this matters: a corrupt store reads its manifest metadata fine
+ * (`count()` returns a stale row count) but every `vectorSearch` /
+ * `query().toArray()` throws a lance `Not found: <path>/data/<frag>.lance`
+ * (or `_deletions/*.arrow`) error. Pre-v1.7.9 `search()` swallowed that as
+ * `return []`, so corruption masqueraded as "no results matched" — the
+ * worst failure mode, indistinguishable from a healthy empty store.
+ *
+ * The signature: message says "not found" AND names an internal LanceDB
+ * artifact path (a `.lance` fragment, `.arrow` deletion file, or a
+ * `data/` / `_deletions/` / `_versions/` dir). A plain empty `vectorSearch`
+ * returns `[]` without throwing, so it never reaches here — and a generic
+ * error (network, OOM, bad query) lacks the artifact-path token, so it
+ * stays classified as non-corruption.
+ */
+export function isCorruptionError(err: unknown): boolean {
+  const msg = err instanceof Error ? err.message : String(err);
+  return /not found/i.test(msg) && /\.lance|\.arrow|_deletions|_versions|\/data\//.test(msg);
+}
+
 export interface VectorStoreOptions {
   /**
    * How many upserts must occur before automatic compaction fires.
@@ -312,8 +345,7 @@ export class VectorStore {
       `Embedding-model mismatch: vector index at ${this.dbPath} was built ` +
       `with "${existing.model}" (${existing.dim}-dim) but the active model is ` +
       `"${active.model}" (${active.dim}-dim). Re-index required:\n\n` +
-      `    ctxloom vectors-cleanup --reset\n` +
-      `    ctxloom index\n\n` +
+      `    ${VECTOR_RECOVERY_CMD}\n\n` +
       `Or revert CTXLOOM_EMBEDDING_MODEL to "${existing.model}" to keep the existing index.`,
     );
   }
@@ -520,6 +552,14 @@ export class VectorStore {
       }
       return null;
     } catch (err) {
+      // Surface store corruption rather than masking it as "not indexed".
+      if (isCorruptionError(err)) {
+        throw new Error(
+          `VectorStore corrupt at ${this.dbPath}: manifest references a missing ` +
+            `fragment (${err instanceof Error ? err.message : String(err)}). ` +
+            `Recover with: ${VECTOR_RECOVERY_CMD}`,
+        );
+      }
       logger.warn('VectorStore.findEmbeddingByPath failed', {
         detail: err instanceof Error ? err.message : String(err),
         filePath,
@@ -550,7 +590,19 @@ export class VectorStore {
           score: Number(r._distance ?? 0),
         }));
     } catch (err) {
-      // If vector index doesn't exist yet, try creating it
+      // Corruption (manifest references a missing fragment) must NOT be
+      // silently swallowed as "no results" — surface it with the recovery
+      // command. createIndex would also fail on a corrupt store, so this
+      // check has to come BEFORE the index-rebuild recovery path.
+      if (isCorruptionError(err)) {
+        throw new Error(
+          `VectorStore corrupt at ${this.dbPath}: manifest references a missing ` +
+            `fragment (${err instanceof Error ? err.message : String(err)}). ` +
+            `Recover with: ${VECTOR_RECOVERY_CMD}`,
+        );
+      }
+      // Benign case: the vector index hasn't been built yet (first search
+      // on a fresh store). Try creating it, then retry once.
       logger.warn('Search failed, attempting to create index', { detail: String(err) });
       try {
         await this.table.createIndex('vector');
@@ -566,7 +618,16 @@ export class VectorStore {
             content: String(r.content ?? ''),
             score: Number(r._distance ?? 0),
           }));
-      } catch {
+      } catch (retryErr) {
+        // A corruption error can also surface on the retry (createIndex
+        // touched the missing fragment) — surface it rather than hide it.
+        if (isCorruptionError(retryErr)) {
+          throw new Error(
+            `VectorStore corrupt at ${this.dbPath}: manifest references a missing ` +
+              `fragment (${retryErr instanceof Error ? retryErr.message : String(retryErr)}). ` +
+              `Recover with: ${VECTOR_RECOVERY_CMD}`,
+          );
+        }
         return [];
       }
     }
@@ -599,5 +660,18 @@ export class VectorStore {
       logger.error('countRows failed', { detail: err instanceof Error ? err.message : String(err) });
       return 0;
     }
+  }
+
+  /**
+   * Liveness probe for ctx_status. Performs an actual 1-row READ (not a
+   * metadata `count()`, which reads the intact manifest and returns a
+   * stale count on a corrupt store). Throws the underlying lance error
+   * if a referenced fragment is missing — callers use isCorruptionError()
+   * to classify. Resolves silently on a healthy store (including an
+   * empty one, which simply yields zero rows). Cheap: a single-row scan.
+   */
+  async probe(): Promise<void> {
+    if (!this.table) throw new Error('VectorStore not initialized. Call init() first.');
+    await this.table.query().limit(1).toArray();
   }
 }
