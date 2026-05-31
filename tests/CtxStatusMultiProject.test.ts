@@ -3,11 +3,11 @@ import { ProjectStateManager } from '../packages/core/src/server/ProjectStateMan
 import { renderStatusXml } from '../packages/core/src/tools/status.js';
 
 describe('ctx_status multi-project rendering', () => {
-  it('emits active_projects with count and max', () => {
+  it('emits active_projects with count and max', async () => {
     const mgr = new ProjectStateManager({ maxProjects: 5 });
     mgr.pin('/abs/main');
     mgr.get('/abs/b');
-    const out = renderStatusXml({
+    const out = await renderStatusXml({
       defaultRoot: '/abs/main',
       manager: mgr,
       registry: { list: () => [{ root: '/abs/main', alias: 'main', name: 'main', dbPath: '', registeredAt: '' }] },
@@ -17,9 +17,9 @@ describe('ctx_status multi-project rendering', () => {
     expect(out).toMatch(/<registered_projects count="1">/);
   });
 
-  it('emits no_default_project marker when defaultRoot is null', () => {
+  it('emits no_default_project marker when defaultRoot is null', async () => {
     const mgr = new ProjectStateManager({ maxProjects: 5 });
-    const out = renderStatusXml({
+    const out = await renderStatusXml({
       defaultRoot: null,
       manager: mgr,
       registry: { list: () => [] },
