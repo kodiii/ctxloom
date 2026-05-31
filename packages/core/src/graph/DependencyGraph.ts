@@ -331,6 +331,7 @@ export class DependencyGraph {
               });
               this.symbolIndex.set(node.name, existing);
             }
+            this.indexClassMethods(node, relPath);
           }
 
           // Call graph edges: TypeScript/JS + Python (v1.6.1).
@@ -612,6 +613,44 @@ export class DependencyGraph {
   }
 
   /**
+   * Register each class method as its own symbol-index entry.
+   *
+   * TS/JS class methods are parsed as `methodRanges` on the class node,
+   * not as standalone `method` nodes — so the `node.type === 'method'`
+   * branch in the symbol-indexing loops never fired for them. That left
+   * methods (e.g. DependencyGraph.getRootDir) unfindable by
+   * `lookupSymbol`, which is why `ctx_get_call_graph {symbol: aMethod}`
+   * returned "Symbol not found" even though the call-graph snapshot had
+   * edges for it. Indexing methods here closes that gap.
+   *
+   * No-op for nodes without methodRanges (functions, imports, etc.).
+   */
+  private indexClassMethods(
+    node: {
+      methodRanges?: Array<{ name: string; signatureLine: number }>;
+      startLine?: number;
+      endLine?: number;
+    },
+    relPath: string,
+  ): void {
+    if (!node.methodRanges) return;
+    for (const m of node.methodRanges) {
+      if (!m.name) continue;
+      const existing = this.symbolIndex.get(m.name) ?? [];
+      existing.push({
+        filePath: relPath,
+        type: 'method',
+        signature: `method ${m.name}`,
+        // MethodRange only carries the signature line; use it as the
+        // start and fall back to the enclosing class's end for the range.
+        startLine: m.signatureLine,
+        endLine: node.endLine ?? m.signatureLine,
+      });
+      this.symbolIndex.set(m.name, existing);
+    }
+  }
+
+  /**
    * Look up a symbol by name. Returns all definitions across files.
    */
   lookupSymbol(name: string): Array<{ filePath: string; type: string; signature: string }> {
@@ -844,6 +883,7 @@ export class DependencyGraph {
             });
             this.symbolIndex.set(node.name, existing);
           }
+          this.indexClassMethods(node, relPath);
         }
 
         // Rebuild call graph edges: TypeScript/JS + Python (v1.6.1).
