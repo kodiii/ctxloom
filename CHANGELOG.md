@@ -7,6 +7,28 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
 ## [Unreleased]
 
+- ! **Vector-store corruption is now legible.** A corrupt LanceDB store
+  (manifest referencing a pruned data fragment) used to hide completely:
+  `count()` returned a stale row count, `ctx_status` reported
+  `vectors="ready"`, but every `ctx_search` / `ctx_similar_files`
+  returned 0 results — because `search()` swallowed the underlying
+  `Not found: …/data/<frag>.lance` error as `return []`. That made
+  corruption indistinguishable from "nothing matched". Now:
+  - `search()` / `findEmbeddingByPath()` detect the corruption
+    signature (new `isCorruptionError()` helper) and throw an
+    actionable error — *"VectorStore corrupt at <path> … Recover with:
+    ctxloom vectors-cleanup && ctxloom index"* — instead of an empty
+    result. The benign "index not built yet" path still returns `[]`.
+  - `ctx_status` does a cheap 1-row probe-read on warm stores and
+    reports `vectors="corrupt"` (with a recovery hint) instead of a
+    misleading `"ready"`.
+  - Fixed a stale `ctxloom vectors-cleanup --reset` reference in the
+    embedding-model-mismatch error (`--reset` never existed; the real
+    flags are `--dry-run` / `--force`).
+  Corruption *prevention* (the orphan-process lifecycle that caused the
+  original desync) is intentionally out of scope — this change makes the
+  bad state visible, not impossible.
+
 ## [1.7.8] — 2026-05-31
 
 - + **Vector store hot-reload** — a live MCP server now picks up an
