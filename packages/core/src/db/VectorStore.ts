@@ -83,6 +83,28 @@ export class VectorStore {
   private readonly compactEvery: number;
   private readonly cleanupOlderThanMs: number;
 
+  /**
+   * Hot-reload bookkeeping (v1.7.8). A live MCP server pins one open
+   * LanceDB table handle. When a terminal `ctxloom index` rewrites the
+   * store on the same path, the pinned handle keeps serving the OLD
+   * version — `ctx_search` returns stale/empty results until restart
+   * (the vector analogue of the graph hot-reload shipped in v1.7.5).
+   *
+   * Fix: before each read we cheaply stat the LanceDB `_versions`
+   * directory mtime. If it advanced past the last write WE made, an
+   * external writer touched the store → call `table.checkoutLatest()`
+   * to re-point the handle at the newest version. The mtime gate makes
+   * idle searches free and — critically — prevents the server's OWN
+   * continuous upserts (incremental file-watch indexing) from
+   * triggering a refresh storm: every own write updates
+   * `lastKnownMtime`, so the next read sees no advance.
+   *
+   * `externalRefreshCount` is exposed for tests + telemetry to prove
+   * own-writes don't cause redundant refreshes.
+   */
+  private lastKnownMtimeMs = 0;
+  private externalRefreshCount = 0;
+
   constructor(dbPath?: string, options: VectorStoreOptions = {}) {
     this.dbPath = dbPath ?? path.join(process.cwd(), '.ctxloom', 'vectors.lancedb');
     this.compactEvery = options.compactEvery ?? 200;
@@ -155,6 +177,98 @@ export class VectorStore {
     }
 
     this.initialized = true;
+    // Record the baseline on-disk state so refreshIfStale() can tell
+    // our own future writes apart from an external terminal re-index.
+    this.markSynced();
+  }
+
+  /**
+   * Absolute path to the LanceDB table's `_versions` manifest directory.
+   * A new manifest file lands here on every committed write, so the
+   * directory's mtime is a cheap external-change signal.
+   */
+  private versionsDir(): string {
+    return path.join(this.dbPath, 'code_embeddings.lance', '_versions');
+  }
+
+  /**
+   * Newest mtime (ms) among the manifest FILES inside `_versions`, or 0
+   * if unreadable. We scan files, NOT the directory itself: LanceDB does
+   * NOT bump the `_versions` directory's own mtime when it adds a new
+   * manifest (verified empirically against @lancedb/lancedb 0.27.x —
+   * the dir mtime stays frozen at creation time), so statting the dir is
+   * a dead signal. Each committed version writes a fresh manifest file,
+   * so max-file-mtime advances monotonically per version and survives
+   * compaction (which writes new manifests with current timestamps).
+   */
+  private versionsMtimeMs(): number {
+    const dir = this.versionsDir();
+    let newest = 0;
+    try {
+      for (const name of fs.readdirSync(dir)) {
+        if (name.startsWith('.')) continue; // skip .tmp staging dir
+        try {
+          const st = fs.statSync(path.join(dir, name));
+          if (st.isFile() && st.mtimeMs > newest) newest = st.mtimeMs;
+        } catch {
+          // File vanished mid-scan (compaction race) — skip it.
+        }
+      }
+    } catch {
+      return 0; // _versions dir missing (store mid-rebuild)
+    }
+    return newest;
+  }
+
+  /**
+   * Mark the store as in-sync with the current on-disk state. Called
+   * after init and after every mutation WE perform (upsert, upsertBatch,
+   * remove, compact) so a subsequent refreshIfStale() does not mistake
+   * our own write for an external one.
+   */
+  private markSynced(): void {
+    this.lastKnownMtimeMs = this.versionsMtimeMs();
+  }
+
+  /**
+   * Re-point the pinned table handle at the newest on-disk version IF an
+   * external writer (a terminal `ctxloom index` on the same path) has
+   * advanced the store since our last write. Cheap mtime gate first; the
+   * LanceDB `checkoutLatest()` call only happens on a real external
+   * change. Best-effort — a failed refresh keeps the current handle and
+   * logs a warning rather than breaking the read.
+   */
+  private async refreshIfStale(): Promise<void> {
+    if (!this.table) return;
+    const diskMtime = this.versionsMtimeMs();
+    // 0 = couldn't stat (dir missing mid-rebuild); skip — the next read
+    // will retry once the writer finishes. <= lastKnown = no external
+    // change (covers our own writes, which update lastKnownMtimeMs).
+    if (diskMtime === 0 || diskMtime <= this.lastKnownMtimeMs) return;
+    try {
+      const table = this.table as Table & { checkoutLatest?: () => Promise<void> };
+      if (typeof table.checkoutLatest === 'function') {
+        await table.checkoutLatest();
+      }
+      this.lastKnownMtimeMs = this.versionsMtimeMs();
+      this.externalRefreshCount += 1;
+      logger.info('VectorStore: external write detected, handle refreshed', {
+        refreshCount: this.externalRefreshCount,
+      });
+    } catch (err) {
+      logger.warn('VectorStore.refreshIfStale failed; keeping current handle', {
+        detail: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+
+  /**
+   * Number of times the pinned handle was refreshed due to an EXTERNAL
+   * write. Exposed for tests (own-writes must not increment this) and
+   * for telemetry. @internal
+   */
+  getExternalRefreshCount(): number {
+    return this.externalRefreshCount;
   }
 
   /**
@@ -231,6 +345,7 @@ export class VectorStore {
     this.db = null;
     this.table = null;
     this.initialized = false;
+    this.lastKnownMtimeMs = 0;
   }
 
   /**
@@ -256,6 +371,7 @@ export class VectorStore {
     };
 
     await this.table.add([record]);
+    this.markSynced();
 
     this.upsertsSinceCompact++;
     if (this.upsertsSinceCompact >= this.compactEvery) {
@@ -311,6 +427,7 @@ export class VectorStore {
       content: r.content.slice(0, 512),
     }));
     await this.table.add(rows);
+    this.markSynced();
 
     // Compaction trigger is record-count-based, not batch-count-based,
     // so the cadence matches the per-file path. A 50-record batch
@@ -358,6 +475,10 @@ export class VectorStore {
           bytesRemoved: result.prune?.bytesRemoved ?? 0,
         });
       }
+      // compact() writes a new version on disk; record it as our own so
+      // refreshIfStale() doesn't treat the post-compact mtime bump as an
+      // external write.
+      this.markSynced();
     } catch (err) {
       logger.warn('VectorStore.compact failed (non-fatal)', {
         detail: err instanceof Error ? err.message : String(err),
@@ -373,6 +494,7 @@ export class VectorStore {
    */
   async findEmbeddingByPath(filePath: string): Promise<number[] | null> {
     if (!this.table) throw new Error('VectorStore not initialized. Call init() first.');
+    await this.refreshIfStale();
 
     try {
       const safe = sanitizeFilterPath(filePath);
@@ -411,6 +533,8 @@ export class VectorStore {
    */
   async search(queryEmbedding: number[], limit: number = 10): Promise<VectorSearchResult[]> {
     if (!this.table) throw new Error('VectorStore not initialized. Call init() first.');
+    // Pick up an external terminal `ctxloom index` before reading.
+    await this.refreshIfStale();
 
     try {
       const results = await this.table
@@ -457,6 +581,7 @@ export class VectorStore {
     const safe = sanitizeFilterPath(filePath);
     try {
       await this.table.delete(`filePath = '${safe}'`);
+      this.markSynced();
     } catch (err) {
       logger.error('Remove failed', { detail: err instanceof Error ? err.message : String(err) });
     }
@@ -467,6 +592,7 @@ export class VectorStore {
    */
   async count(): Promise<number> {
     if (!this.table) return 0;
+    await this.refreshIfStale();
     try {
       return await this.table.countRows();
     } catch (err) {

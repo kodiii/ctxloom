@@ -7,6 +7,26 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
 ## [Unreleased]
 
+- + **Vector store hot-reload** — a live MCP server now picks up an
+  external `ctxloom index` rewrite of `.ctxloom/vectors.lancedb` on the
+  next `ctx_search` / `ctx_similar_files`, without an MCP restart. This
+  is the vector analogue of the graph snapshot hot-reload shipped in
+  v1.7.5 (#256). Before this, the server pinned one open LanceDB table
+  handle at init and never re-read it, so after a terminal re-index
+  (or a `vectors-cleanup` + rebuild) searches returned stale or empty
+  results until the client restarted — exactly the gap the v1.7.7
+  smoke test surfaced.
+  Mechanism (deliberately NOT a copy of the graph fs.watch): before
+  each read, `VectorStore` checks the newest mtime among the manifest
+  files in the LanceDB `_versions` dir; if it advanced past the last
+  write the server itself made, it calls `table.checkoutLatest()` to
+  re-point the handle. The own-write gate (every server upsert/compact
+  records the post-write mtime) means the server's continuous
+  incremental indexing does NOT trigger refresh thrash. No new watcher
+  / FD cost. Note: the `_versions` *directory* mtime is NOT a usable
+  signal — LanceDB leaves it frozen at creation; only the per-manifest
+  file mtimes advance (verified against @lancedb/lancedb 0.27.x).
+
 ## [1.7.7] — 2026-05-31
 
 - ! **Fix (#261)** — class method names are now indexed in `symbolIndex`,
