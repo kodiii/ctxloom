@@ -187,8 +187,12 @@ export function registerBlastRadiusTool(registry: ToolRegistry, ctx: ServerConte
 
       const result = await computeBlastRadius({ changedFiles: files, depth, projectRoot: gitRoot, graph });
 
-      // Derive historical coupling via the lib layer (overlay-aware)
-      const report = getImpactRadius({ graph, overlay: ctx.overlay, changedFiles: files, depth });
+      // Derive historical coupling via the lib layer (overlay-aware).
+      // Resolve the overlay per-project (v1.7.10) so coupling enrichment
+      // works for any project_root, not just the default. Null when git
+      // is disabled — getImpactRadius handles that (empty coupling).
+      const overlay = (await ctx.getOverlay(project_root)) ?? undefined;
+      const report = getImpactRadius({ graph, overlay, changedFiles: files, depth });
 
       return buildBlastRadiusXml(result, depth, detail_level, report.historicalCoupling);
     },

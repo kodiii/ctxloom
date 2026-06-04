@@ -41,6 +41,8 @@ function makeCtxWithOverlay(overlay: GitOverlayStore): ServerContext {
     dbPath: '/fake/.ctxloom/vectors.lancedb',
     getStore: () => Promise.reject(new Error('not needed')),
     getGraph: () => Promise.reject(new Error('not needed')),
+    // v1.7.10: git-coupling resolves the overlay per-project via getOverlay.
+    getOverlay: () => Promise.resolve(overlay),
     getParser: () => Promise.reject(new Error('not needed')),
     getSkeletonizer: () => Promise.reject(new Error('not needed')),
     getRuleManager: () => { throw new Error('not needed'); },
@@ -49,7 +51,7 @@ function makeCtxWithOverlay(overlay: GitOverlayStore): ServerContext {
     isGraphInitialized: () => false,
     isParserInitialized: () => false,
     overlay,
-  };
+  } as unknown as ServerContext;
 }
 
 function makeCtxNoOverlay(): ServerContext {
@@ -58,6 +60,7 @@ function makeCtxNoOverlay(): ServerContext {
     dbPath: '/fake/.ctxloom/vectors.lancedb',
     getStore: () => Promise.reject(new Error('not needed')),
     getGraph: () => Promise.reject(new Error('not needed')),
+    getOverlay: () => Promise.resolve(null),
     getParser: () => Promise.reject(new Error('not needed')),
     getSkeletonizer: () => Promise.reject(new Error('not needed')),
     getRuleManager: () => { throw new Error('not needed'); },
@@ -65,7 +68,7 @@ function makeCtxNoOverlay(): ServerContext {
     isStoreInitialized: () => false,
     isGraphInitialized: () => false,
     isParserInitialized: () => false,
-  };
+  } as unknown as ServerContext;
 }
 
 // ---------------------------------------------------------------------------

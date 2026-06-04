@@ -12,6 +12,9 @@ function makeCtx(graph: DependencyGraph): ServerContext {
     dbPath: '/fake/.ctxloom/vectors.lancedb',
     getStore: () => Promise.reject(new Error('not needed')),
     getGraph: () => Promise.resolve(graph),
+    // v1.7.10: detect-changes resolves the overlay via getOverlay; no
+    // overlay for this project → null (matches real getter when absent).
+    getOverlay: () => Promise.resolve(null),
     getParser: () => Promise.reject(new Error('not needed')),
     getSkeletonizer: () => Promise.reject(new Error('not needed')),
     getRuleManager: () => { throw new Error('not needed'); },
@@ -19,11 +22,11 @@ function makeCtx(graph: DependencyGraph): ServerContext {
     isStoreInitialized: () => false,
     isGraphInitialized: () => true,
     isParserInitialized: () => false,
-  };
+  } as unknown as ServerContext;
 }
 
 function makeCtxWithOverlay(graph: DependencyGraph, overlay: GitOverlayStore): ServerContext {
-  return { ...makeCtx(graph), overlay };
+  return { ...makeCtx(graph), overlay, getOverlay: () => Promise.resolve(overlay) } as unknown as ServerContext;
 }
 
 /**

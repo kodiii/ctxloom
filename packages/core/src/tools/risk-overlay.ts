@@ -8,6 +8,7 @@ import { z } from 'zod';
 import type { ToolRegistry } from './registry.js';
 import type { ServerContext } from './context.js';
 import { ProjectRootField, PROJECT_ROOT_JSON_SCHEMA } from './projectRootParam.js';
+import { overlayUnavailableNote } from './overlayNote.js';
 
 const Schema = z.object({
   nodes: z.array(z.string()).min(1).max(200).describe('File paths to score'),
@@ -74,9 +75,15 @@ export function registerRiskOverlayTool(registry: ToolRegistry, ctx: ServerConte
       },
     },
     async (args) => {
-      const { nodes } = Schema.parse(args);
+      const { nodes, project_root } = Schema.parse(args);
 
-      if (!ctx.overlay) {
+      // Resolve the overlay PER PROJECT (v1.7.10). Pre-fix this read the
+      // singleton ctx.overlay, which was only ever set for the default
+      // project at boot — so risk scoring silently returned "no data" for
+      // every other project_root even when git-overlay.json existed.
+      const overlay = await ctx.getOverlay(project_root);
+
+      if (!overlay) {
         const response: RiskResponse = {
           nodes: nodes.map((file) => ({
             file,
@@ -90,12 +97,12 @@ export function registerRiskOverlayTool(registry: ToolRegistry, ctx: ServerConte
             note: 'no git data',
           })),
           overallRiskScore: 0,
-          note: 'Git overlay not available. Re-index with --with-git to enable risk data.',
+          note: await overlayUnavailableNote(ctx, project_root),
         };
         return JSON.stringify(response);
       }
 
-      const { churn, ownership, coChange } = ctx.overlay;
+      const { churn, ownership, coChange } = overlay;
       const nowSec = Math.floor(Date.now() / 1000);
 
       const nodeEntries: NodeRiskEntry[] = nodes.map((file) => {
