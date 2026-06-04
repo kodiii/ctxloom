@@ -7,6 +7,8 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
 ## [Unreleased]
 
+## [1.7.10] — 2026-06-04
+
 - ! **Git overlay is now per-project.** `ctx_risk_overlay`,
   `ctx_git_coupling`, and the overlay-enriched paths of
   `ctx_blast_radius` / `ctx_detect_changes` now resolve the git overlay
