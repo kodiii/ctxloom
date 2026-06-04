@@ -8,6 +8,7 @@ import { z } from 'zod';
 import type { ToolRegistry } from './registry.js';
 import type { ServerContext } from './context.js';
 import { ProjectRootField, PROJECT_ROOT_JSON_SCHEMA } from './projectRootParam.js';
+import { overlayUnavailableNote } from './overlayNote.js';
 
 const Schema = z.object({
   file: z.string().describe('File path to look up co-changed siblings for'),
@@ -31,11 +32,11 @@ interface CouplingResponse {
   note: string | null;
 }
 
-function overlayUnavailableResponse(file: string): CouplingResponse {
+function overlayUnavailableResponse(file: string, note: string): CouplingResponse {
   return {
     file,
     coupledFiles: [],
-    note: 'Git overlay not available. Re-index with --with-git to enable coupling data.',
+    note,
   };
 }
 
@@ -65,15 +66,25 @@ export function registerGitCouplingTool(registry: ToolRegistry, ctx: ServerConte
       },
     },
     async (args) => {
-      const { file, limit, min_confidence, half_life_days } = Schema.parse(args);
+      const { file, limit, min_confidence, half_life_days, project_root } = Schema.parse(args);
 
-      if (!ctx.overlay) {
-        return JSON.stringify(overlayUnavailableResponse(file));
+      // Resolve the overlay per-project (v1.7.10) — see risk-overlay.ts.
+      const overlay = await ctx.getOverlay(project_root);
+
+      if (!overlay) {
+        return JSON.stringify(
+          overlayUnavailableResponse(file, await overlayUnavailableNote(ctx, project_root)),
+        );
       }
 
-      const coChange = ctx.overlay.coChange;
+      const coChange = overlay.coChange;
       if (coChange.size().pairs === 0) {
-        return JSON.stringify(overlayUnavailableResponse(file));
+        // Overlay loaded but has no co-change pairs yet (e.g. shallow
+        // history). This IS a "build it" case, so the note helper's
+        // file-exists branch is still accurate enough; reuse it.
+        return JSON.stringify(
+          overlayUnavailableResponse(file, await overlayUnavailableNote(ctx, project_root)),
+        );
       }
 
       const nowSec = Math.floor(Date.now() / 1000);

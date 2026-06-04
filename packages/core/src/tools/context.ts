@@ -33,6 +33,14 @@ export interface ServerContext {
   // ─── Lazy getters (all accept optional projectRoot) ──────────────────
   getStore: (projectRoot?: string) => Promise<VectorStore>;
   getGraph: (projectRoot?: string) => Promise<DependencyGraph>;
+  /**
+   * Resolve the git overlay (churn / ownership / co-change) for a project,
+   * lazily building it per-project. Returns null when git is disabled
+   * (--no-git) or the overlay can't be built. Used by ctx_risk_overlay,
+   * ctx_git_coupling, ctx_blast_radius, ctx_detect_changes so they work
+   * for any project_root, not just the default. Added v1.7.10.
+   */
+  getOverlay: (projectRoot?: string) => Promise<GitOverlayStore | null>;
   getParser: (projectRoot?: string) => Promise<ASTParser>;
   getSkeletonizer: (projectRoot?: string) => Promise<Skeletonizer>;
   getRuleManager: (projectRoot?: string) => RuleManager;

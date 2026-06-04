@@ -107,9 +107,12 @@ export function registerDetectChangesTool(registry: ToolRegistry, ctx: ServerCon
         return '<detect_changes count="0">\n  <!-- No changed files detected -->\n</detect_changes>';
       }
 
+      // Resolve the overlay per-project (v1.7.10) so risk enrichment works
+      // for any project_root, not just the default. Null when git disabled.
+      const overlay = (await ctx.getOverlay(project_root)) ?? undefined;
       const { changedFiles: scored, summary } = detectChanges({
         graph,
-        overlay: ctx.overlay,
+        overlay,
         changedFiles: files,
       });
 
@@ -120,7 +123,7 @@ export function registerDetectChangesTool(registry: ToolRegistry, ctx: ServerCon
         );
       }
 
-      const hasOverlay = ctx.overlay !== undefined;
+      const hasOverlay = overlay !== undefined;
 
       const xml = [
         `<detect_changes count="${scored.length}" critical="${summary.critical}" high="${summary.high}" medium="${summary.medium}" low="${summary.low}">`,

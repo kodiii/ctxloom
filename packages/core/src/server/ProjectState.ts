@@ -38,7 +38,15 @@ export interface ProjectState {
   graphPromise: Promise<DependencyGraph> | null;
   skeletonizerPromise: Promise<Skeletonizer> | null;
   ruleManager: RuleManager | null;
+  /**
+   * Resolved git overlay for this project (churn / ownership / co-change).
+   * Lazily populated per-project by initOverlay() — mirrors graphPromise.
+   * Stays null when the server runs with git disabled (--no-git) or when
+   * the overlay genuinely couldn't be built. `overlayPromise` guards
+   * against concurrent rebuilds the same way graphPromise does.
+   */
   overlay: GitOverlayStore | null;
+  overlayPromise: Promise<GitOverlayStore | null> | null;
   watcher: FileWatcher | null;
   pathValidator: PathValidator | null;
 }
@@ -57,6 +65,7 @@ export function createProjectState(projectRoot: string, opts: { pinned?: boolean
     skeletonizerPromise: null,
     ruleManager: null,
     overlay: null,
+    overlayPromise: null,
     watcher: null,
     pathValidator: null,
   };
@@ -128,6 +137,7 @@ export async function disposeProjectState(state: ProjectState): Promise<void> {
   state.skeletonizerPromise = null;
   state.ruleManager = null;
   state.overlay = null;
+  state.overlayPromise = null;
   state.pathValidator = null;
   state.graphInitialized = false;
   state.vectorsInitialized = false;

@@ -21,6 +21,8 @@ function makeCtx(graph: DependencyGraph, overlay?: GitOverlayStore): ServerConte
     dbPath: '/fake/.ctxloom/vectors.lancedb',
     getStore: () => Promise.reject(new Error('not needed')),
     getGraph: () => Promise.resolve(graph),
+    // v1.7.10: blast-radius resolves the overlay per-project via getOverlay.
+    getOverlay: () => Promise.resolve(overlay ?? null),
     getParser: () => Promise.reject(new Error('not needed')),
     getSkeletonizer: () => Promise.reject(new Error('not needed')),
     getRuleManager: () => { throw new Error('not needed'); },
@@ -29,7 +31,7 @@ function makeCtx(graph: DependencyGraph, overlay?: GitOverlayStore): ServerConte
     isGraphInitialized: () => true,
     isParserInitialized: () => false,
     overlay,
-  };
+  } as unknown as ServerContext;
 }
 
 describe('computeBlastRadius', () => {

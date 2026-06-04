@@ -7,6 +7,24 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
 ## [Unreleased]
 
+- ! **Git overlay is now per-project.** `ctx_risk_overlay`,
+  `ctx_git_coupling`, and the overlay-enriched paths of
+  `ctx_blast_radius` / `ctx_detect_changes` now resolve the git overlay
+  (churn / ownership / co-change) lazily per `project_root`, the same way
+  the graph and vector store already do. Pre-fix the overlay was only
+  built for the DEFAULT project at server boot — so in no-default /
+  multi-project mode (one global MCP across several registered repos)
+  every non-default project reported "no git data" and risk scoring /
+  coupling came back empty, **even when `git-overlay.json` existed on
+  disk with full history** (verified on a 429-commit repo). New
+  `ctx.getOverlay(project_root)` + `ProjectState.overlayPromise` mirror
+  the `getGraph` pattern.
+- ~ **Clearer overlay-unavailable message.** When risk/coupling have no
+  overlay, the note now distinguishes "overlay file missing → run
+  `ctxloom index`" from "overlay exists but the server couldn't load it
+  → restart" — instead of always suggesting a re-index, which was a dead
+  end when the data was already on disk.
+
 ## [1.7.9] — 2026-05-31
 
 - ! **Vector-store corruption is now legible.** A corrupt LanceDB store

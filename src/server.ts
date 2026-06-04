@@ -163,6 +163,61 @@ async function initSkeletonizer(state: ProjectState): Promise<Skeletonizer> {
   return state.skeletonizerPromise;
 }
 
+/**
+ * Lazily load the git overlay (churn / ownership / co-change) for a
+ * project — mirrors initGraph so risk + coupling tools work for ANY
+ * resolved project_root, not just the default one. Pre-v1.7.10 the
+ * overlay was only ever built for the default project at server boot,
+ * so in no-default / multi-project mode `ctx.overlay` was null for every
+ * project and ctx_risk_overlay / ctx_git_coupling returned a misleading
+ * "re-index with --with-git" note even when git-overlay.json existed.
+ *
+ * Returns null (not throwing) when:
+ *   - git is disabled for this server (`withGit === false`), or
+ *   - the overlay can't be built/loaded (no git history, shell error).
+ * Callers branch their user-facing message on whether the on-disk
+ * git-overlay.json exists (see risk-overlay.ts / git-coupling.ts).
+ *
+ * Constructs GitOverlayStore with the RESOLVED project root (not the
+ * server default) so it reads the right .ctxloom/git-overlay.json and
+ * shells git in the right repo — same root-discipline as #257.
+ */
+async function initOverlay(
+  state: ProjectState,
+  withGit: boolean,
+  gitWindowDays: number,
+): Promise<GitOverlayStore | null> {
+  if (!withGit) return null;
+  if (!state.overlayPromise) {
+    state.overlayPromise = (async () => {
+      try {
+        const overlay = new GitOverlayStore(state.projectRoot, { windowDays: gitWindowDays });
+        const loaded = await overlay.loadSnapshot();
+        if (!loaded) {
+          await overlay.rebuild();
+          await overlay.saveSnapshot();
+        } else {
+          await overlay.refresh();
+          await overlay.saveSnapshot();
+        }
+        state.overlay = overlay;
+        return overlay;
+      } catch (err) {
+        // Best-effort: a git failure must not break the tool call.
+        // Reset the promise so a later call can retry rather than
+        // caching a permanent null.
+        logger.warn('Git overlay init failed', {
+          root: state.projectRoot,
+          detail: err instanceof Error ? err.message : String(err),
+        });
+        state.overlayPromise = null;
+        return null;
+      }
+    })();
+  }
+  return state.overlayPromise;
+}
+
 type ResolutionSource = 'alias' | 'arg-path' | 'env' | 'cwd';
 
 function classifyResolutionSource(arg: string | undefined, env: string | undefined): ResolutionSource {
@@ -175,6 +230,7 @@ function classifyResolutionSource(arg: string | undefined, env: string | undefin
 function buildContext(
   defaultRoot: string | null,
   noDefaultMode: boolean,
+  gitOpts: { withGit: boolean; gitWindowDays: number },
 ): { ctx: ServerContext; resolveOrDefault: (arg: string | undefined) => ProjectState } {
   const repoRegistry = new RepoRegistry(repoRegistryPath);
 
@@ -239,6 +295,7 @@ function buildContext(
     noDefaultMode,
     registry: repoRegistry,
     stateManager,
+    getOverlay: (root) => initOverlay(resolveOrDefault(root), gitOpts.withGit, gitOpts.gitWindowDays),
     getStore: async (root) => {
       const state = resolveOrDefault(root);
       const store = await initStore(state);
@@ -283,7 +340,9 @@ function buildContext(
 }
 
 // ─── Server factory ─────────────────────────────────────────────────────────
-export function createServer(): { server: Server; ctx: ServerContext } {
+export function createServer(
+  gitOpts: { withGit: boolean; gitWindowDays: number } = { withGit: true, gitWindowDays: 365 },
+): { server: Server; ctx: ServerContext } {
   const server = new Server({ name: 'ctxloom', version: '1.0.0' }, { capabilities: { tools: {} } });
   // Validate the default-root candidate. If validation fails, server runs
   // in no-default mode: tool calls without project_root return the
@@ -299,7 +358,7 @@ export function createServer(): { server: Server; ctx: ServerContext } {
   }
   const defaultRoot = isValidDefault ? candidateDefault : null;
   if (defaultRoot) stateManager.pin(defaultRoot);
-  const { ctx, resolveOrDefault } = buildContext(defaultRoot, !isValidDefault);
+  const { ctx, resolveOrDefault } = buildContext(defaultRoot, !isValidDefault, gitOpts);
   const registry = createToolRegistry(ctx);
 
   server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools: registry.list() }));
@@ -463,7 +522,7 @@ export async function startServer(opts: ServerOptions = {}): Promise<void> {
   const withGit = opts.withGit ?? true;
   const gitWindowDays = opts.gitWindowDays ?? 365;
 
-  const { server, ctx } = createServer();
+  const { server, ctx } = createServer({ withGit, gitWindowDays });
   const transport = new StdioServerTransport();
   await server.connect(transport);
 
