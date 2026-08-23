@@ -36,7 +36,7 @@ function daysFromNow(d: number): string {
 function makeLicense(overrides: Partial<LicenseFile> = {}): LicenseFile {
   return {
     schemaVersion: 1,
-    key: 'ctxl_pro_abc123',
+    key: 'ABC123-XYZ456-XYZ456-XYZ456',
     tier: 'pro',
     status: 'active',
     fingerprint: 'sha256:' + 'a'.repeat(64),

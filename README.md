@@ -4,7 +4,7 @@ A local-first MCP server that gives AI coding assistants deep structural underst
 
 No cloud indexing. No Python. Everything runs on your machine.
 
-> **ctxloom requires a license.** Start a free 7-day trial — no credit card required.
+> **ctxloom requires a license.** Start a free 14-day trial — no charge today; cancel before the trial ends to avoid billing.
 
 ## v1.7.0 — what we can defend with numbers
 
@@ -69,14 +69,14 @@ The full first-run flow is **one install + one trial + one init per project.** E
 npm install -g ctxloom-pro
 ```
 
-> **For local trial / dev use the unpinned command above is fine.** For unattended CI usage, pin to the exact version (`ctxloom-pro@1.7.10`) so future CLI releases don't silently desync your agent-spec coverage — see the workflow example below.
+> **For local trial / dev use the unpinned command above is fine.** For unattended CI usage, pin to the exact version (`ctxloom-pro@1.7.11`) so future CLI releases don't silently desync your agent-spec coverage — see the workflow example below.
 
 ### 2 — Start your free trial (once per email)
 
 ```bash
 ctxloom trial
 # Enter your email — a checkout link opens in your browser.
-# No credit card required. After checkout, you receive a license key by email.
+# No charge today. After checkout, you receive a license key by email.
 ```
 
 Already have a key?
@@ -383,7 +383,7 @@ jobs:
       # Exact pin (not `@^1`) so future CLI releases that add/remove MCP
       # tools don't silently desync your reviewer-agent specs. Bump on
       # every release; see CHANGELOG.md for the live version table.
-      - run: npm install -g ctxloom-pro@1.7.10
+      - run: npm install -g ctxloom-pro@1.7.11
       - run: ctxloom index
       - run: ctxloom rules check --json
 ```
@@ -671,7 +671,7 @@ ctxloom --help                   Show help
 │                      MCP Interface                       │
 │                   (Stdio transport)                      │
 ├──────────────────────────────────────────────────────────┤
-│                    33 Tools (ToolRegistry)                │
+│                    34 Tools (ToolRegistry)                │
 │  Search · Graph Intelligence · Navigation · Review       │
 ├──────────────────────────────────────────────────────────┤
 │                    Context Engine                         │
@@ -851,4 +851,4 @@ benchmarks/
 
 © 2026 [Codzign](https://github.com/kodiii)
 
-ctxloom is source-available software. The source code is public for transparency and contributions. Use beyond the 7-day trial requires a valid license key — see [ctxloom.com/pricing](https://ctxloom.com/pricing).
+ctxloom is source-available software. The source code is public for transparency and contributions. Continued use after the 14-day trial requires an active paid license — see [ctxloom.com/pricing](https://ctxloom.com/pricing).

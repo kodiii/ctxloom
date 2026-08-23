@@ -21,7 +21,7 @@ beforeAll(() => {
   mkdirSync(path.join(tmpHome, '.ctxloom'), { recursive: true });
   const license = {
     schemaVersion: 1,
-    key: 'ctxl_pro_test_fixture',
+    key: 'TEST123-CTX456-FIXTURE789',
     tier: 'pro',
     status: 'active',
     fingerprint: 'sha256:' + 'a'.repeat(64),

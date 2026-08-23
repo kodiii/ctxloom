@@ -1,8 +1,9 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { ApiClient } from '../../src/license/ApiClient.js';
-import { SeatLimitError, InvalidKeyError, NetworkError } from '../../src/license/errors.js';
+import { SeatLimitError, InvalidKeyError, LicenseRevokedError, NetworkError } from '../../src/license/errors.js';
 
 const VALID_FINGERPRINT = 'sha256:' + 'a'.repeat(64);
+const VALID_KEY = 'ABC123-XYZ456-XYZ456-XYZ456';
 
 describe('ApiClient', () => {
   let fetchMock: ReturnType<typeof vi.fn>;
@@ -30,7 +31,7 @@ describe('ApiClient', () => {
       });
 
       const client = new ApiClient('https://api.ctxloom.com');
-      const result = await client.activate('ctxl_pro_abc', VALID_FINGERPRINT, 'myhost', 'darwin-arm64');
+      const result = await client.activate(VALID_KEY, VALID_FINGERPRINT, 'myhost', 'darwin-arm64');
       expect(result.licenseId).toBe('lk_abc');
       expect(result.tier).toBe('pro');
       expect(result.instanceId).toBe('act_xyz');
@@ -44,7 +45,7 @@ describe('ApiClient', () => {
       });
 
       const client = new ApiClient('https://api.ctxloom.com');
-      await expect(client.activate('ctxl_pro_abc', VALID_FINGERPRINT, 'h', 'p')).rejects.toThrow(SeatLimitError);
+      await expect(client.activate(VALID_KEY, VALID_FINGERPRINT, 'h', 'p')).rejects.toThrow(SeatLimitError);
     });
 
     it('throws InvalidKeyError on 409 invalid_key', async () => {
@@ -55,14 +56,14 @@ describe('ApiClient', () => {
       });
 
       const client = new ApiClient('https://api.ctxloom.com');
-      await expect(client.activate('ctxl_pro_abc', VALID_FINGERPRINT, 'h', 'p')).rejects.toThrow(InvalidKeyError);
+      await expect(client.activate(VALID_KEY, VALID_FINGERPRINT, 'h', 'p')).rejects.toThrow(InvalidKeyError);
     });
 
     it('throws NetworkError on fetch failure', async () => {
       fetchMock.mockRejectedValue(new Error('connection refused'));
 
       const client = new ApiClient('https://api.ctxloom.com');
-      await expect(client.activate('ctxl_pro_abc', VALID_FINGERPRINT, 'h', 'p')).rejects.toThrow(NetworkError);
+      await expect(client.activate(VALID_KEY, VALID_FINGERPRINT, 'h', 'p')).rejects.toThrow(NetworkError);
     });
   });
 
@@ -75,7 +76,7 @@ describe('ApiClient', () => {
       });
 
       const client = new ApiClient('https://api.ctxloom.com');
-      const result = await client.validate('ctxl_pro_abc', 'act_xyz');
+      const result = await client.validate(VALID_KEY, 'act_xyz');
       expect(result.status).toBe('active');
       expect(result.expiresAt).toBe('2027-04-20T12:00:00Z');
     });
@@ -88,14 +89,25 @@ describe('ApiClient', () => {
       });
 
       const client = new ApiClient('https://api.ctxloom.com');
-      await expect(client.validate('ctxl_pro_abc', 'act_xyz')).rejects.toThrow(NetworkError);
+      await expect(client.validate(VALID_KEY, 'act_xyz')).rejects.toThrow(NetworkError);
     });
 
     it('throws NetworkError on fetch failure', async () => {
       fetchMock.mockRejectedValue(new TypeError('network timeout'));
 
       const client = new ApiClient('https://api.ctxloom.com');
-      await expect(client.validate('ctxl_pro_abc', 'act_xyz')).rejects.toThrow(NetworkError);
+      await expect(client.validate(VALID_KEY, 'act_xyz')).rejects.toThrow(NetworkError);
+    });
+
+    it('throws LicenseRevokedError on 409 license_revoked', async () => {
+      fetchMock.mockResolvedValue({
+        ok: false,
+        status: 409,
+        json: async () => ({ error: 'license_revoked' }),
+      });
+
+      const client = new ApiClient('https://api.ctxloom.com');
+      await expect(client.validate(VALID_KEY, 'act_xyz')).rejects.toThrow(LicenseRevokedError);
     });
   });
 
@@ -108,14 +120,14 @@ describe('ApiClient', () => {
       });
 
       const client = new ApiClient('https://api.ctxloom.com');
-      await expect(client.deactivate('ctxl_pro_abc', 'act_xyz')).resolves.toBeUndefined();
+      await expect(client.deactivate(VALID_KEY, 'act_xyz')).resolves.toBeUndefined();
     });
 
     it('throws NetworkError on 503', async () => {
       fetchMock.mockResolvedValue({ ok: false, status: 503, json: async () => ({}) });
 
       const client = new ApiClient('https://api.ctxloom.com');
-      await expect(client.deactivate('ctxl_pro_abc', 'act_xyz')).rejects.toThrow(NetworkError);
+      await expect(client.deactivate(VALID_KEY, 'act_xyz')).rejects.toThrow(NetworkError);
     });
   });
 
@@ -124,12 +136,12 @@ describe('ApiClient', () => {
       fetchMock.mockResolvedValue({
         ok: true,
         status: 200,
-        json: async () => ({ checkout_url: 'https://sandbox.polar.sh/checkout/abc' }),
+        json: async () => ({ checkout_url: 'https://creem.io/test/checkout/prod_test/ch_test' }),
       });
 
       const client = new ApiClient('https://api.ctxloom.com');
       const result = await client.startTrial('user@example.com', VALID_FINGERPRINT);
-      expect(result.checkoutUrl).toBe('https://sandbox.polar.sh/checkout/abc');
+      expect(result.checkoutUrl).toBe('https://creem.io/test/checkout/prod_test/ch_test');
     });
 
     it('throws FingerprintAlreadyUsedError on 409 fingerprint_already_used', async () => {

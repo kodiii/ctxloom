@@ -181,7 +181,7 @@ Use this exact Markdown template. Length budget: aim for < 2,500 words. If over,
 ```markdown
 ## 🧵 ctxloom AI review
 
-<sub>Powered by **Claude** + 33 ctxloom MCP tools. The deterministic structural review from ctxloom-pr-bot still applies — this comment adds narrative analysis from four specialist agents running in parallel.</sub>
+<sub>Powered by **Claude** + 34 ctxloom MCP tools. The deterministic structural review from ctxloom-pr-bot still applies — this comment adds narrative analysis from four specialist agents running in parallel.</sub>
 
 **Verdict:** <one of:>
 - ✅ **Looks good** — only low / info findings.

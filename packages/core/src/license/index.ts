@@ -159,7 +159,7 @@ export async function startTrial(
   const fingerprint = await Fingerprint.compute();
   const client = new ApiClient(opts.apiBase);
   const result = await client.startTrial(email, fingerprint);
-  // Trial license is emailed by Polar — return checkout URL for the browser
+  // Trial license is emailed after Creem checkout — return the URL for the browser
   void home; // no local state written until user runs `activate <KEY>`
   return result;
 }

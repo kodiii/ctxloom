@@ -7,6 +7,17 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
 ## [Unreleased]
 
+## [1.7.11] — 2026-08-23
+
+- **14-day trial alignment.** CLI, documentation, and license terms now match
+  the Creem product configuration: the trial lasts 14 days and starts without
+  a charge today, with billing beginning after the trial unless canceled.
+- **Stable license error contract.** The client recognizes the public
+  `license_revoked` API error alongside the existing invalid-key and seat-limit
+  responses.
+- **Time-stable git overlay tests.** Git history fixtures no longer use a fixed
+  future timestamp that eventually falls outside the configured history window.
+
 ## [1.7.10] — 2026-06-04
 
 - ! **Git overlay is now per-project.** `ctx_risk_overlay`,

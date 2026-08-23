@@ -9,7 +9,7 @@ function tmpHome(): string {
 
 const validLicense = {
   schemaVersion: 1 as const,
-  key: 'ctxl_pro_abc123',
+  key: 'ABC123-XYZ456-XYZ456-XYZ456',
   tier: 'pro' as const,
   status: 'active' as const,
   fingerprint: 'sha256:' + 'a'.repeat(64),
