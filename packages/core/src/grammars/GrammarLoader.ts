@@ -102,7 +102,11 @@ export class GrammarLoader {
 
   private download(url: string, dest: string, redirectsLeft: number = 5): Promise<void> {
     return new Promise((resolve, reject) => {
-      const tmp = dest + '.tmp';
+      // Multiple Vitest workers — and multiple ctxloom processes in normal use —
+      // can discover the same missing grammar at once. A shared `${dest}.tmp`
+      // lets the first finisher rename the second download's file out from under
+      // it. Keep each writer isolated until its atomic cache promotion.
+      const tmp = `${dest}.${process.pid}.${crypto.randomUUID()}.tmp`;
       const file = fs.createWriteStream(tmp);
 
       // Attach `'error'` SYNCHRONOUSLY. createWriteStream is lazy — the actual
@@ -142,8 +146,21 @@ export class GrammarLoader {
           reject(err);
         });
         file.on('finish', () => {
-          fs.renameSync(tmp, dest);
-          resolve();
+          try {
+            fs.renameSync(tmp, dest);
+            resolve();
+          } catch (err) {
+            // On platforms that do not replace an existing destination, another
+            // process may have completed the identical grammar download first.
+            // Its atomic result is usable; only our private temporary file needs
+            // cleaning up. If no destination exists, preserve the real error.
+            if (fs.existsSync(dest)) {
+              fs.rmSync(tmp, { force: true });
+              resolve();
+              return;
+            }
+            reject(err);
+          }
         });
       });
 
