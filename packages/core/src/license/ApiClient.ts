@@ -28,7 +28,7 @@ async function post<T>(url: string, body: unknown): Promise<T> {
         if (err === 'fingerprint_already_used') throw new FingerprintAlreadyUsedError();
         if (err === 'email_already_used') throw new EmailAlreadyUsedError();
       }
-      // 503 from /v1/trial/start means the trial backend (Polar) is down —
+      // 503 from /v1/trial/start means the Creem-backed trial service is down —
       // surface a distinct error so the CLI can guide the user to `activate` instead.
       if (res.status === 503 && url.endsWith('/v1/trial/start')) {
         throw new TrialUnavailableError();

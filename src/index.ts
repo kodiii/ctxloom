@@ -199,8 +199,8 @@ function buildActivityFromOverlay(store: GitOverlayStore): CandidateActivity[] {
 
 // M-1 (audit): the previous CTXLOOM_LICENSE_BYPASS=1 env-var escape
 // hatch was removed. The legitimate use case (Codzign team using the
-// CLI without burning paid seats) is now served by the internal Polar
-// product — a hidden €0 product with 5 lifetime activations. Team
+// CLI without burning paid seats) is now served by an internal €0
+// license product with 5 lifetime activations. Team
 // members run `ctxloom activate <internal-key>` like any real customer,
 // which goes through the same code path and exercises the actual
 // license flow (good for dogfooding).
@@ -214,6 +214,7 @@ function buildActivityFromOverlay(store: GitOverlayStore): CandidateActivity[] {
 // recovery scenarios (expired/revoked/network-failing-validate).
 // Added to bypass set per TEST-135-3 follow-up.
 const LICENSE_GATE_BYPASS_COMMANDS = new Set(['trial', 'activate', 'deactivate', 'status', 'budget-stats', '--help', 'update']);
+const TRIAL_DURATION_DAYS = 14;
 
 /**
  * Every subcommand the CLI dispatches in main()'s switch — used by
@@ -277,7 +278,7 @@ async function checkLicense(): Promise<void> {
     // running as an MCP server. Writing plain text to stdout corrupts the
     // protocol and causes "Server disconnected" in the client.
     process.stderr.write(fmtErrorBlock('ctxloom requires an active license.', [
-      `${style.bold('ctxloom trial')}            ${style.dim('— start a 7-day free trial')}`,
+      `${style.bold('ctxloom trial')}            ${style.dim(`— start a ${TRIAL_DURATION_DAYS}-day free trial`)}`,
       `${style.bold('ctxloom activate <KEY>')}   ${style.dim('— activate a purchased key')}`,
       `${style.link('https://ctxloom.com/pricing')}  ${style.dim('— buy a license')}`,
     ]));
@@ -302,7 +303,7 @@ async function promptEmail(): Promise<string> {
 
 async function runTrial(): Promise<void> {
   process.stdout.write(fmtHeader('Trial'));
-  process.stdout.write(`  ${style.dim('7-day free trial · no credit card required')}\n\n`);
+  process.stdout.write(`  ${style.dim(`${TRIAL_DURATION_DAYS}-day free trial · no charge today`)}\n\n`);
   const email = await promptEmail();
   if (!email) {
     process.stderr.write(fmtErrorBlock('Email is required.'));
@@ -416,7 +417,7 @@ async function runStatus(): Promise<void> {
     process.stdout.write(fmtHeader('License Status'));
     process.stdout.write(`  ${fmtWarn(style.bold('No active license'))}\n\n`);
     process.stdout.write(`  ${style.dim('Get started:')}\n`);
-    process.stdout.write(`  ${style.dim('•')} ${style.bold('ctxloom trial')}                    ${style.dim('— start a 7-day free trial')}\n`);
+    process.stdout.write(`  ${style.dim('•')} ${style.bold('ctxloom trial')}                    ${style.dim(`— start a ${TRIAL_DURATION_DAYS}-day free trial`)}\n`);
     process.stdout.write(`  ${style.dim('•')} ${style.bold('ctxloom activate <KEY>')}           ${style.dim('— activate a purchased key')}\n`);
     process.stdout.write(`  ${style.dim('•')} ${style.link('https://ctxloom.com/pricing')}      ${style.dim('— buy a license')}\n\n`);
     return;
@@ -1237,7 +1238,7 @@ ctxloom — The Universal Code Context Engine
 
 Usage:
   ctxloom                      Start MCP server on Stdio transport
-  ctxloom trial                Start a free 7-day trial (no credit card required)
+  ctxloom trial                Start a free ${TRIAL_DURATION_DAYS}-day trial (no charge today)
   ctxloom activate <KEY>       Activate a purchased license key on this machine
   ctxloom deactivate           Release this machine's license seat
   ctxloom status               Show current license status

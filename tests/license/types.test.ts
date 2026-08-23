@@ -5,7 +5,7 @@ describe('LicenseFileSchema', () => {
   it('parses a valid license file', () => {
     const valid = {
       schemaVersion: 1,
-      key: 'ctxl_pro_abc123',
+      key: 'ABC123-XYZ456-XYZ456-XYZ456',
       tier: 'pro',
       status: 'active',
       fingerprint: 'sha256:' + 'a'.repeat(64),
@@ -20,13 +20,13 @@ describe('LicenseFileSchema', () => {
   });
 
   it('rejects missing required fields', () => {
-    expect(() => LicenseFileSchema.parse({ key: 'ctxl_pro_abc' })).toThrow();
+    expect(() => LicenseFileSchema.parse({ key: 'ABC123-XYZ456-XYZ456-XYZ456' })).toThrow();
   });
 
   it('rejects invalid tier', () => {
     const bad = {
       schemaVersion: 1,
-      key: 'ctxl_pro_abc123',
+      key: 'ABC123-XYZ456-XYZ456-XYZ456',
       tier: 'invalid_tier',
       status: 'active',
       fingerprint: 'sha256:' + 'a'.repeat(64),
@@ -43,7 +43,7 @@ describe('LicenseFileSchema', () => {
   it('rejects invalid fingerprint format', () => {
     const bad = {
       schemaVersion: 1,
-      key: 'ctxl_pro_abc123',
+      key: 'ABC123-XYZ456-XYZ456-XYZ456',
       tier: 'pro',
       status: 'active',
       fingerprint: 'notafingerprint',
@@ -60,7 +60,7 @@ describe('LicenseFileSchema', () => {
   it('accepts all valid tiers', () => {
     const base = {
       schemaVersion: 1,
-      key: 'ctxl_pro_abc123',
+      key: 'ABC123-XYZ456-XYZ456-XYZ456',
       status: 'active',
       fingerprint: 'sha256:' + 'a'.repeat(64),
       seats: 1,

@@ -24,7 +24,7 @@ function writeLicense(home: string, overrides: Record<string, unknown> = {}): vo
   mkdirSync(dir, { recursive: true });
   const license = {
     schemaVersion: 1,
-    key: 'ctxl_pro_abc123',
+    key: 'ABC123-XYZ456-XYZ456-XYZ456',
     tier: 'pro',
     status: 'active',
     fingerprint: 'sha256:' + 'a'.repeat(64),
@@ -67,7 +67,7 @@ describe('license gate', () => {
 
   // CTXLOOM_LICENSE_BYPASS env var was removed in the security backlog
   // sweep — the team's legitimate "use without paying real seats" path
-  // is now via the internal Polar product (€0, 5 lifetime activations).
+  // is now via an internal €0 license product with 5 lifetime activations.
   // Tests below cover the same gate behavior using a real license file
   // written by writeLicense().
 
@@ -98,7 +98,7 @@ describe('license gate', () => {
 
   it('activate command bypasses gate', async () => {
     const home = tmpHome();
-    const { exitCode } = await run(['activate', 'ctxl_pro_abc'], {
+    const { exitCode } = await run(['activate', 'ABC123-XYZ456-XYZ456-XYZ456'], {
       HOME: home,
       CTXLOOM_API_BASE: 'http://127.0.0.1:1',
     });

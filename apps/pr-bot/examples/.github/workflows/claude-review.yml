@@ -5,7 +5,7 @@
 # Triggers Anthropic's official claude-code-action with the ctxloom MCP
 # server attached, then asks Claude to dispatch four specialist
 # reviewer subagents (security, architecture, testing, performance) in
-# parallel. Each subagent uses ctxloom's 33 MCP tools to gather
+# parallel. Each subagent uses ctxloom's 34 MCP tools to gather
 # structural evidence, produces severity-tagged findings, and the
 # orchestrator aggregates them into a single comment on the PR.
 #
@@ -132,7 +132,7 @@ jobs:
         # CHANGELOG.md is the source of truth for which MCP surface a
         # given version exposes.
         run: |
-          npm install -g ctxloom-pro@1.7.10
+          npm install -g ctxloom-pro@1.7.11
           ctxloom --version
 
       - name: Activate ctxloom license (CI ephemeral)

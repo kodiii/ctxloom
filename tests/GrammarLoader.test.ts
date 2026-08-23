@@ -1,7 +1,10 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
+import https from 'node:https';
+import { EventEmitter } from 'node:events';
+import { PassThrough } from 'node:stream';
 import { GrammarLoader } from '../src/grammars/GrammarLoader.js';
 
 describe('GrammarLoader', () => {
@@ -39,6 +42,46 @@ describe('GrammarLoader', () => {
 
   it('throws for unknown language', async () => {
     await expect(loader.ensureGrammar('nonexistent_lang')).rejects.toThrow('Unknown grammar');
+  });
+
+  it('supports concurrent downloads of the same missing grammar', async () => {
+    const previousCdn = process.env.CTXLOOM_GRAMMAR_CDN;
+    process.env.CTXLOOM_GRAMMAR_CDN = 'unsafe';
+
+    let requestCount = 0;
+    const getSpy = vi.spyOn(https, 'get').mockImplementation(((...args: unknown[]) => {
+      const callback = args.at(-1) as (response: PassThrough) => void;
+      const response = Object.assign(new PassThrough(), {
+        statusCode: 200,
+        headers: {},
+      });
+      const request = new EventEmitter();
+      const delayMs = requestCount++ === 0 ? 0 : 25;
+
+      setImmediate(() => {
+        callback(response);
+        setTimeout(() => response.end(Buffer.from('fake-wasm')), delayMs);
+      });
+
+      return request;
+    }) as never);
+
+    try {
+      const concurrentLoader = new GrammarLoader(cacheDir);
+      const [first, second] = await Promise.all([
+        concurrentLoader.ensureGrammar('dart'),
+        concurrentLoader.ensureGrammar('dart'),
+      ]);
+
+      expect(first).toBe(second);
+      expect(fs.readFileSync(first)).toEqual(Buffer.from('fake-wasm'));
+      expect(getSpy).toHaveBeenCalledTimes(2);
+      expect(fs.readdirSync(cacheDir).filter(name => name.endsWith('.tmp'))).toEqual([]);
+    } finally {
+      getSpy.mockRestore();
+      if (previousCdn === undefined) delete process.env.CTXLOOM_GRAMMAR_CDN;
+      else process.env.CTXLOOM_GRAMMAR_CDN = previousCdn;
+    }
   });
 
   describe('regression: graceful error handling on download failure', () => {
