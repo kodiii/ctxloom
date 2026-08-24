@@ -640,8 +640,8 @@ async function main(): Promise<void> {
 
     case 'init': {
       // Per-project bootstrap. Two layers:
-      //   1. runInit() — .mcp.json (CTXLOOM_ROOT pinned to cwd) +
-      //      .gitignore append. See src/setup/init.ts.
+      //   1. runInit() — .mcp.json + .codex/config.toml
+      //      (CTXLOOM_ROOT pinned to cwd) + .gitignore append.
       //   2. installHarness() — agent-rule blocks (CLAUDE.md, AGENTS.md,
       //      GEMINI.md) + Claude Code hooks (.claude/hooks.json +
       //      .claude/hooks/session-start.sh). Phase 2 of the agent-
@@ -671,19 +671,26 @@ async function main(): Promise<void> {
       }
 
       try {
-        // ─── Layer 1: .mcp.json + .gitignore ─────────────────────
-        const result = runInit(initRoot);
+        // ─── Layer 1: project MCP configs + .gitignore ───────────
+        const result = runInit(initRoot, { dryRun });
         const mcpLabel = result.mcpJson.created
-          ? `${style.bold('Created')} ${result.mcpJson.path}`
+          ? `${style.bold(dryRun ? 'Would create' : 'Created')} ${result.mcpJson.path}`
           : result.mcpJson.merged
-            ? `${style.bold('Merged ctxloom entry into')} ${result.mcpJson.path}`
+            ? `${style.bold(dryRun ? 'Would merge ctxloom entry into' : 'Merged ctxloom entry into')} ${result.mcpJson.path}`
             : `${style.dim('Already up to date:')} ${result.mcpJson.path}`;
         process.stdout.write(`  ${fmtSuccess(mcpLabel)}\n`);
 
+        const codexLabel = result.codexToml.created
+          ? `${style.bold(dryRun ? 'Would create' : 'Created')} ${result.codexToml.path}`
+          : result.codexToml.merged
+            ? `${style.bold(dryRun ? 'Would merge ctxloom entry into' : 'Merged ctxloom entry into')} ${result.codexToml.path}`
+            : `${style.dim('Already up to date:')} ${result.codexToml.path}`;
+        process.stdout.write(`  ${fmtSuccess(codexLabel)}\n`);
+
         const giLabel = result.gitignore.created
-          ? `${style.bold('Created')} ${result.gitignore.path} (added .ctxloom/)`
+          ? `${style.bold(dryRun ? 'Would create' : 'Created')} ${result.gitignore.path} (added .ctxloom/)`
           : result.gitignore.appended
-            ? `${style.bold('Appended .ctxloom/ to')} ${result.gitignore.path}`
+            ? `${style.bold(dryRun ? 'Would append .ctxloom/ to' : 'Appended .ctxloom/ to')} ${result.gitignore.path}`
             : `${style.dim('.ctxloom/ already in')} ${result.gitignore.path}`;
         process.stdout.write(`  ${fmtSuccess(giLabel)}\n`);
 
@@ -722,7 +729,10 @@ async function main(): Promise<void> {
         process.stdout.write('\n');
         process.stdout.write(fmtNextStep('Build the index', 'ctxloom index'));
         process.stdout.write(
-          `  ${style.dim('Then reopen your AI tool in this directory to pick up the new .mcp.json + hooks.')}\n\n`,
+          `  ${style.dim('Then reopen your AI tool in this directory to pick up the project MCP config + rules.')}\n\n`,
+        );
+        process.stdout.write(
+          `  ${style.dim('Codex note: project .codex/config.toml is loaded only after the repository is trusted.')}\n\n`,
         );
       } catch (err) {
         process.stdout.write(`\n  ${fmtError(String(err instanceof Error ? err.message : err))}\n\n`);
@@ -1242,7 +1252,7 @@ Usage:
   ctxloom activate <KEY>       Activate a purchased license key on this machine
   ctxloom deactivate           Release this machine's license seat
   ctxloom status               Show current license status
-  ctxloom init                 Scaffold .mcp.json + .gitignore for this project
+  ctxloom init                 Configure project MCP roots, agent rules, hooks, and .gitignore
   ctxloom index                Index the current directory and build dependency graph
   ctxloom setup                Detect and configure MCP-compatible AI tools (global)
   ctxloom install-pr-bot       Drop .github/workflows/ctxloom-review.yml into this repo
@@ -1284,7 +1294,7 @@ MCP Client Configuration:
     "mcpServers": {
       "ctxloom": {
         "command": "npx",
-        "args": ["-y", "ctxloom"]
+        "args": ["-y", "ctxloom-pro"]
       }
     }
   }

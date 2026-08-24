@@ -77,6 +77,27 @@ describe('PathValidator', () => {
     it('should return false for paths outside root', () => {
       expect(validator.isWithinRoot('../../../etc/passwd')).toBe(false);
     });
+
+    it('accepts a missing path addressed through a symlinked project root', () => {
+      const actualRoot = path.join(tempDir, 'actual-root');
+      const aliasRoot = path.join(tempDir, 'alias-root');
+      fs.mkdirSync(actualRoot);
+      fs.symlinkSync(actualRoot, aliasRoot, 'dir');
+
+      const aliasValidator = new PathValidator(aliasRoot);
+      expect(aliasValidator.isWithinRoot(path.join(aliasRoot, 'deleted-rule.md'))).toBe(true);
+    });
+
+    it('rejects a missing path beneath an existing symlink outside the root', () => {
+      const projectRoot = path.join(tempDir, 'project-root');
+      const outsideRoot = path.join(tempDir, 'outside-root');
+      fs.mkdirSync(projectRoot);
+      fs.mkdirSync(outsideRoot);
+      fs.symlinkSync(outsideRoot, path.join(projectRoot, 'escape'), 'dir');
+
+      const projectValidator = new PathValidator(projectRoot);
+      expect(projectValidator.isWithinRoot(path.join(projectRoot, 'escape', 'missing.txt'))).toBe(false);
+    });
   });
 
   describe('toRelative()', () => {

@@ -44,6 +44,23 @@ describe('RuleManager', () => {
       expect(rules[0].name).toBe('CLAUDE.md');
     });
 
+    it('should find Codex AGENTS.md and Gemini GEMINI.md files', async () => {
+      fs.writeFileSync(path.join(tempDir, 'AGENTS.md'), '# Codex rules');
+      fs.writeFileSync(path.join(tempDir, 'GEMINI.md'), '# Gemini rules');
+      const rules = await ruleManager.loadRules();
+      expect(rules.map((rule) => rule.name)).toEqual(['AGENTS.md', 'GEMINI.md']);
+    });
+
+    it('deduplicates identical cross-host generated rules', async () => {
+      const shared = '# Shared ctxloom rules';
+      fs.writeFileSync(path.join(tempDir, 'AGENTS.md'), shared);
+      fs.writeFileSync(path.join(tempDir, 'CLAUDE.md'), shared);
+      fs.writeFileSync(path.join(tempDir, 'GEMINI.md'), shared);
+      const rules = await ruleManager.loadRules();
+      expect(rules).toHaveLength(1);
+      expect(rules[0].content).toBe(shared);
+    });
+
     it('should find CONTEXT.md file', async () => {
       fs.writeFileSync(path.join(tempDir, 'CONTEXT.md'), 'Project context info');
       const rules = await ruleManager.loadRules();

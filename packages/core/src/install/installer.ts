@@ -7,7 +7,7 @@
  * (CLAUDE.md / AGENTS.md / GEMINI.md / .claude/hooks.json /
  * .claude/hooks/session-start.sh). It is called BY the
  * `src/index.ts` `init` command alongside the existing `runInit()`
- * which handles `.mcp.json` + `.gitignore`. Separation lets each
+ * which handles `.mcp.json` + `.codex/config.toml` + `.gitignore`. Separation lets each
  * piece be tested in isolation.
  *
  * Security boundary: every output path MUST resolve to within the

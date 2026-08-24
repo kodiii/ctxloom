@@ -47,7 +47,7 @@ Adapted from Karpathy's LLM-coding-pitfalls notes
 
 1. **Think before coding** — read the relevant graph slice before
    editing. \`ctx_blast_radius\`, \`ctx_get_call_graph\`,
-   \`ctx_get_review_context\` are how you do this without re-reading
+   \`ctx_git_diff_review\` are how you do this without re-reading
    whole files.
 2. **Simplicity first** — prefer the smallest viable change. Use
    \`ctx_refactor_preview\` to see the full diff *before* applying;
@@ -68,7 +68,7 @@ returns ~150 tokens of orientation plus a task-aware
 
 ### When to use graph tools FIRST
 
-- **Code review**: \`ctx_detect_changes\` + \`ctx_get_review_context\`
+- **Code review**: \`ctx_detect_changes\` + \`ctx_git_diff_review\`
   instead of reading whole files
 - **Understanding impact**: \`ctx_blast_radius\` + \`ctx_get_affected_flows\`
   instead of manually tracing imports
@@ -103,7 +103,7 @@ those instead of guessing.
 |------|----------|
 | \`ctx_get_minimal_context\` | START HERE — orientation anchor |
 | \`ctx_detect_changes\` | Reviewing code changes; risk-scored |
-| \`ctx_get_review_context\` | Token-efficient review snippets |
+| \`ctx_git_diff_review\` | Diff, API skeletons, and blast radius |
 | \`ctx_blast_radius\` | Blast radius of a change |
 | \`ctx_get_affected_flows\` | Execution paths impacted |
 | \`ctx_get_call_graph\` | Callers / callees of a symbol |

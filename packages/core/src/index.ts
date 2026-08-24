@@ -153,7 +153,7 @@ export { GoModuleResolver } from './utils/GoModuleResolver.js';
 
 // ─── Watcher ─────────────────────────────────────────────────────────────────
 export type { ChangeCallback } from './watcher/FileWatcher.js';
-export { FileWatcher } from './watcher/FileWatcher.js';
+export { FileWatcher, PROJECT_RULE_FILES, isProjectRuleFile } from './watcher/FileWatcher.js';
 
 // ─── Analysis (lib) ──────────────────────────────────────────────────────────
 export type {

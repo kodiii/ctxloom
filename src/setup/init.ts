@@ -1,13 +1,14 @@
 /**
  * init.ts — Per-project bootstrapping for ctxloom.
  *
- * `ctxloom init` (run inside a project directory) writes the two pieces of
+ * `ctxloom init` (run inside a project directory) writes the project pieces of
  * config that turn a generic global MCP-server entry into something that
  * works correctly for *this* project:
  *
  *   1. `.mcp.json` at the project root, with the ctxloom server pinned to
  *      this directory via env.CTXLOOM_ROOT.
- *   2. `.ctxloom/` appended to `.gitignore` (the on-disk graph + LanceDB
+ *   2. `.codex/config.toml`, with the same root pin for Codex clients.
+ *   3. `.ctxloom/` appended to `.gitignore` (the on-disk graph + LanceDB
  *      can easily exceed 500 MB on a mid-size repo).
  *
  * The motivation is concrete: without (1), Claude Code launches the
@@ -19,13 +20,14 @@
  * Claude Code's per-project MCP merge picks it up automatically the next
  * time the user opens this directory.
  *
- * Both operations are idempotent: re-running `ctxloom init` against an
+ * These operations are idempotent: re-running `ctxloom init` against an
  * already-initialised project is a no-op (or a merge, if the user has
  * added other MCP servers since).
  */
 
 import fs from 'node:fs';
 import path from 'node:path';
+import { upsertCodexMcpConfig } from './clients.js';
 
 // ─── Types ─────────────────────────────────────────────────────────────────
 
@@ -61,9 +63,16 @@ export interface InitResult {
   /** Absolute path of the project root we initialised. */
   cwd: string;
   mcpJson: InitMcpResult;
+  /** Project-scoped Codex MCP configuration. */
+  codexToml: InitMcpResult;
   gitignore: InitGitignoreResult;
   /** Non-fatal advisories (e.g. "not inside a git repo"). */
   warnings: string[];
+}
+
+export interface RunInitOptions {
+  /** Report what would change without writing any files. */
+  dryRun?: boolean;
 }
 
 interface McpServersFile {
@@ -77,7 +86,10 @@ interface McpServersFile {
  * Run the per-project init in `cwd`. Throws if `cwd` is not a directory.
  * All other failure modes degrade to a `warnings` entry on the result.
  */
-export function runInit(cwd: string = process.cwd()): InitResult {
+export function runInit(
+  cwd: string = process.cwd(),
+  options: RunInitOptions = {},
+): InitResult {
   const root = path.resolve(cwd);
   const stat = fs.statSync(root);
   if (!stat.isDirectory()) {
@@ -95,10 +107,12 @@ export function runInit(cwd: string = process.cwd()): InitResult {
     );
   }
 
-  const mcpJson = writeMcpJson(root);
-  const gitignore = appendGitignore(root);
+  const dryRun = options.dryRun === true;
+  const mcpJson = writeMcpJson(root, dryRun);
+  const codexToml = writeCodexToml(root, dryRun);
+  const gitignore = appendGitignore(root, dryRun);
 
-  return { cwd: root, mcpJson, gitignore, warnings };
+  return { cwd: root, mcpJson, codexToml, gitignore, warnings };
 }
 
 // ─── .mcp.json writer ──────────────────────────────────────────────────────
@@ -119,13 +133,15 @@ export function buildCtxloomEntry(projectRoot: string): {
   };
 }
 
-function writeMcpJson(projectRoot: string): InitMcpResult {
+function writeMcpJson(projectRoot: string, dryRun: boolean): InitMcpResult {
   const mcpPath = path.join(projectRoot, '.mcp.json');
   const entry = buildCtxloomEntry(projectRoot);
 
   if (!fs.existsSync(mcpPath)) {
     const payload: McpServersFile = { mcpServers: { ctxloom: entry } };
-    fs.writeFileSync(mcpPath, JSON.stringify(payload, null, 2) + '\n', 'utf-8');
+    if (!dryRun) {
+      fs.writeFileSync(mcpPath, JSON.stringify(payload, null, 2) + '\n', 'utf-8');
+    }
     return { path: mcpPath, created: true, merged: false, alreadyCorrect: false };
   }
 
@@ -160,8 +176,39 @@ function writeMcpJson(projectRoot: string): InitMcpResult {
   }
 
   servers['ctxloom'] = entry;
-  fs.writeFileSync(mcpPath, JSON.stringify(parsed, null, 2) + '\n', 'utf-8');
+  if (!dryRun) {
+    fs.writeFileSync(mcpPath, JSON.stringify(parsed, null, 2) + '\n', 'utf-8');
+  }
   return { path: mcpPath, created: false, merged: true, alreadyCorrect: false };
+}
+
+// ─── Codex .codex/config.toml writer ─────────────────────────────────────
+
+function writeCodexToml(projectRoot: string, dryRun: boolean): InitMcpResult {
+  const configPath = path.join(projectRoot, '.codex', 'config.toml');
+  const existed = fs.existsSync(configPath);
+  const existing = existed ? fs.readFileSync(configPath, 'utf-8') : null;
+  const updated = upsertCodexMcpConfig(existing, buildCtxloomEntry(projectRoot));
+
+  if (existing !== null && existing.trimEnd() === updated.trimEnd()) {
+    return { path: configPath, created: false, merged: false, alreadyCorrect: true };
+  }
+
+  if (!dryRun) {
+    fs.mkdirSync(path.dirname(configPath), { recursive: true });
+    fs.writeFileSync(
+      configPath,
+      updated.endsWith('\n') ? updated : `${updated}\n`,
+      'utf-8',
+    );
+  }
+
+  return {
+    path: configPath,
+    created: !existed,
+    merged: existed,
+    alreadyCorrect: false,
+  };
 }
 
 // ─── .gitignore appender ───────────────────────────────────────────────────
@@ -169,12 +216,12 @@ function writeMcpJson(projectRoot: string): InitMcpResult {
 const GITIGNORE_BANNER = '# ctxloom local index (machine-specific, do not commit)';
 const GITIGNORE_PATTERN = '.ctxloom/';
 
-function appendGitignore(projectRoot: string): InitGitignoreResult {
+function appendGitignore(projectRoot: string, dryRun: boolean): InitGitignoreResult {
   const gitignorePath = path.join(projectRoot, '.gitignore');
 
   if (!fs.existsSync(gitignorePath)) {
     const content = `${GITIGNORE_BANNER}\n${GITIGNORE_PATTERN}\n`;
-    fs.writeFileSync(gitignorePath, content, 'utf-8');
+    if (!dryRun) fs.writeFileSync(gitignorePath, content, 'utf-8');
     return {
       path: gitignorePath,
       created: true,
@@ -212,7 +259,7 @@ function appendGitignore(projectRoot: string): InitGitignoreResult {
   // so we don't accidentally produce `lastline.ctxloom/`.
   const sep = raw.endsWith('\n') ? '' : '\n';
   const addition = `${sep}\n${GITIGNORE_BANNER}\n${GITIGNORE_PATTERN}\n`;
-  fs.appendFileSync(gitignorePath, addition, 'utf-8');
+  if (!dryRun) fs.appendFileSync(gitignorePath, addition, 'utf-8');
   return {
     path: gitignorePath,
     created: false,

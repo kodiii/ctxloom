@@ -7,6 +7,27 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
 ## [Unreleased]
 
+## [1.7.12] — 2026-08-24
+
+- **Codex setup now lands in the configuration Codex actually reads.**
+  `ctxloom setup` writes the user-global `~/.codex/config.toml`, while
+  `ctxloom init` creates a trusted-project `.codex/config.toml` with
+  `CTXLOOM_ROOT` pinned to the repository. Existing TOML settings are
+  preserved and the displayed setup target always matches the write target.
+- **Agent guidance is valid and available from the first MCP handshake.**
+  Generated `AGENTS.md` / `CLAUDE.md` / `GEMINI.md` / `.cursorrules` files
+  now reference the registered `ctx_git_diff_review` tool, and the MCP server
+  publishes graph-first workflow instructions during initialization.
+- **Indexed graphs hydrate on the first minimal-context call.** Fresh MCP
+  processes recognize persisted graph snapshots immediately instead of
+  reporting `ready=false` until another graph tool happens to run.
+- **Project rules refresh without restarting the MCP server.** The shared
+  watcher now admits root rule files and invalidates the RuleManager cache on
+  additions, changes, and deletions.
+- **Safer setup fallbacks and previews.** The npx fallback uses the published
+  `ctxloom-pro` package, and `ctxloom init --dry-run` no longer writes project
+  MCP configuration or `.gitignore` changes.
+
 ## [1.7.11] — 2026-08-23
 
 - **14-day trial alignment.** CLI, documentation, and license terms now match

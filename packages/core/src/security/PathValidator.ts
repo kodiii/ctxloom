@@ -28,13 +28,30 @@ export class PathValidator {
   validate(inputPath: string): string {
     const resolved = path.resolve(this.canonicalRoot, inputPath);
 
-    // Use realpathSync to follow symlinks and get canonical path
+    // Use realpathSync to follow symlinks and get a canonical path. For a
+    // missing target (for example a watcher unlink event), canonicalize the
+    // nearest existing parent before appending the missing suffix. This keeps
+    // aliases such as macOS /var -> /private/var inside the canonical root
+    // while still detecting an existing parent symlink that escapes it.
     let canonical: string;
     try {
       canonical = fs.realpathSync(resolved);
     } catch {
-      // File doesn't exist yet — validate the resolved path itself
-      canonical = resolved;
+      const missingSegments: string[] = [];
+      let existingParent = resolved;
+
+      while (!fs.existsSync(existingParent)) {
+        const parent = path.dirname(existingParent);
+        if (parent === existingParent) break;
+        missingSegments.unshift(path.basename(existingParent));
+        existingParent = parent;
+      }
+
+      try {
+        canonical = path.join(fs.realpathSync(existingParent), ...missingSegments);
+      } catch {
+        canonical = resolved;
+      }
     }
 
     // Ensure canonical path starts with the project root

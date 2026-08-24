@@ -6,7 +6,9 @@
  * we test the tool registration by examining the registered handlers.
  */
 import { describe, it, expect, beforeAll } from 'vitest';
-import { createServer } from '../src/server.js';
+import { Client } from '@modelcontextprotocol/sdk/client/index.js';
+import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
+import { createServer, isGraphAvailable, SERVER_INSTRUCTIONS } from '../src/server.js';
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 
 describe('MCP Server', () => {
@@ -25,6 +27,38 @@ describe('MCP Server', () => {
     it('should have the correct server name', () => {
       // Server name is set during creation - we can verify the instance exists
       expect(server).toBeDefined();
+    });
+
+    it('publishes graph-first workflow instructions during MCP initialization', async () => {
+      const { server: initializedServer } = createServer();
+      const client = new Client({ name: 'ctxloom-test', version: '1.0.0' });
+      const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+
+      await initializedServer.connect(serverTransport);
+      await client.connect(clientTransport);
+      try {
+        expect(client.getInstructions()).toBe(SERVER_INSTRUCTIONS);
+        expect(client.getInstructions()).toContain('ctx_get_minimal_context');
+      } finally {
+        await client.close();
+        await initializedServer.close();
+      }
+    });
+
+    it('treats an indexed graph snapshot as ready before in-memory hydration', async () => {
+      const fs = await import('node:fs');
+      const os = await import('node:os');
+      const path = await import('node:path');
+      const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ctxloom-graph-ready-'));
+      try {
+        expect(isGraphAvailable(tempDir, false)).toBe(false);
+        fs.mkdirSync(path.join(tempDir, '.ctxloom'), { recursive: true });
+        fs.writeFileSync(path.join(tempDir, '.ctxloom', 'graph-snapshot.json'), '{}');
+        expect(isGraphAvailable(tempDir, false)).toBe(true);
+        expect(isGraphAvailable(tempDir, true)).toBe(true);
+      } finally {
+        fs.rmSync(tempDir, { recursive: true, force: true });
+      }
     });
   });
 
