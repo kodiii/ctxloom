@@ -53,6 +53,21 @@ function isIgnoredPath(absPath: string): boolean {
 void INDEXER_IGNORED_DIRS;
 const IGNORED = isIgnoredPath;
 
+/** Root-level project rule files that must invalidate the RuleManager cache. */
+export const PROJECT_RULE_FILES = new Set([
+  '.cursorrules',
+  'AGENTS.md',
+  'CLAUDE.md',
+  'GEMINI.md',
+  'CONTEXT.md',
+  '.ctxloomrc',
+]);
+
+export function isProjectRuleFile(filePath: string): boolean {
+  const basename = filePath.split(/[\\/]/).pop() ?? '';
+  return PROJECT_RULE_FILES.has(basename);
+}
+
 export class FileWatcher {
   private root: string;
   private onChange: ChangeCallback;
@@ -79,8 +94,10 @@ export class FileWatcher {
     });
 
     const handler = (event: 'add' | 'change' | 'unlink') => (filePath: string) => {
-      // Only watch source files
-      if (!this.isSourceFile(filePath)) return;
+      // Watch source files plus project rules. Rule files are not source
+      // code, but their changes must reach the server callback so the
+      // RuleManager cache can be invalidated without restarting the MCP.
+      if (!this.isRelevantFile(filePath)) return;
 
       const existing = this.debounceTimers.get(filePath);
       if (existing) clearTimeout(existing);
@@ -133,7 +150,8 @@ export class FileWatcher {
     return this.watcher !== null;
   }
 
-  private isSourceFile(filePath: string): boolean {
+  private isRelevantFile(filePath: string): boolean {
+    if (isProjectRuleFile(filePath)) return true;
     const ext = filePath.split('.').pop()?.toLowerCase() ?? '';
     return ['ts', 'tsx', 'js', 'jsx', 'mjs', 'py', 'rs', 'go', 'java', 'c', 'cpp', 'h'].includes(ext);
   }

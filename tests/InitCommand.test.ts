@@ -1,6 +1,6 @@
 /**
  * Tests for `ctxloom init` — the per-project bootstrap that drops
- * .mcp.json + .gitignore so the MCP server pins to the right project
+ * project MCP configs + .gitignore so the MCP server pins to the right project
  * root automatically.
  *
  * Each test runs against a fresh temp directory (Node's mkdtempSync)
@@ -54,6 +54,18 @@ describe('runInit — fresh project', () => {
         },
       },
     });
+  });
+
+  it('creates project-scoped Codex config with CTXLOOM_ROOT pinned to cwd', () => {
+    const result = runInit(tmp);
+    const configPath = path.join(tmp, '.codex', 'config.toml');
+
+    expect(result.codexToml.created).toBe(true);
+    const written = fs.readFileSync(configPath, 'utf-8');
+    expect(written).toContain('[mcp_servers.ctxloom]');
+    expect(written).toContain('command = "ctxloom"');
+    expect(written).toContain('[mcp_servers.ctxloom.env]');
+    expect(written).toContain(`CTXLOOM_ROOT = "${tmp}"`);
   });
 
   it('creates .gitignore containing .ctxloom/ when none exists', () => {
@@ -160,6 +172,43 @@ describe('runInit — .mcp.json merge', () => {
   });
 });
 
+describe('runInit — Codex TOML merge', () => {
+  it('preserves unrelated Codex settings and replaces a stale ctxloom root', () => {
+    const configPath = path.join(tmp, '.codex', 'config.toml');
+    fs.mkdirSync(path.dirname(configPath), { recursive: true });
+    fs.writeFileSync(configPath, [
+      'model = "gpt-5"',
+      '',
+      '[mcp_servers.ctxloom]',
+      'command = "ctxloom"',
+      'args = []',
+      '',
+      '[mcp_servers.ctxloom.env]',
+      'CTXLOOM_ROOT = "/wrong/root"',
+      '',
+    ].join('\n'));
+
+    const result = runInit(tmp);
+    const written = fs.readFileSync(configPath, 'utf-8');
+
+    expect(result.codexToml.merged).toBe(true);
+    expect(written).toContain('model = "gpt-5"');
+    expect(written).not.toContain('/wrong/root');
+    expect(written).toContain(`CTXLOOM_ROOT = "${tmp}"`);
+  });
+
+  it('is a no-op when the project Codex entry is already canonical', () => {
+    runInit(tmp);
+    const configPath = path.join(tmp, '.codex', 'config.toml');
+    const before = fs.readFileSync(configPath, 'utf-8');
+    const result = runInit(tmp);
+    const after = fs.readFileSync(configPath, 'utf-8');
+
+    expect(result.codexToml.alreadyCorrect).toBe(true);
+    expect(after).toBe(before);
+  });
+});
+
 describe('runInit — .gitignore append', () => {
   it('appends .ctxloom/ to an existing .gitignore that lacks it', () => {
     fs.writeFileSync(path.join(tmp, '.gitignore'), 'node_modules\n.next\n', 'utf-8');
@@ -225,5 +274,16 @@ describe('runInit — idempotency', () => {
     const gi = fs.readFileSync(path.join(tmp, '.gitignore'), 'utf-8');
     const occurrences = gi.match(/^\.ctxloom\/?$/gm) ?? [];
     expect(occurrences.length).toBe(1);
+  });
+
+  it('dry-run reports changes without writing any project files', () => {
+    const result = runInit(tmp, { dryRun: true });
+
+    expect(result.mcpJson.created).toBe(true);
+    expect(result.codexToml.created).toBe(true);
+    expect(result.gitignore.created).toBe(true);
+    expect(fs.existsSync(path.join(tmp, '.mcp.json'))).toBe(false);
+    expect(fs.existsSync(path.join(tmp, '.codex', 'config.toml'))).toBe(false);
+    expect(fs.existsSync(path.join(tmp, '.gitignore'))).toBe(false);
   });
 });

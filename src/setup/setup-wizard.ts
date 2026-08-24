@@ -86,7 +86,7 @@ export async function runSetupWizard(options?: { nonInteractive?: boolean }): Pr
     console.log(`  ${C.cyan}  "mcpServers": {${C.reset}`);
     console.log(`  ${C.cyan}    "ctxloom": {${C.reset}`);
     console.log(`  ${C.cyan}      "command": "npx",${C.reset}`);
-    console.log(`  ${C.cyan}      "args": ["-y", "ctxloom"]${C.reset}`);
+    console.log(`  ${C.cyan}      "args": ["-y", "ctxloom-pro"]${C.reset}`);
     console.log(`  ${C.cyan}    }${C.reset}`);
     console.log(`  ${C.cyan}  }${C.reset}`);
     console.log(`  ${C.cyan}}${C.reset}`);
@@ -263,7 +263,7 @@ async function offerPrBotInstall(): Promise<void> {
 
 function printNextSteps(): void {
   // Order matters here. `init` must come before `index`: it writes the
-  // per-project .mcp.json that pins CTXLOOM_ROOT to the project root.
+  // per-project MCP configs that pin CTXLOOM_ROOT to the project root.
   // Without that, Claude Code (and any other client that launches MCP
   // servers from a stale cwd) will keep the server pinned to whichever
   // directory the IDE was first opened from, so `ctxloom index` builds
@@ -271,7 +271,7 @@ function printNextSteps(): void {
   console.log(`  ${C.bold}Next steps:${C.reset}`);
   console.log('');
   console.log(`  1. ${C.cyan}cd /path/to/your/project${C.reset}`);
-  console.log(`  2. ${C.cyan}ctxloom init${C.reset}     ${C.dim}# Pin ctxloom to this project (.mcp.json + .gitignore)${C.reset}`);
+  console.log(`  2. ${C.cyan}ctxloom init${C.reset}     ${C.dim}# Project MCP roots + AGENTS.md/CLAUDE.md/GEMINI.md${C.reset}`);
   console.log(`  3. ${C.cyan}ctxloom index${C.reset}    ${C.dim}# Build the dependency graph${C.reset}`);
   console.log(`  4. ${C.dim}Open your AI tool in this directory — ctxloom provides context automatically${C.reset}`);
   console.log('');

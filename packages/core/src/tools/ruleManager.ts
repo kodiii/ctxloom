@@ -1,7 +1,8 @@
 /**
  * RuleManager — Scans for and loads project rule files.
  *
- * Supports: .cursorrules, CLAUDE.md, CONTEXT.md, .ctxloomrc
+ * Supports host-native rule files including AGENTS.md, CLAUDE.md,
+ * GEMINI.md, .cursorrules, CONTEXT.md, and .ctxloomrc.
  * Fulfills FR-09 (Rule Injection, P0) from the PRD.
  */
 import fs from 'node:fs';
@@ -10,7 +11,9 @@ import { PathValidator } from '../security/PathValidator.js';
 
 const RULE_FILES = [
   '.cursorrules',
+  'AGENTS.md',
   'CLAUDE.md',
+  'GEMINI.md',
   'CONTEXT.md',
   '.ctxloomrc',
   '.cursor/rules',
@@ -40,6 +43,7 @@ export class RuleManager {
     if (this.cachedRules) return this.cachedRules;
 
     const rules: RuleFile[] = [];
+    const seenContent = new Set<string>();
 
     for (const ruleFile of RULE_FILES) {
       const fullPath = path.join(this.projectRoot, ruleFile);
@@ -49,11 +53,14 @@ export class RuleManager {
           const stat = fs.statSync(fullPath);
           if (stat.isFile()) {
             const content = fs.readFileSync(fullPath, 'utf-8');
-            rules.push({
-              name: ruleFile,
-              path: ruleFile,
-              content,
-            });
+            if (!seenContent.has(content)) {
+              seenContent.add(content);
+              rules.push({
+                name: ruleFile,
+                path: ruleFile,
+                content,
+              });
+            }
           } else if (stat.isDirectory()) {
             // For directories, load all files within
             const dirEntries = fs.readdirSync(fullPath);
@@ -68,11 +75,14 @@ export class RuleManager {
               const entryStat = fs.statSync(entryPath);
               if (entryStat.isFile()) {
                 const content = fs.readFileSync(entryPath, 'utf-8');
-                rules.push({
-                  name: `${ruleFile}/${entry}`,
-                  path: `${ruleFile}/${entry}`,
-                  content,
-                });
+                if (!seenContent.has(content)) {
+                  seenContent.add(content);
+                  rules.push({
+                    name: `${ruleFile}/${entry}`,
+                    path: `${ruleFile}/${entry}`,
+                    content,
+                  });
+                }
               }
             }
           }

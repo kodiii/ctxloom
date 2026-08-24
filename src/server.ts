@@ -20,6 +20,7 @@ import {
   ASTParser,
   Skeletonizer,
   FileWatcher,
+  isProjectRuleFile,
   RuleManager,
   GitOverlayStore,
   logger,
@@ -54,6 +55,22 @@ export interface ServerOptions {
   withGit?: boolean;
   /** How far back to mine git history in days (default: 365). */
   gitWindowDays?: number;
+}
+
+/**
+ * MCP-native workflow guidance. Codex reads this during initialization,
+ * so the graph-first contract remains visible even before project rule
+ * files are loaded.
+ */
+export const SERVER_INSTRUCTIONS =
+  'Use ctxloom as the first source of repository context. Start every workflow with ctx_get_minimal_context(task="...") and follow suggested_first_tool plus meta.next_tool_suggestions. Prefer ctx_search/ctx_full_text_search to filesystem search, ctx_get_context_packet to bulk reads, ctx_detect_changes/ctx_git_diff_review for review, and ctx_blast_radius/ctx_get_call_graph before edits. Fall back only when the graph does not cover the need.';
+
+/**
+ * A graph is available either after this server has initialized it in
+ * memory or when `ctxloom index` left a persisted snapshot to hydrate.
+ */
+export function isGraphAvailable(projectRoot: string, initialized: boolean): boolean {
+  return initialized || fs.existsSync(path.join(projectRoot, '.ctxloom', 'graph-snapshot.json'));
 }
 
 const PROJECT_ROOT = (() => {
@@ -328,7 +345,7 @@ function buildContext(
     isGraphInitialized: () => {
       if (!defaultRoot) return false;
       const state = stateManager.has(defaultRoot) ? stateManager.get(defaultRoot) : null;
-      return state?.graphInitialized ?? false;
+      return isGraphAvailable(defaultRoot, state?.graphInitialized ?? false);
     },
     isParserInitialized: () => {
       if (!defaultRoot) return false;
@@ -343,7 +360,10 @@ function buildContext(
 export function createServer(
   gitOpts: { withGit: boolean; gitWindowDays: number } = { withGit: true, gitWindowDays: 365 },
 ): { server: Server; ctx: ServerContext } {
-  const server = new Server({ name: 'ctxloom', version: '1.0.0' }, { capabilities: { tools: {} } });
+  const server = new Server(
+    { name: 'ctxloom', version: '1.0.0' },
+    { capabilities: { tools: {} }, instructions: SERVER_INSTRUCTIONS },
+  );
   // Validate the default-root candidate. If validation fails, server runs
   // in no-default mode: tool calls without project_root return the
   // no_default_project structured error.
@@ -667,6 +687,14 @@ export async function startServer(opts: ServerOptions = {}): Promise<void> {
       if (!pathValidator.isWithinRoot(absPath)) return;
       const relPath = path.relative(PROJECT_ROOT, absPath);
 
+      // Rule files are agent guidance, not source code. Refresh their cache
+      // immediately and keep them out of the embedding/graph pipeline so
+      // changes and deletions are visible without waiting on LanceDB work.
+      if (isProjectRuleFile(absPath)) {
+        ctx.getRuleManager().invalidateCache();
+        return;
+      }
+
       if (event === 'unlink') {
         const store = await ctx.getStore();
         await store.remove(relPath);
@@ -676,11 +704,6 @@ export async function startServer(opts: ServerOptions = {}): Promise<void> {
 
       let content: string;
       try { content = fs.readFileSync(absPath, 'utf-8'); if (!content.trim()) return; } catch { return; }
-
-      const basename = path.basename(absPath);
-      if (['.cursorrules', 'CLAUDE.md', 'CONTEXT.md', '.ctxloomrc'].includes(basename)) {
-        ctx.getRuleManager().invalidateCache();
-      }
 
       try {
         const store = await ctx.getStore();

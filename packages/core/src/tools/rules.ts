@@ -10,7 +10,7 @@ export function registerRulesTool(registry: ToolRegistry, ctx: ServerContext): v
     'ctx_get_rules',
     {
       name: 'ctx_get_rules',
-      description: 'Load and inject project-level rules from standard files (.cursorrules, CLAUDE.md, CONTEXT.md, .ctxloomrc). Helps the AI understand project conventions.',
+      description: 'Load and inject project-level rules from standard files (AGENTS.md, CLAUDE.md, GEMINI.md, .cursorrules, CONTEXT.md, .ctxloomrc). Helps the AI understand project conventions.',
       inputSchema: { type: 'object', properties: { project_root: PROJECT_ROOT_JSON_SCHEMA } },
     },
     async (args) => {

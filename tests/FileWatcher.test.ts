@@ -99,6 +99,80 @@ describe('FileWatcher', () => {
     expect(changes.some(c => c.path === binFile)).toBe(false);
   });
 
+  it('should detect changes to all root-level project rule files', async () => {
+    const ruleFiles = [
+      '.cursorrules',
+      'AGENTS.md',
+      'CLAUDE.md',
+      'GEMINI.md',
+      'CONTEXT.md',
+      '.ctxloomrc',
+    ];
+    for (const ruleFile of ruleFiles) {
+      fs.writeFileSync(path.join(tempDir, ruleFile), 'old rule');
+    }
+
+    const watcher = new FileWatcher(tempDir, (absPath, event) => {
+      changes.push({ path: absPath, event });
+    });
+    watcher.start();
+    await watcher.ready();
+    await new Promise(r => setTimeout(r, 100));
+
+    for (const ruleFile of ruleFiles) {
+      fs.writeFileSync(path.join(tempDir, ruleFile), 'new rule');
+    }
+    await new Promise(r => setTimeout(r, 700));
+    watcher.stop();
+
+    for (const ruleFile of ruleFiles) {
+      const expectedPath = path.join(tempDir, ruleFile);
+      expect(
+        changes.some(c => c.event === 'change' && c.path === expectedPath),
+        `missing change event for ${ruleFile}`,
+      ).toBe(true);
+    }
+  });
+
+  it('should detect deletion of a project rule file', async () => {
+    const rulePath = path.join(tempDir, '.cursorrules');
+    fs.writeFileSync(rulePath, 'rule');
+
+    const watcher = new FileWatcher(tempDir, (absPath, event) => {
+      changes.push({ path: absPath, event });
+    });
+    watcher.start();
+    await watcher.ready();
+    await new Promise(r => setTimeout(r, 100));
+
+    fs.unlinkSync(rulePath);
+    await new Promise(r => setTimeout(r, 700));
+    watcher.stop();
+
+    expect(changes.some(c => c.event === 'unlink' && c.path === rulePath)).toBe(true);
+  });
+
+  it('should detect a project rule deletion after a prior change', async () => {
+    const rulePath = path.join(tempDir, '.cursorrules');
+    fs.writeFileSync(rulePath, 'old rule');
+
+    const watcher = new FileWatcher(tempDir, (absPath, event) => {
+      changes.push({ path: absPath, event });
+    });
+    watcher.start();
+    await watcher.ready();
+    await new Promise(r => setTimeout(r, 100));
+
+    fs.writeFileSync(rulePath, 'new rule');
+    await new Promise(r => setTimeout(r, 600));
+    fs.unlinkSync(rulePath);
+    await new Promise(r => setTimeout(r, 700));
+    watcher.stop();
+
+    expect(changes.some(c => c.event === 'change' && c.path === rulePath)).toBe(true);
+    expect(changes.some(c => c.event === 'unlink' && c.path === rulePath)).toBe(true);
+  });
+
   it('should detect file deletions (unlink)', async () => {
     const existingFile = path.join(tempDir, 'to-delete.ts');
     fs.writeFileSync(existingFile, 'export const x = 1;');

@@ -43,7 +43,7 @@ export interface MCPServerEntry {
 
 export const CTXLOOM_SERVER: MCPServerEntry = {
   command: 'npx',
-  args: ['-y', 'ctxloom'],
+  args: ['-y', 'ctxloom-pro'],
   env: {},
 };
 
@@ -68,6 +68,44 @@ export function tomlString(s: string): string {
     // eslint-disable-next-line no-control-regex
     .replace(/[\x00-\x1f\x7f]/g, (c) => `\\u${c.charCodeAt(0).toString(16).padStart(4, '0')}`);
   return `"${escaped}"`;
+}
+
+/**
+ * Merge the ctxloom MCP table into a Codex config.toml document.
+ * Shared by the one-time global setup writer and per-project init.
+ */
+export function upsertCodexMcpConfig(
+  existingContent: string | null,
+  entry: MCPServerEntry,
+): string {
+  const lines: string[] = [
+    '# ctxloom — managed by `ctxloom setup` / `ctxloom init`.',
+    '# Only the [mcp_servers.ctxloom] block is updated.',
+    '[mcp_servers.ctxloom]',
+    `command = ${tomlString(entry.command)}`,
+    `args = [${(entry.args ?? []).map(tomlString).join(', ')}]`,
+  ];
+  if (entry.env && Object.keys(entry.env).length > 0) {
+    lines.push('');
+    lines.push('[mcp_servers.ctxloom.env]');
+    for (const [k, v] of Object.entries(entry.env)) {
+      lines.push(`${k} = ${tomlString(v)}`);
+    }
+  }
+  const newBlock = lines.join('\n') + '\n';
+
+  if (!existingContent) return newBlock;
+
+  const blockRegex =
+    /(^|\n)(?:#[^\n]*\n)*\[mcp_servers\.ctxloom\][\s\S]*?(?=\n\[(?!mcp_servers\.ctxloom)|$)/;
+  if (blockRegex.test(existingContent)) {
+    return existingContent.replace(blockRegex, (_m, leading) =>
+      (leading === '\n' ? '\n' : '') + newBlock.trimEnd(),
+    );
+  }
+
+  const sep = existingContent.endsWith('\n') ? '\n' : '\n\n';
+  return existingContent + sep + newBlock;
 }
 
 /**
@@ -371,12 +409,12 @@ export const MCP_CLIENTS: MCPClient[] = [
     id: 'codex',
     name: 'Codex CLI',
     description: 'OpenAI Codex CLI agent',
-    // Workspace path FIRST (canonical per Codex docs); user-scoped
-    // path second (preserves detection on machines with Codex
-    // installed but no project-local config yet).
+    // `ctxloom setup` is the one-time global client setup, so the
+    // user-scoped Codex config is the canonical write target. Project
+    // overrides are created separately by `ctxloom init`.
     configPaths: [
-      path.join(process.cwd(), '.codex', 'config.toml'),
       path.join(HOME, '.codex', 'config.toml'),
+      path.join(process.cwd(), '.codex', 'config.toml'),
       // Legacy detection only — won't be written to. Kept so users
       // who created these in earlier ctxloom versions still get
       // detected (they need to migrate, but at least we surface them).
@@ -399,50 +437,8 @@ export const MCP_CLIENTS: MCPClient[] = [
         return false;
       }
     },
-    customWriter: (_targetPath, entry, existingContent) => {
-      // Render our standard block. We deliberately use the
-      // table-of-tables form (`[mcp_servers.ctxloom]` + key/value
-      // lines + optional `[mcp_servers.ctxloom.env]` subtable)
-      // rather than inline tables — readable diffs, friendly to
-      // `git blame` on the user's config.toml.
-      const lines: string[] = [
-        '# ctxloom — added by `ctxloom setup`. Safe to edit; the',
-        '# installer only ever modifies the [mcp_servers.ctxloom]',
-        '# block and never touches the rest of this file.',
-        '[mcp_servers.ctxloom]',
-        `command = ${tomlString(entry.command)}`,
-        `args = [${(entry.args ?? []).map(tomlString).join(', ')}]`,
-      ];
-      if (entry.env && Object.keys(entry.env).length > 0) {
-        lines.push('');
-        lines.push('[mcp_servers.ctxloom.env]');
-        for (const [k, v] of Object.entries(entry.env)) {
-          lines.push(`${k} = ${tomlString(v)}`);
-        }
-      }
-      const newBlock = lines.join('\n') + '\n';
-
-      if (!existingContent) {
-        // Fresh file: just our block.
-        return newBlock;
-      }
-
-      // Replace an existing [mcp_servers.ctxloom] block if present,
-      // else append. The match is anchored on the table header and
-      // runs until the next top-level table or end of file. Subtable
-      // `[mcp_servers.ctxloom.env]` is captured by this range too,
-      // so the replacement cleanly swaps the whole entry.
-      const blockRegex =
-        /(^|\n)(?:#[^\n]*\n)*\[mcp_servers\.ctxloom\][\s\S]*?(?=\n\[(?!mcp_servers\.ctxloom)|$)/;
-      if (blockRegex.test(existingContent)) {
-        return existingContent.replace(blockRegex, (_m, leading) =>
-          (leading === '\n' ? '\n' : '') + newBlock.trimEnd(),
-        );
-      }
-      // Append with one blank-line separator from prior content.
-      const sep = existingContent.endsWith('\n') ? '\n' : '\n\n';
-      return existingContent + sep + newBlock;
-    },
+    customWriter: (_targetPath, entry, existingContent) =>
+      upsertCodexMcpConfig(existingContent, entry),
     customRemove: (existingContent) => {
       // Surgical removal of the [mcp_servers.ctxloom] block AND its
       // leading installer-comment header (the `# ctxloom — added by...`
@@ -605,18 +601,15 @@ export function detectInstalledClients(): DetectedClient[] {
         configPath = cp;
         configExists = true;
 
-        // customWriter clients have non-JSON formats — defer to the
-        // host's own "is ctxloom installed?" check when provided.
-        // Defaults to file-existence-at-canonical-path (correct for
-        // single-purpose files like Continue's per-server YAML; wrong
-        // for shared files like Codex's config.toml that may exist
-        // without ctxloom's block).
+        // customWriter clients always write to their canonical first
+        // path. A legacy/secondary path may prove the client exists,
+        // but must never change the displayed or actual write target.
         if (client.customWriter) {
-          if (cp === client.configPaths[0]) {
-            alreadyConfigured = client.customInstalledCheck
-              ? client.customInstalledCheck(cp)
-              : true;
-          }
+          configPath = client.configPaths[0];
+          configExists = fs.existsSync(configPath);
+          alreadyConfigured = client.customInstalledCheck
+            ? client.customInstalledCheck(configPath)
+            : configExists;
           break;
         }
 
@@ -748,7 +741,7 @@ export function addCtxloomToConfig(detected: DetectedClient): { success: boolean
   // clobbering unrelated config. Single-purpose hosts like Continue
   // ignore the existing content and return the whole file.
   if (client.customWriter) {
-    const targetPath = client.configPaths[0];
+    const targetPath = configPath;
     const serverEntry = getServerEntry();
     const existingContent = fs.existsSync(targetPath)
       ? fs.readFileSync(targetPath, 'utf-8')
@@ -758,6 +751,9 @@ export function addCtxloomToConfig(detected: DetectedClient): { success: boolean
     if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
     try {
       fs.writeFileSync(targetPath, content, 'utf-8');
+      if (client.customInstalledCheck && !client.customInstalledCheck(targetPath)) {
+        return { success: false, message: `Wrote config at ${targetPath}, but ctxloom verification failed` };
+      }
       return { success: true, message: `Added ctxloom to ${client.name} (${targetPath})` };
     } catch (err) {
       return { success: false, message: `Failed to write config at ${targetPath}: ${err}` };
@@ -823,7 +819,7 @@ export function removeCtxloomFromConfig(detected: DetectedClient): { success: bo
   // block removal), or fall back to "delete the file" (single-purpose
   // hosts like Continue's per-server YAML).
   if (client.customWriter) {
-    const targetPath = client.configPaths[0];
+    const targetPath = configPath;
     if (!fs.existsSync(targetPath)) {
       return { success: true, message: `ctxloom not found in ${client.name} config` };
     }

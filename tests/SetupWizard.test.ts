@@ -5,7 +5,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
-import { MCP_CLIENTS, detectInstalledClients, addCtxloomToConfig, removeCtxloomFromConfig, yamlEscape, tomlString, type DetectedClient } from '../src/setup/clients.js';
+import { MCP_CLIENTS, CTXLOOM_SERVER, detectInstalledClients, addCtxloomToConfig, removeCtxloomFromConfig, yamlEscape, tomlString, type DetectedClient } from '../src/setup/clients.js';
 
 const HOME = os.homedir();
 
@@ -91,6 +91,14 @@ describe('MCP Clients Registry', () => {
         || client.appBundles.length > 0;
       expect(hasDetection).toBe(true);
     }
+  });
+
+  it('uses the published ctxloom-pro package for the npx fallback', () => {
+    expect(CTXLOOM_SERVER).toEqual({
+      command: 'npx',
+      args: ['-y', 'ctxloom-pro'],
+      env: {},
+    });
   });
 });
 
@@ -465,14 +473,33 @@ describe('Codex TOML writer', () => {
     };
   }
 
-  it('writes the corrected TOML path (NOT the old JSON path)', () => {
+  it('uses the user-global Codex TOML as the setup write target', () => {
     // The OLD path was ~/.codex/mcp.json — silently failed on current
-    // Codex. New canonical path: .codex/config.toml (workspace-scoped).
-    expect(codex.configPaths[0]).toMatch(/\.codex.*config\.toml$/);
+    // Codex. `setup` is global; `init` owns project-scoped config.
+    expect(codex.configPaths[0]).toBe(path.join(HOME, '.codex', 'config.toml'));
+    expect(codex.configPaths[1]).toBe(path.join(originalCwd, '.codex', 'config.toml'));
     // The old JSON path is still detected (legacy users with that file)
     // but it's NOT configPaths[0] — we never write to it.
     expect(codex.configPaths.some((p) => p.endsWith('mcp.json'))).toBe(true);
     expect(codex.configPaths[0]).not.toMatch(/mcp\.json$/);
+  });
+
+  it('writes the same canonical path that the wizard displays', () => {
+    const displayedTarget = path.join(tempDir, 'displayed', 'config.toml');
+    const staleFirstPath = path.join(tempDir, 'wrong', 'config.toml');
+    const detected: DetectedClient = {
+      client: { ...codex, configPaths: [staleFirstPath, ...codex.configPaths.slice(1)] },
+      configPath: displayedTarget,
+      configExists: false,
+      alreadyConfigured: false,
+    };
+
+    const result = addCtxloomToConfig(detected);
+
+    expect(result.success).toBe(true);
+    expect(result.message).toContain(displayedTarget);
+    expect(fs.existsSync(displayedTarget)).toBe(true);
+    expect(fs.existsSync(staleFirstPath)).toBe(false);
   });
 
   it('uses the snake_case `mcp_servers` schema key (NOT `mcpServers`)', () => {

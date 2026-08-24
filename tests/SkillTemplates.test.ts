@@ -15,6 +15,7 @@
  */
 import { describe, it, expect } from 'vitest';
 import { CTXLOOM_SKILLS } from '../packages/core/src/install/skillTemplates.js';
+import { RULES_BLOCK_CONTENT } from '../packages/core/src/install/templates.js';
 
 // ─── per-skill structural shape ──────────────────────────────────────
 
@@ -53,7 +54,7 @@ describe('skill structural shape', () => {
 
 // ─── tool-name drift detection ───────────────────────────────────────
 
-describe('drift: every ctx_* mentioned in a skill body is a real registered tool', () => {
+describe('drift: every ctx_* mentioned in shipped guidance is a real registered tool', () => {
   // Same pattern as tests/NextToolSuggestions.test.ts. Extract every
   // `ctx_<word>` token from each skill body, dedupe, then assert each
   // is in the registered set. A tool rename / deletion fails CI.
@@ -69,13 +70,16 @@ describe('drift: every ctx_* mentioned in a skill body is a real registered tool
       const matches = skill.content.match(/\bctx_[a-z_]+/g) ?? [];
       for (const m of matches) referenced.add(m);
     }
+    for (const m of RULES_BLOCK_CONTENT.match(/\bctx_[a-z_]+/g) ?? []) {
+      referenced.add(m);
+    }
     // Common false-positives (not tool calls, just words containing
     // ctx_): the configuration shorthand "ctx_*" is the only one used,
     // which is a meta reference. Filter token shapes that aren't
     // plausible tool names.
     const filtered = Array.from(referenced).filter((t) => t !== 'ctx_' && t.length > 4);
     const missing = filtered.filter((t) => !registered.has(t));
-    expect(missing, `Skill bodies reference unregistered tools: ${missing.join(', ')}`).toEqual([]);
+    expect(missing, `Shipped guidance references unregistered tools: ${missing.join(', ')}`).toEqual([]);
   });
 });
 

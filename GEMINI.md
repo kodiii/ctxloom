@@ -1,4 +1,4 @@
-<!-- BEGIN CTXLOOM-RULES v:1 hmac:sha256:8e370911ba8720604f2478a2c769d87a6b59bc97556201dcecbd9585227c2a51 -->
+<!-- BEGIN CTXLOOM-RULES v:1 hmac:sha256:35dd712370b55923c4efcbca8070337a55873d2fd180fe80fda62552a65a0687 -->
 ## MCP Tools: ctxloom
 
 **IMPORTANT: This project has a knowledge graph. ALWAYS use the
@@ -6,6 +6,27 @@ ctxloom MCP tools BEFORE Grep/Glob/Read to explore the codebase.**
 The graph is faster, cheaper (fewer tokens), and gives you
 structural context (callers, dependents, test coverage) that file
 scanning cannot.
+
+### Operating principles
+
+ctxloom's tools exist to operationalize four principles for working
+with an AI coding agent. They're the *why* behind every tool below.
+Adapted from Karpathy's LLM-coding-pitfalls notes
+(<https://github.com/multica-ai/andrej-karpathy-skills>, MIT).
+
+1. **Think before coding** — read the relevant graph slice before
+   editing. `ctx_blast_radius`, `ctx_get_call_graph`,
+   `ctx_git_diff_review` are how you do this without re-reading
+   whole files.
+2. **Simplicity first** — prefer the smallest viable change. Use
+   `ctx_refactor_preview` to see the full diff *before* applying;
+   if the preview is sprawling, the plan is too big.
+3. **Surgical changes** — every changed line should trace directly
+   to the user's request. `ctx_detect_changes` after each edit
+   confirms scope hasn't drifted.
+4. **Goal-driven execution** — stop when the goal is met. Don't
+   "polish" beyond the request. `ctx_knowledge_gaps` flags real
+   risk surfaces; everything else is yak-shaving.
 
 ### Start every workflow with `ctx_get_minimal_context`
 
@@ -16,7 +37,7 @@ returns ~150 tokens of orientation plus a task-aware
 
 ### When to use graph tools FIRST
 
-- **Code review**: `ctx_detect_changes` + `ctx_get_review_context`
+- **Code review**: `ctx_detect_changes` + `ctx_git_diff_review`
   instead of reading whole files
 - **Understanding impact**: `ctx_blast_radius` + `ctx_get_affected_flows`
   instead of manually tracing imports
@@ -51,7 +72,7 @@ those instead of guessing.
 |------|----------|
 | `ctx_get_minimal_context` | START HERE — orientation anchor |
 | `ctx_detect_changes` | Reviewing code changes; risk-scored |
-| `ctx_get_review_context` | Token-efficient review snippets |
+| `ctx_git_diff_review` | Diff, API skeletons, and blast radius |
 | `ctx_blast_radius` | Blast radius of a change |
 | `ctx_get_affected_flows` | Execution paths impacted |
 | `ctx_get_call_graph` | Callers / callees of a symbol |
@@ -59,10 +80,15 @@ those instead of guessing.
 | `ctx_architecture_overview` | High-level codebase map |
 | `ctx_refactor_preview` / `ctx_apply_refactor` | Plan a rename |
 
-### Hooks keep the graph fresh
+### How the graph stays fresh
 
-`ctxloom init` installed a PostToolUse hook on `Write|Edit` that
-runs `ctxloom update --incremental --quiet` — so the graph is
-always up to date when you query it. No "did the index update yet?"
-guessing.
+The ctxloom MCP server's built-in `FileWatcher` (chokidar with 200ms
+debounce) keeps the graph + vectors in sync in real time as you edit
+files — no manual reindex needed. A belt-and-suspenders PostToolUse
+hook (`ctxloom update --incremental --quiet`) is also installed; in
+v1.7.3+ it's a no-op that exits cleanly. In earlier versions the
+`update` subcommand silently didn't exist, which made the hook spawn
+orphan MCP servers and accumulate LanceDB fragments — if you ever see
+`ctx_search` stalling for minutes, run `ctxloom vectors-cleanup`
+to fix.
 <!-- END CTXLOOM-RULES -->

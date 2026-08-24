@@ -69,7 +69,7 @@ The full first-run flow is **one install + one trial + one init per project.** E
 npm install -g ctxloom-pro
 ```
 
-> **For local trial / dev use the unpinned command above is fine.** For unattended CI usage, pin to the exact version (`ctxloom-pro@1.7.11`) so future CLI releases don't silently desync your agent-spec coverage — see the workflow example below.
+> **For local trial / dev use the unpinned command above is fine.** For unattended CI usage, pin to the exact version (`ctxloom-pro@1.7.12`) so future CLI releases don't silently desync your agent-spec coverage — see the workflow example below.
 
 ### 2 — Start your free trial (once per email)
 
@@ -98,13 +98,13 @@ ctxloom setup
 
 ```bash
 cd /path/to/your/project
-ctxloom init           # writes .mcp.json + appends .ctxloom/ to .gitignore
+ctxloom init           # writes project MCP configs + agent rules/hooks
 ctxloom index          # builds vector + graph + git overlay
 ```
 
-`ctxloom init` is the piece that pins ctxloom to **this** project. Without it, MCP clients (notably Claude Code) launch the global MCP server with cwd inherited from wherever the IDE was first opened — and **do not relaunch on project switch** — so a single Claude Code session ends up serving graph queries from the wrong codebase. The `.mcp.json` produced by `init` carries an explicit `CTXLOOM_ROOT` and short-circuits that ambiguity.
+`ctxloom init` is the piece that pins ctxloom to **this** project. Without it, MCP clients can launch the global MCP server with an inherited working directory and keep serving graph queries from the wrong codebase after a project switch. The `.mcp.json` and `.codex/config.toml` produced by `init` carry an explicit `CTXLOOM_ROOT` and short-circuit that ambiguity for Claude-compatible clients and Codex respectively.
 
-Beyond `.mcp.json` + `.gitignore`, `ctxloom init` also writes the **agent-harness layer** (v1.4.0+): HMAC-signed rule blocks in `CLAUDE.md` / `AGENTS.md` / `GEMINI.md`, Claude Code hooks under `.claude/hooks/`, and six pre-packaged Claude Code skills under `.claude/skills/ctxloom-*/`. These tell the agent to prefer the ctxloom MCP tools over `Grep`/`Read` automatically; you don't have to remember the rule.
+Beyond the project MCP configs + `.gitignore`, `ctxloom init` also writes the **agent-harness layer** (v1.4.0+): HMAC-signed rule blocks in `CLAUDE.md` / `AGENTS.md` / `GEMINI.md`, Claude Code hooks under `.claude/hooks/`, and six pre-packaged Claude Code skills under `.claude/skills/ctxloom-*/`. These tell the agent to prefer the ctxloom MCP tools over `Grep`/`Read` automatically; you don't have to remember the rule.
 
 **Cross-agent hosts (v1.5.0+):** add `--host=<id>` to install rules for additional agent hosts beyond Claude Code:
 
@@ -119,7 +119,7 @@ ctxloom init --host=all            # writes every supported host
 
 Unknown host ids drop with a warning, not a hard failure. Re-running `ctxloom init` is idempotent — content matches → no-op; tampered blocks → refuse to clobber without `--force`.
 
-After `init` + `index`, reopen your AI tool in the project directory. Your assistant now has full structural context.
+After `init` + `index`, reopen your AI tool in the project directory. Codex loads project `.codex/config.toml` only for trusted projects, so approve the repository trust prompt when opening it. Your assistant now has full structural context.
 
 ### License commands
 
@@ -143,7 +143,6 @@ Global MCP entry — match this in your client's config file by hand:
 ```jsonc
 // Claude Code:    ~/.claude.json or .mcp.json in the project
 // Cursor:         ~/.cursor/mcp.json
-// Codex CLI:      ~/.codex/mcp.json
 // Kimi:           ~/.kimi/mcp.json
 // Claude Desktop: ~/Library/Application Support/Claude/claude_desktop_config.json
 {
@@ -156,7 +155,15 @@ Global MCP entry — match this in your client's config file by hand:
 }
 ```
 
-Then run `ctxloom init` inside each project — it writes a `.mcp.json` in the project root with `env.CTXLOOM_ROOT` set, which overrides the global entry on a per-project basis (Claude Code, Cursor, and the other MCP-aware clients merge per-project config over global automatically).
+Codex uses TOML rather than the JSON shape above. Add this to `~/.codex/config.toml`:
+
+```toml
+[mcp_servers.ctxloom]
+command = "ctxloom"
+args = []
+```
+
+Then run `ctxloom init` inside each project — it writes both `.mcp.json` and `.codex/config.toml` with `CTXLOOM_ROOT` set. Codex honors the project override after the repository is trusted.
 
 If you have a single fixed project (e.g. a CI runner or a Claude Desktop session with no project concept), pin the global entry directly:
 
@@ -383,7 +390,7 @@ jobs:
       # Exact pin (not `@^1`) so future CLI releases that add/remove MCP
       # tools don't silently desync your reviewer-agent specs. Bump on
       # every release; see CHANGELOG.md for the live version table.
-      - run: npm install -g ctxloom-pro@1.7.11
+      - run: npm install -g ctxloom-pro@1.7.12
       - run: ctxloom index
       - run: ctxloom rules check --json
 ```
@@ -499,7 +506,7 @@ The tool reads `.ctxloom/rules.yml` and the live dependency graph on every call 
 
 | Tool | Description |
 |------|-------------|
-| `ctx_get_rules` | Inject project rules from `.cursorrules`, `CLAUDE.md`, `CONTEXT.md`, `.ctxloomrc` |
+| `ctx_get_rules` | Inject project rules from `AGENTS.md`, `CLAUDE.md`, `GEMINI.md`, `.cursorrules`, `CONTEXT.md`, `.ctxloomrc` |
 | `ctx_status` | Server status: graph size, vector store count, initialization state |
 | `ctx_get_workflow` | Return a pre-written tool sequence for review/debug/onboard/refactor/audit workflows |
 | `ctx_rules_check` | Check `.ctxloom/rules.yml` against the live dependency graph — returns `{schemaVersion:1, violations, warnings}` |
@@ -630,6 +637,7 @@ ctxloom dashboard                Open the web dashboard (port 7842)
 ctxloom dashboard --port=N       Start on a custom port
 ctxloom dashboard --open         Open browser automatically
 ctxloom setup                    Detect and configure MCP-compatible AI tools (interactive)
+ctxloom init                     Configure project MCP roots, agent rules, hooks, and .gitignore
 ctxloom register <path>          Register a repo for cross-repo search (v1.0.x)
 ctxloom register --alias <name> <path>  Register a project with an alias for multi-project support (v1.1.0+)
 ctxloom repos                    List all registered repos
