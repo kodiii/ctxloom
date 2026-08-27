@@ -52,6 +52,18 @@ const CTXLOOM_VERSION: string =
  */
 const SNAPSHOT_SCHEMA_VERSION = 2;
 
+export interface LoadSnapshotOptions {
+  /**
+   * Accept a snapshot written by a different ctxloom release version.
+   *
+   * This is intentionally opt-in for controlled callers that created the
+   * snapshot immediately beforehand with another trusted ctxloom binary
+   * (the public benchmark does this). Normal product loads must keep the
+   * version-staleness protection enabled.
+   */
+  acceptVersionMismatch?: boolean;
+}
+
 /**
  * Compare two ctxloom version strings ("1.7.1", "1.6.0", "dev").
  *
@@ -465,10 +477,13 @@ export class DependencyGraph {
    * Returns true when the snapshot was found and loaded, false when no
    * snapshot exists (caller should tell the user to run `ctxloom index`).
    */
-  async loadSnapshotOnly(rootDir: string): Promise<boolean> {
+  async loadSnapshotOnly(
+    rootDir: string,
+    options?: LoadSnapshotOptions,
+  ): Promise<boolean> {
     this.rootDir = rootDir;
     this.snapshotDir = path.join(rootDir, '.ctxloom');
-    return this.loadSnapshot();
+    return this.loadSnapshot(undefined, options);
   }
 
   /**
@@ -1028,7 +1043,10 @@ export class DependencyGraph {
     return true;
   }
 
-  private async loadSnapshot(currentFileCount?: number): Promise<boolean> {
+  private async loadSnapshot(
+    currentFileCount?: number,
+    options?: LoadSnapshotOptions,
+  ): Promise<boolean> {
     const snapshotPath = this.getSnapshotPath();
     if (!fs.existsSync(snapshotPath)) return false;
 
@@ -1060,19 +1078,21 @@ export class DependencyGraph {
         });
         return false;
       }
-      const cmp = compareCtxloomVersions(snapshotVer, CTXLOOM_VERSION);
-      if (cmp === 'older') {
-        logger.info('Graph snapshot from older ctxloom, rebuilding', {
-          snapshot: snapshotVer,
-          current: CTXLOOM_VERSION,
-        });
-        return false;
-      }
-      if (cmp === 'newer') {
-        logger.warn('Graph snapshot from newer ctxloom than installed binary; reusing but watch for shape drift', {
-          snapshot: snapshotVer,
-          current: CTXLOOM_VERSION,
-        });
+      if (!options?.acceptVersionMismatch) {
+        const cmp = compareCtxloomVersions(snapshotVer, CTXLOOM_VERSION);
+        if (cmp === 'older') {
+          logger.info('Graph snapshot from older ctxloom, rebuilding', {
+            snapshot: snapshotVer,
+            current: CTXLOOM_VERSION,
+          });
+          return false;
+        }
+        if (cmp === 'newer') {
+          logger.warn('Graph snapshot from newer ctxloom than installed binary; reusing but watch for shape drift', {
+            snapshot: snapshotVer,
+            current: CTXLOOM_VERSION,
+          });
+        }
       }
 
       // Staleness check: if file count changed, force rebuild

@@ -396,8 +396,8 @@ function collectImportees(
 /**
  * Top-K cap for ranked symbol callers (v1.6.x calibration).
  *
- * 25 selected empirically: K=15 dropped TPs on small-PR cases
- * (express #6903 source recall collapsed 1.00 → 0.50); K=35 added
+ * 25 selected empirically: K=15 dropped TPs on the historical
+ * three-file Express spike case; K=35 added
  * FPs without TPs. K=25 keeps the highest-scoring TPs from
  * specificity + path-proximity ranking while shedding the long
  * tail of incidental callers.
@@ -409,8 +409,8 @@ const PATH_PROXIMITY_BONUS = 1.0;
  *
  * Drops "incidental callers" — files that happen to call exactly one
  * generic seed symbol once, with no path-name relationship to the
- * seed. Without this floor, leaf-file or small-PR entries (express
- * #6903, GT=3) over-predict because top-K=25 keeps the floor of the
+ * seed. Without this floor, leaf-file or small-PR entries (GT=3)
+ * over-predict because top-K=25 keeps the floor of the
  * distribution.
  *
  * 1.0 = "at least one specific-method call (specificity weight 1.0
@@ -558,7 +558,7 @@ function collectSymbolCallers(
  *                     incidentally-clustered docs/examples that
  *                     dominate the 0.5-0.7 band).
  *
- * Earlier run with 0.7 / 15 inflated express #6903 predictions from
+ * Earlier run with 0.7 / 15 inflated the three-file Express case from
  * 29 → 36 and tanked precision. Tighter values trade a small recall
  * loss for a real F1 lift.
  */

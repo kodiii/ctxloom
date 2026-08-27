@@ -16,26 +16,32 @@
  *   - `gh` CLI authenticated
  *   - ~3 GB disk free at $BENCH_CACHE
  *
- * Token-reduction measurement is deferred to a follow-up commit —
- * the existing `benchmarks/benchmark-public-repos.ts` already
- * measures aggregate token reduction; this harness focuses on
- * F1/precision/recall first since those are the credibility
- * gate, then folds in tokens once we have a working spike.
+ * Every run starts with a complete GitHub corpus preflight, before
+ * cloning or indexing, so unavailable or invalid PR pins fail fast.
  */
 import { execFileSync } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { SPIKE_CORPUS, FULL_CORPUS, GATE } from './corpus.js';
-import { fetchGroundTruth, isSourceFile } from './groundTruth.js';
+import { isSourceFile } from './groundTruth.js';
+import { getPreflightGroundTruth, preflightCorpus } from './preflight.js';
 import { ensureWorktree } from './repoCheckout.js';
 import { indexRepo, blastRadius, buildOverlay, buildVectorStore } from './predict.js';
 import { computeMetrics, computeGraphReachability, avg } from './metrics.js';
 import { auditSymbolDeclarations, auditImportEdges } from './graph-correctness.js';
-import { measurePRTokens } from './tokens.js';
+import { BENCH_TOKEN_ESTIMATOR, measurePRTokens } from './tokens.js';
 import { DependencyGraph } from '@ctxloom/core';
 import { Skeletonizer } from '../../packages/core/src/ast/Skeletonizer.js';
 import { writeReport } from './report.js';
-import type { BenchReport, RepoReport, CorpusEntry, Metrics, TokenMetrics, GraphCorrectnessMetrics } from './types.js';
+import type {
+  BenchReport,
+  RepoReport,
+  CorpusEntry,
+  GroundTruth,
+  Metrics,
+  TokenMetrics,
+  GraphCorrectnessMetrics,
+} from './types.js';
 
 // ESM has no __dirname / __filename. Without these the spike runs to
 // completion, computes correct F1 numbers per PR, then crashes during
@@ -54,7 +60,7 @@ function getStage(): Stage {
 
 /**
  * Average a list of coverage values, treating -1 as "not applicable"
- * (e.g. import coverage on a pure-Go repo). The marker -1 is filtered
+ * (no independently resolved local targets). The marker -1 is filtered
  * out so it doesn't drag a perfectly-fine 1.0 average down to ~0.5.
  *
  * If every value is N/A the result is itself -1, which the report
@@ -67,27 +73,34 @@ function avgSkippingNA(values: readonly number[]): number {
 }
 
 function getCtxloomSha(): string {
-  return execFileSync('git', ['rev-parse', '--short', 'HEAD'], {
+  const cwd = path.resolve(__dirname, '..', '..');
+  const sha = execFileSync('git', ['rev-parse', '--short', 'HEAD'], {
     encoding: 'utf8',
-    cwd: path.resolve(__dirname, '..', '..'),
+    cwd,
   }).trim();
+  const trackedChanges = execFileSync(
+    'git',
+    ['status', '--porcelain', '--untracked-files=no'],
+    { encoding: 'utf8', cwd },
+  ).trim();
+  return trackedChanges ? `${sha}-dirty` : sha;
 }
 
 /**
- * Process one corpus entry: clone, then for each PR run ground-truth
- * fetch → worktree → index → predict → metrics.
- *
- * Token measurements are placeholder (zeros) — wired in a follow-up
- * commit alongside `scripts/bench/tokens.ts`.
+ * Process one corpus entry using ground truth already fetched by the
+ * all-corpus preflight, then run worktree → index → predict → metrics.
  */
-async function runRepo(entry: CorpusEntry): Promise<RepoReport> {
+async function runRepo(
+  entry: CorpusEntry,
+  groundTruthByPr: ReadonlyMap<string, GroundTruth>,
+): Promise<RepoReport> {
   // eslint-disable-next-line no-console -- bench output goes to stderr
   console.error(`\n=== ${entry.repo} (${entry.prs.length} PRs) ===`);
   const perPr: Array<Metrics & TokenMetrics & GraphCorrectnessMetrics> = [];
 
   for (const prNumber of entry.prs) {
-    console.error(`  PR #${prNumber}: fetching ground truth...`);
-    const gt = fetchGroundTruth(entry.repo, prNumber);
+    console.error(`  PR #${prNumber}: loading preflight ground truth...`);
+    const gt = getPreflightGroundTruth(groundTruthByPr, entry.repo, prNumber);
     console.error(`    ground-truth files: ${gt.groundTruthFiles.length}`);
     console.error(`    entry point: ${gt.entryPoint}`);
     console.error(`    eval SHA (post-merge): ${gt.evalSha.slice(0, 7)}`);
@@ -128,13 +141,15 @@ async function runRepo(entry: CorpusEntry): Promise<RepoReport> {
     // Isolates graph completeness from algorithm quality (see
     // metrics.ts:computeGraphReachability for the design rationale).
     const auditGraph = new DependencyGraph();
-    const loaded = await auditGraph.loadSnapshotOnly(worktree);
+    const loaded = await auditGraph.loadSnapshotOnly(worktree, {
+      acceptVersionMismatch: true,
+    });
     let symbolCoverage = 0;
     let astDeclared = 0;
     let graphIndexed = 0;
     let importCoverage = 0;
-    let astRelativeImports = 0;
-    let graphImportEdges = 0;
+    let importExpectedEdges = 0;
+    let importMatchedEdges = 0;
     if (loaded) {
       const sourceTruth = gt.groundTruthFiles.filter(isSourceFile);
       const { reachable, reachability } = computeGraphReachability(
@@ -176,20 +191,20 @@ async function runRepo(entry: CorpusEntry): Promise<RepoReport> {
       console.error(`  PR #${prNumber}: auditing import edge coverage...`);
       try {
         const report = await auditImportEdges(worktree, auditGraph);
-        astRelativeImports = report.astRelativeImports;
-        graphImportEdges = report.graphEdges;
+        importExpectedEdges = report.expectedEdges;
+        importMatchedEdges = report.matchedEdges;
         if (report.notApplicable) {
-          // N/A: pure-Go corpora that use module-path imports
-          // exclusively don't satisfy the relative-import heuristic.
+          // N/A: the independent audit resolver found no supported
+          // local source-target edges in this corpus.
           // Marker value -1 lets aggregation skip these without
           // counting them as 0 (a false bug signal) or 1 (false win).
           importCoverage = -1;
-          console.error(`    import coverage: n/a (no relative-style imports in this corpus — needs Go-aware audit)`);
+          console.error(`    import coverage: n/a (no supported local imports found)`);
         } else {
           importCoverage = report.coverage ?? 0;
           console.error(
             `    import coverage: ${(importCoverage * 100).toFixed(1)}% ` +
-            `(${report.graphEdges}/${report.astRelativeImports} edges, ${report.filesAudited} files)`,
+            `(${report.matchedEdges}/${report.expectedEdges} exact edges, ${report.filesAudited} files)`,
           );
           // Per-extension diagnostic — only emit if any extension is
           // notably worse than the overall ratio (indicates a
@@ -197,8 +212,14 @@ async function runRepo(entry: CorpusEntry): Promise<RepoReport> {
           if (importCoverage < 0.9 && Object.keys(report.byExtension).length > 1) {
             console.error(`    per-extension:`);
             for (const [ext, stats] of Object.entries(report.byExtension)) {
-              const ratio = stats.ast === 0 ? 1 : Math.min(1, stats.graph / stats.ast);
-              console.error(`      ${ext}: ${(ratio * 100).toFixed(1)}% (${stats.graph}/${stats.ast}, ${stats.files} files)`);
+              const ratio = stats.expected === 0 ? 1 : stats.matched / stats.expected;
+              console.error(`      ${ext}: ${(ratio * 100).toFixed(1)}% (${stats.matched}/${stats.expected}, ${stats.files} files)`);
+            }
+          }
+          if (report.coverage < 0.95 && report.sampleMissed.length > 0) {
+            console.error(`    sample missed exact edges (top ${report.sampleMissed.length}):`);
+            for (const miss of report.sampleMissed.slice(0, 5)) {
+              console.error(`      ${miss.source} -> ${miss.target}`);
             }
           }
         }
@@ -258,8 +279,8 @@ async function runRepo(entry: CorpusEntry): Promise<RepoReport> {
       astDeclared,
       graphIndexed,
       importCoverage,
-      astRelativeImports,
-      graphImportEdges,
+      importExpectedEdges,
+      importMatchedEdges,
     });
   }
 
@@ -272,7 +293,7 @@ async function runRepo(entry: CorpusEntry): Promise<RepoReport> {
     avgSourceRecall: avg(perPr.map((p) => p.sourceRecall)),
     avgGraphReachability: avg(perPr.map((p) => p.graphReachability)),
     avgSymbolCoverage: avg(perPr.map((p) => p.symbolCoverage)),
-    // -1 marker = N/A (e.g. pure-Go corpora that lack relative imports).
+    // -1 marker = N/A (no independently resolved local targets).
     // Skip those PRs when averaging — otherwise a fake-low denominator
     // would smear a real metric with non-applicable cells. If ALL PRs
     // for a repo are N/A the average is itself N/A (-1), surfaced as
@@ -320,18 +341,25 @@ async function main(): Promise<void> {
 
   console.error(`Running ${stage} bench on ${corpus.length} repos.`);
 
+  // Validate every external PR pin before performing any expensive
+  // clone/index work. The returned map also avoids a second GitHub fetch.
+  const groundTruthByPr = preflightCorpus(corpus);
+
   // Serial — concurrent indexing would compete for CPU and the disk
   // state is shared per repo (.ctxloom/snapshots in the worktree).
   const repos: RepoReport[] = [];
   for (const entry of corpus) {
-    repos.push(await runRepo(entry));
+    repos.push(await runRepo(entry, groundTruthByPr));
   }
   const allPrs = repos.flatMap((r) => r.perPr);
+  const totalNaiveTokens = allPrs.reduce((sum, pr) => sum + pr.naiveTokens, 0);
+  const totalGraphTokens = allPrs.reduce((sum, pr) => sum + pr.graphTokens, 0);
 
   const report: BenchReport = {
     generatedAt: new Date().toISOString(),
     ctxloomSha: getCtxloomSha(),
     stage,
+    tokenEstimator: BENCH_TOKEN_ESTIMATOR,
     overall: {
       repoCount: repos.length,
       prCount: allPrs.length,
@@ -342,6 +370,9 @@ async function main(): Promise<void> {
       avgGraphReachability: avg(allPrs.map((p) => p.graphReachability)),
       avgSymbolCoverage: avg(allPrs.map((p) => p.symbolCoverage)),
       avgImportCoverage: avgSkippingNA(allPrs.map((p) => p.importCoverage)),
+      totalNaiveTokens,
+      totalGraphTokens,
+      totalReduction: totalGraphTokens === 0 ? 0 : totalNaiveTokens / totalGraphTokens,
       avgReduction: avg(allPrs.map((p) => p.reduction)),
     },
     repos,

@@ -7,6 +7,17 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
 ## [Unreleased]
 
+- **Benchmark corpus and reporting are reproducible again.** A preflight now
+  validates all 15 merged-PR pins against each repository's default branch
+  before indexing. Three unavailable or methodology-invalid pins were replaced
+  with shape-equivalent cases and the entire corpus was rebaselined.
+- **Import coverage now checks exact independently resolved edges.** Unrelated
+  graph edges can no longer inflate the numerator, and Go module imports are
+  audited against every production file in the target package.
+- **Token reporting now publishes comparable corpus totals.** The repaired run
+  estimates 71,046 code-context tokens with ctxloom versus 1,367,753 without it
+  (94.8% saved; weighted 19.3× reduction; mean per-PR reduction 27.0×).
+
 ## [1.7.12] — 2026-08-24
 
 - **Codex setup now lands in the configuration Codex actually reads.**
@@ -370,6 +381,11 @@ files affected by the change?" — climbed dramatically on real PRs:
 | express #6903 (3-file PR) | 0.33 | **0.67** |
 | fastapi #15030 (23-file PR) | 0.04 | **0.43** |
 | fastapi #15022 (21-file PR) | 0.14 | **0.43** |
+
+> Historical note (2026-08-26): Express #6903 is no longer available
+> from GitHub. The active corpus uses shape-equivalent default-branch
+> PR #7366 and publishes a complete rebaseline rather than reusing the
+> historical numbers above.
 
 If your project uses `require('./foo')` (any pre-2020 Node lib —
 Express, Koa, Hapi, Restify, Fastify pre-v3, Lodash, async, Jest

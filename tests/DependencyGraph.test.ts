@@ -286,6 +286,25 @@ describe('DependencyGraph snapshot', () => {
     await graph2.buildFromDirectory(tempDir);
     expect(graph2.edgeCount()).toBe(realEdges);
   });
+
+  it('should allow a controlled caller to accept a trusted version mismatch', async () => {
+    const graph1 = new DependencyGraph();
+    await graph1.buildFromDirectory(tempDir);
+    const realEdges = graph1.edgeCount();
+    expect(realEdges).toBeGreaterThan(0);
+
+    const snapshotPath = path.join(tempDir, '.ctxloom', 'graph-snapshot.json');
+    const real = JSON.parse(fs.readFileSync(snapshotPath, 'utf-8'));
+    fs.writeFileSync(snapshotPath, JSON.stringify({ ...real, ctxloomVersion: '0.0.1' }));
+
+    const graph2 = new DependencyGraph();
+    const loaded = await graph2.loadSnapshotOnly(tempDir, {
+      acceptVersionMismatch: true,
+    });
+
+    expect(loaded).toBe(true);
+    expect(graph2.edgeCount()).toBe(realEdges);
+  });
 });
 
 describe('buildFromDirectory afterReady callback', () => {

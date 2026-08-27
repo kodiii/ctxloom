@@ -13,19 +13,22 @@
 import { execFileSync } from 'node:child_process';
 import type { GroundTruth } from './types.js';
 
-interface GhPrFile {
+export interface GhPrFile {
   path: string;
   additions: number;
   deletions: number;
 }
 
-interface GhPrView {
+export interface GhPrView {
   files: GhPrFile[];
-  baseRefOid: string;
-  /** Parent commit of the PR head — what we'd checkout to simulate "before". */
+  baseRefName: string;
   mergeCommit: { oid: string } | null;
   state: 'OPEN' | 'CLOSED' | 'MERGED';
   mergedAt: string | null;
+}
+
+interface GhRepoView {
+  defaultBranchRef: { name: string } | null;
 }
 
 /** Extensions we treat as "source" — used to enforce the methodology rule
@@ -98,6 +101,21 @@ function isBinary(filepath: string): boolean {
   return BINARY_EXTENSIONS.has(filepath.slice(lastDot).toLowerCase());
 }
 
+/** Resolve the repository's current default branch via GitHub. */
+export function fetchDefaultBranch(repo: string): string {
+  const raw = execFileSync(
+    'gh',
+    ['repo', 'view', repo, '--json', 'defaultBranchRef'],
+    { encoding: 'utf8' },
+  );
+  const data = JSON.parse(raw) as GhRepoView;
+  const branch = data.defaultBranchRef?.name;
+  if (!branch) {
+    throw new Error(`Repository ${repo} has no resolvable default branch.`);
+  }
+  return branch;
+}
+
 /**
  * Fetch ground truth for one PR.
  *
@@ -106,18 +124,32 @@ function isBinary(filepath: string): boolean {
  *  - entryPoint: most-changed non-test source file (alphabetical tie-break)
  *  - evalSha: the merge commit (post-PR state) — see types.ts for why
  */
-export function fetchGroundTruth(repo: string, prNumber: number): GroundTruth {
+export function fetchGroundTruth(
+  repo: string,
+  prNumber: number,
+  expectedBaseRef?: string,
+): GroundTruth {
   const raw = execFileSync(
     'gh',
     [
       'pr', 'view', String(prNumber),
       '--repo', repo,
-      '--json', 'files,baseRefOid,mergeCommit,state,mergedAt',
+      '--json', 'files,baseRefName,mergeCommit,state,mergedAt',
     ],
     { encoding: 'utf8' },
   );
   const data = JSON.parse(raw) as GhPrView;
 
+  return groundTruthFromView(repo, prNumber, data, expectedBaseRef);
+}
+
+/** Pure validation/normalization layer, exported for deterministic tests. */
+export function groundTruthFromView(
+  repo: string,
+  prNumber: number,
+  data: GhPrView,
+  expectedBaseRef?: string,
+): GroundTruth {
   // Methodology gate: refuse to evaluate against PRs that violate
   // the selection rules. Failing fast here beats silently producing
   // junk numbers (which is what happened on the first spike run
@@ -126,6 +158,14 @@ export function fetchGroundTruth(repo: string, prNumber: number): GroundTruth {
     throw new Error(
       `PR ${repo}#${prNumber} is ${data.state} (not MERGED). ` +
       `Methodology rule violated. Replace this PR in scripts/bench/corpus.ts.`,
+    );
+  }
+
+  if (expectedBaseRef && data.baseRefName !== expectedBaseRef) {
+    throw new Error(
+      `PR ${repo}#${prNumber} targets ${data.baseRefName}, not the ` +
+      `repository default branch ${expectedBaseRef}. Methodology rule violated. ` +
+      `Replace this PR in scripts/bench/corpus.ts.`,
     );
   }
 
@@ -162,10 +202,10 @@ export function fetchGroundTruth(repo: string, prNumber: number): GroundTruth {
   //      PR is a test (rare — usually means a test-only PR, which
   //      our methodology gate may also reject downstream).
   //
-  // Empirical: all three spike PRs (express#6903, express#6525,
-  // fastapi#15030) picked a test file under the naive "most-changed
-  // source" rule, because PRs adding features typically have more
-  // test-line changes than source-line changes. The fix:
+  // Empirical: feature-oriented spike PRs often picked a test file
+  // under the naive "most-changed source" rule, because PRs adding
+  // features typically have more test-line changes than source-line
+  // changes. The fix:
   // pre-partition by isTestFile() and pick from non-tests first.
   const sortByImpact = (files: GhPrFile[]): GhPrFile[] =>
     [...files].sort((a, b) => {
@@ -192,22 +232,15 @@ export function fetchGroundTruth(repo: string, prNumber: number): GroundTruth {
   // changes into main. A real reviewer reads THIS state — they have
   // the new code in front of them and ask "what does it touch?"
   //
-  // Defensive fallback: GitHub returns mergeCommit=null for very old
-  // PRs or rebases-without-merge-commit edge cases. We've already
-  // gated on state==='MERGED' above so this is rare, but if it
-  // happens, fall back to baseRefOid + warn rather than crash.
-  let evalSha: string;
-  if (data.mergeCommit?.oid) {
-    evalSha = data.mergeCommit.oid;
-  } else {
-    // eslint-disable-next-line no-console -- bench output goes to stderr
-    console.error(
-      `  WARN: PR ${repo}#${prNumber} merged without a merge commit OID — ` +
-      `using baseRefOid as fallback. Recall numbers may be artificially low ` +
-      `for new-file PRs.`,
+  // A fallback to the base commit would silently benchmark pre-PR code and
+  // make new-file PRs incomparable, so reproducibility requires the exact
+  // post-merge commit GitHub reports.
+  if (!data.mergeCommit?.oid) {
+    throw new Error(
+      `PR ${repo}#${prNumber} has no merge commit OID. ` +
+      `Cannot reproduce the required post-merge benchmark state.`,
     );
-    evalSha = data.baseRefOid;
   }
 
-  return { prNumber, groundTruthFiles, entryPoint, evalSha };
+  return { prNumber, groundTruthFiles, entryPoint, evalSha: data.mergeCommit.oid };
 }

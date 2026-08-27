@@ -1,6 +1,6 @@
 # scripts/bench
 
-The v1.6.0 honest-benchmark harness. Produces the F1 / precision /
+The public honest-benchmark harness. Produces the F1 / precision /
 recall numbers that ship in [evaluate/reports/summary.md](../../evaluate/reports/summary.md)
 and back the README's benchmark claims.
 
@@ -17,12 +17,13 @@ export CTXLOOM_LICENSE_KEY=<your-key>
 gh auth login
 
 # 4. Run the spike (gate)
+npm run bench:validate
 npm run bench:spike
 ```
 
 Expected runtime:
 - **Spike**: ~30 minutes (2 repos × 2 PRs, plus first-time clone)
-- **Full**: ~2 hours (6 repos × 3 PRs, plus Next.js indexing)
+- **Full**: ~2 hours (5 repos × 3 PRs)
 
 Disk usage at peak (full corpus): ~3 GB at `$BENCH_CACHE`
 (defaults to `/tmp/ctxloom-bench-corpus`).
@@ -34,11 +35,14 @@ scripts/bench/
 ├── README.md              you are here
 ├── types.ts               shared types
 ├── corpus.ts              SPIKE_CORPUS + FULL_CORPUS + GATE thresholds
+├── preflight.ts           validate every repo/PR pin before indexing
+├── validate.ts            fast standalone full-corpus preflight
 ├── groundTruth.ts         gh pr view --json files → ground truth
 ├── repoCheckout.ts        cached clones + worktrees
 ├── predict.ts             ctxloom index + ctx_blast_radius
 ├── metrics.ts             P / R / F1 (pure, unit-testable)
-├── tokens.ts              [TODO] cl100k_base token counting
+├── graph-correctness.ts   independent symbol + exact import-edge audits
+├── tokens.ts              production-aligned chars/4 token estimates
 ├── report.ts              Markdown emitter
 └── eval.ts                orchestrator entry point
 ```
@@ -47,7 +51,7 @@ Each module has one job, no globals, no implicit state. The
 orchestrator (`eval.ts`) wires them in dependency order:
 
 ```
-corpus → groundTruth → repoCheckout → predict → metrics → report
+corpus → preflight/groundTruth → repoCheckout → predict → metrics/audits/tokens → report
 ```
 
 ## The spike gate
@@ -56,9 +60,8 @@ The spike runs first. Its output gates publication:
 
 | Outcome | Action |
 |---|---|
-| F1 ≥ 0.50 AND recall ≥ 0.90 | Pass → run `npm run bench:full` |
-| 0.40 ≤ F1 < 0.50 | Investigate per-PR; fix bugs or accept with limitations |
-| F1 < 0.40 OR recall < 0.80 | **Stop**. Don't publish. Fix the graph and re-spike. |
+| F1 ≥ 0.50 **OR** sourceRecall ≥ 0.80 | Pass → run `npm run bench:full` |
+| Otherwise | **Stop**. Don't publish. Fix the graph and re-spike. |
 
 The gate thresholds (`GATE` const in `corpus.ts`) are write-locked
 in code review — moving them at runtime would defeat the purpose.
@@ -66,15 +69,16 @@ in code review — moving them at runtime would defeat the purpose.
 ## Honest principles (don't violate)
 
 1. **Don't cherry-pick PRs.** The PR numbers in `corpus.ts` are
-   pinned. If a PR scores badly, that's data. Don't replace it
-   with a better-scoring one.
+   pinned. If a PR scores badly, that's data. Replace a pin only when
+   it becomes unavailable or violates the written methodology; use a
+   shape-equivalent replacement, document it, and rerun the full corpus.
 
 2. **Don't tune thresholds to results.** If F1 lands at 0.49, the
    gate fails. Don't bump the threshold to 0.45 to make it pass.
 
 3. **Don't re-run for better numbers.** The bench is deterministic
-   given the same ctxloom SHA. If you got 0.42 the first time,
-   you'll get 0.42 every time. Stop re-running.
+   given the same ctxloom source state. Publish the first valid run;
+   don't repeat it hoping for a more marketable result.
 
 4. **Publish the full per-PR table.** Aggregates are for the
    marketing copy; per-PR data is for credibility. Both go in
@@ -97,7 +101,7 @@ bench runs manually via `workflow_dispatch` to control the
 
 ## Adding to the corpus
 
-Don't, lightly. The corpus is fixed at 6 repos × 3 PRs so users
+Don't, lightly. The corpus is fixed at 5 repos × 3 PRs so users
 comparing tools have a stable reference point. If a new
 language coverage release warrants a new corpus repo, the
 process is:

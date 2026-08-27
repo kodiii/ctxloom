@@ -15,11 +15,10 @@
  *      "where is X defined?" — `ctx_get_definition` would miss
  *      one in twenty symbols.
  *
- *   2. (Future) Import edge coverage — % of AST static imports
- *      that resulted in a graph edge to the resolved file. Same
- *      shape, harder because it requires re-implementing the
- *      DependencyGraph's resolver from outside (otherwise we're
- *      measuring our resolver against itself). Filed as v1.7.0+.
+ *   2. Import edge coverage — % of independently resolved local
+ *      import targets that are present in the graph. The audit has
+ *      its own small JS/TS, Python, and Go resolver so it does not
+ *      measure the production resolver against itself.
  *
  * Why this matters:
  *
@@ -45,40 +44,33 @@ import { ASTParser } from '../../packages/core/src/ast/ASTParser.js';
 
 export interface ImportCoverageReport {
   /**
-   * Number of distinct relative-import SOURCES the AST parser found
-   * across the indexed files (deduped per-file by source-spec string).
-   * Approximates "how many intra-repo import statements does the
-   * source code contain?"
+   * Number of independently resolved local source-target edges the
+   * AST parser found. Go package imports can contribute more than one
+   * expected edge because a package contains multiple source files.
    */
-  astRelativeImports: number;
+  expectedEdges: number;
   /**
-   * Number of forwardEdges in the graph, summed across the same set
-   * of files. Approximates "how many edges did the resolver actually
-   * emit?"
+   * Number of expected source-target edges that are actually present
+   * in the graph. Unrelated graph edges never count as matches.
    */
-  graphEdges: number;
+  matchedEdges: number;
   /**
-   * graphEdges / astRelativeImports, capped at 1.0. < 1.0 means the
-   * import resolver is losing edges that the AST clearly identifies
-   * as intra-repo imports. `null` when the corpus contains zero
-   * relative-style imports (e.g. pure-Go repos that exclusively use
-   * module-path imports) — coverage is undefined for that case
-   * rather than vacuously 1.0.
+   * matchedEdges / expectedEdges. `null` when the supported audit
+   * resolver cannot identify any local import targets in the corpus.
    */
   coverage: number | null;
-  /** Number of files with at least one relative import (denominator scope). */
+  /** Number of files with at least one expected local import edge. */
   filesAudited: number;
   /**
    * Per-extension breakdown — surfaces language-specific resolver
    * gaps (e.g. Go .go files with low coverage isolate a Go-resolver
    * bug without polluting the JS/TS numbers).
    */
-  byExtension: Record<string, { ast: number; graph: number; files: number }>;
+  byExtension: Record<string, { expected: number; matched: number; files: number }>;
+  /** First N expected source-target edges missing from the graph. */
+  sampleMissed: Array<{ source: string; target: string }>;
   /**
-   * `true` when the audit's relative-import heuristic doesn't apply
-   * to this corpus — e.g. pure-Go repos that use module-path imports
-   * exclusively. A separate Go-aware audit is needed (task #24
-   * follow-up).
+   * `true` when no independently resolvable local imports were found.
    */
   notApplicable: boolean;
 }
@@ -125,24 +117,111 @@ const INDEXED_TYPES = new Set(['function', 'class', 'interface', 'method']);
 /**
  * Audit import-edge coverage across a repo. For every indexed file:
  *
- *   - Parse with AST, collect distinct relative-import source specs
- *     (e.g. `.foo`, `../bar`, `./baz/qux`).
- *   - Count the graph's forwardEdges for that file.
- *   - Ratio = graphEdges / astRelativeImports (capped at 1.0).
+ *   - Parse imports with the AST parser.
+ *   - Resolve local targets with the independent audit resolver below.
+ *   - Check that each exact source-target edge exists in the graph.
+ *   - Ratio = matched expected edges / all expected edges.
  *
- * The dedup-by-source-spec choice is deliberate. The graph emits one
- * edge per resolved target file; the AST emits one node per import
- * statement. `from .x import a; from .x import b` is 1 unique source
- * spec but produces 2 ParsedNode entries. We dedupe to the source-
- * spec level so the ratio reflects "edges per intra-repo import
- * statement family" — closely matching what the resolver should
- * produce. Over-count (graph > AST) caps at 1.0; under-count is the
- * interesting failure mode (resolver missing edges).
+ * Expected targets are deduplicated per source file. This prevents
+ * repeated imports from inflating the denominator and, crucially,
+ * prevents unrelated graph edges from hiding a missing import edge.
  *
  * Per-extension breakdown isolates language-specific resolver gaps:
  * if `gin` shows .go imports at 0.30 coverage but JS/TS/Py at 1.0,
  * the bug is in the Go resolver path specifically.
  */
+const JS_IMPORT_EXTENSIONS = new Set(['.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs', '.vue']);
+const JS_RESOLUTION_SUFFIXES = [
+  '',
+  '.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs',
+  '/index.ts', '/index.tsx', '/index.js', '/index.jsx',
+  '/index.mjs', '/index.cjs',
+];
+
+function existingFile(candidate: string): boolean {
+  try {
+    return fs.statSync(candidate).isFile();
+  } catch {
+    return false;
+  }
+}
+
+function normalizeRelative(repoPath: string, target: string): string {
+  return path.relative(repoPath, target).replace(/\\/g, '/');
+}
+
+/**
+ * Resolve import targets independently from DependencyGraph. Kept
+ * deliberately small and corpus-scoped: JS/TS relative imports,
+ * Python relative/absolute local imports, and Go module imports.
+ */
+function resolveAuditTargets(
+  repoPath: string,
+  fromAbs: string,
+  extension: string,
+  specifier: string,
+  goModulePath: string | null,
+): string[] {
+  const fromDir = path.dirname(fromAbs);
+
+  if (JS_IMPORT_EXTENSIONS.has(extension)) {
+    if (!specifier.startsWith('.')) return [];
+    const withoutJsSuffix = specifier.replace(/\.js$/, '');
+    for (const suffix of JS_RESOLUTION_SUFFIXES) {
+      const candidate = path.resolve(fromDir, withoutJsSuffix + suffix);
+      if (candidate !== fromAbs && existingFile(candidate)) {
+        return [normalizeRelative(repoPath, candidate)];
+      }
+    }
+    return [];
+  }
+
+  if (extension === '.py') {
+    const dots = specifier.match(/^(\.+)/)?.[1];
+    let candidates: string[];
+    if (dots) {
+      let baseDir = fromDir;
+      for (let i = 1; i < dots.length; i += 1) {
+        baseDir = path.dirname(baseDir);
+      }
+      const modulePart = specifier.slice(dots.length).replace(/\./g, path.sep);
+      candidates = modulePart
+        ? [path.join(baseDir, `${modulePart}.py`), path.join(baseDir, modulePart, '__init__.py')]
+        : [path.join(fromDir, '__init__.py')];
+    } else {
+      const modulePart = specifier.replace(/\./g, path.sep);
+      candidates = [
+        path.join(repoPath, `${modulePart}.py`),
+        path.join(repoPath, modulePart, '__init__.py'),
+        path.join(repoPath, 'src', `${modulePart}.py`),
+        path.join(repoPath, 'src', modulePart, '__init__.py'),
+      ];
+    }
+    const target = candidates.find((candidate) => candidate !== fromAbs && existingFile(candidate));
+    return target ? [normalizeRelative(repoPath, target)] : [];
+  }
+
+  if (extension === '.go') {
+    let targetDir: string | null = null;
+    if (specifier.startsWith('.')) {
+      targetDir = path.resolve(fromDir, specifier);
+    } else if (goModulePath && specifier.startsWith(`${goModulePath}/`)) {
+      targetDir = path.join(repoPath, specifier.slice(goModulePath.length + 1));
+    }
+    if (!targetDir) return [];
+    try {
+      return fs.readdirSync(targetDir)
+        .filter((file) => file.endsWith('.go') && !file.endsWith('_test.go'))
+        .sort()
+        .map((file) => normalizeRelative(repoPath, path.join(targetDir, file)));
+    } catch {
+      return [];
+    }
+  }
+
+  return [];
+}
+
 export async function auditImportEdges(
   repoPath: string,
   graph: DependencyGraph,
@@ -150,10 +229,16 @@ export async function auditImportEdges(
   const parser = new ASTParser();
   await parser.init();
 
-  let astRelativeImports = 0;
-  let graphEdges = 0;
+  const goModPath = path.join(repoPath, 'go.mod');
+  const goModulePath = existingFile(goModPath)
+    ? fs.readFileSync(goModPath, 'utf8').match(/^module\s+(\S+)/m)?.[1] ?? null
+    : null;
+  let expectedEdges = 0;
+  let matchedEdges = 0;
   let filesAudited = 0;
-  const byExtension: Record<string, { ast: number; graph: number; files: number }> = {};
+  const byExtension: ImportCoverageReport['byExtension'] = {};
+  const sampleMissed: ImportCoverageReport['sampleMissed'] = [];
+  const MISSED_SAMPLE_CAP = 10;
 
   for (const relPath of graph.allFiles()) {
     const ext = path.extname(relPath).toLowerCase();
@@ -169,49 +254,52 @@ export async function auditImportEdges(
       continue;
     }
 
-    // Distinct intra-repo import source specs (relative paths).
-    // Bare module imports (e.g. `os`, `lodash`) intentionally skipped
-    // — they target external packages, not files in this repo.
-    const relativeImports = new Set<string>();
+    const expectedTargets = new Set<string>();
     for (const node of nodes) {
       if (node.type !== 'import') continue;
       const src = node.source ?? node.name;
-      if (src.startsWith('.')) {
-        relativeImports.add(src);
+      for (const target of resolveAuditTargets(repoPath, absPath, ext, src, goModulePath)) {
+        expectedTargets.add(target);
       }
     }
 
-    if (relativeImports.size === 0) continue;
+    if (expectedTargets.size === 0) continue;
     filesAudited += 1;
-    const fileEdges = graph.getImports(relPath).length;
+    const actualTargets = new Set(graph.getImports(relPath).map((target) => target.replace(/\\/g, '/')));
+    let fileMatches = 0;
+    for (const target of expectedTargets) {
+      if (actualTargets.has(target)) {
+        fileMatches += 1;
+      } else if (sampleMissed.length < MISSED_SAMPLE_CAP) {
+        sampleMissed.push({ source: relPath.replace(/\\/g, '/'), target });
+      }
+    }
 
-    astRelativeImports += relativeImports.size;
-    graphEdges += fileEdges;
+    expectedEdges += expectedTargets.size;
+    matchedEdges += fileMatches;
 
     if (!byExtension[ext]) {
-      byExtension[ext] = { ast: 0, graph: 0, files: 0 };
+      byExtension[ext] = { expected: 0, matched: 0, files: 0 };
     }
-    byExtension[ext].ast += relativeImports.size;
-    byExtension[ext].graph += fileEdges;
+    byExtension[ext].expected += expectedTargets.size;
+    byExtension[ext].matched += fileMatches;
     byExtension[ext].files += 1;
   }
 
-  // When the heuristic finds zero relative imports (e.g. pure-Go
-  // corpora that exclusively use module-path imports), the metric is
-  // undefined rather than vacuously 1.0. The report surfaces this
-  // explicitly so downstream tooling doesn't mistake "no signal" for
-  // "perfect coverage".
-  const notApplicable = astRelativeImports === 0;
+  // No independently resolved local targets means there is no audit
+  // signal. Report N/A rather than a vacuous 100%.
+  const notApplicable = expectedEdges === 0;
   const coverage: number | null = notApplicable
     ? null
-    : Math.min(1, graphEdges / astRelativeImports);
+    : matchedEdges / expectedEdges;
 
   return {
-    astRelativeImports,
-    graphEdges,
+    expectedEdges,
+    matchedEdges,
     coverage,
     filesAudited,
     byExtension,
+    sampleMissed,
     notApplicable,
   };
 }
