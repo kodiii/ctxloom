@@ -6,7 +6,7 @@ No cloud indexing. No Python. Everything runs on your machine.
 
 > **ctxloom requires a license.** Start a free 14-day trial — no charge today; cancel before the trial ends to avoid billing.
 
-## Current benchmark — rebaselined for v1.7.12
+## Current benchmark — rebaselined for v1.7.13
 
 Measured on a **5-repo × 3-PR external-oracle benchmark** (15 merged PRs from expressjs/express, tiangolo/fastapi, pallets/flask, gin-gonic/gin, encode/httpx — ground truth = the human-authored diff from GitHub, **not** the graph's own traversal):
 
@@ -70,7 +70,7 @@ The full first-run flow is **one install + one trial + one init per project.** E
 npm install -g ctxloom-pro
 ```
 
-> **For local trial / dev use the unpinned command above is fine.** For unattended CI usage, pin to the exact version (`ctxloom-pro@1.7.12`) so future CLI releases don't silently desync your agent-spec coverage — see the workflow example below.
+> **For local trial / dev use the unpinned command above is fine.** For unattended CI usage, pin to the exact version (`ctxloom-pro@1.7.13`) so future CLI releases don't silently desync your agent-spec coverage — see the workflow example below.
 
 ### 2 — Start your free trial (once per email)
 
@@ -391,7 +391,7 @@ jobs:
       # Exact pin (not `@^1`) so future CLI releases that add/remove MCP
       # tools don't silently desync your reviewer-agent specs. Bump on
       # every release; see CHANGELOG.md for the live version table.
-      - run: npm install -g ctxloom-pro@1.7.12
+      - run: npm install -g ctxloom-pro@1.7.13
       - run: ctxloom index
       - run: ctxloom rules check --json
 ```
