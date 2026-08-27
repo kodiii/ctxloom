@@ -22,13 +22,13 @@ in the bench is **one of several** consumers:
 A bench measuring only PR-impact prediction is therefore a **partial**
 read on ctxloom quality. We benchmark impact-radius here because it's
 the most-comparable metric across alternative tools — not because it's
-the only thing the graph does. Future bench releases will add
-direct-measure suites for symbol resolution + semantic search (task #X
-in the roadmap).
+the only thing the graph does. This harness now also audits symbol
+declarations and exact import edges directly; semantic-search quality
+remains a separate future suite.
 
 ## What this bench measures (impact-radius focus)
 
-Three metric families:
+Four metric families:
 
 1. **Algorithm accuracy** — when the prediction algorithm returns
    "these files are affected", how accurate is it? Precision, recall,
@@ -44,12 +44,20 @@ Three metric families:
    the algorithm is too conservative; if graphReachability is itself
    low the graph is missing edges (re-exports, dynamic imports, etc.).
 
-3. **Token efficiency** — how much smaller is the context ctxloom
+3. **Direct graph correctness** — whether AST-declared symbols are
+   attributed to the correct file, and whether independently resolved
+   local import targets are present as the exact graph edges expected.
+   The import oracle is a corpus-scoped audit resolver for JS/TS,
+   Python, and Go; it does not call the production resolver. Extra,
+   unrelated graph edges cannot hide a missing expected edge.
+
+4. **Estimated token efficiency** — how much smaller is the context ctxloom
    would feed an agent compared to the naive "re-read every file"
-   baseline? Measured in tokens with **`tiktoken cl100k_base`**
-   (matches Claude and GPT tokenization). Token-counting via
-   character-count approximations (`len // 4`) is rejected as too
-   coarse for cross-tool comparison.
+   baseline? Both branches use ctxloom's production budget estimator,
+   **`ceil(characters / 4)`**. This keeps the benchmark aligned with
+   the MCP budget telemetry users actually see. These are estimator
+   units, not exact provider billing tokens; the ratio is the primary
+   metric and both branches use the same estimator.
 
 ### Why the oracle is the merged PR diff, not the graph
 
@@ -75,11 +83,12 @@ algorithm health.
 | `pallets/flask` | Python | 3 |
 | `gin-gonic/gin` | Go | 3 |
 | `encode/httpx` | Python | 3 |
-| `vercel/next.js` | TypeScript | 3 |
-| **Total** | | **18 PRs** |
+| **Total** | | **15 PRs** |
 
-Repos picked to match `code-review-graph`'s reference set so users
-evaluating multiple tools in this space can compare apples-to-apples.
+These five repositories are the currently operational subset of
+`code-review-graph`'s reference set. `vercel/next.js` remains deferred:
+the current indexer cannot complete that repository within the
+benchmark's practical runtime and storage envelope.
 
 ## PR selection rules (locked)
 
@@ -91,9 +100,11 @@ Each PR in the corpus must satisfy ALL of:
 4. Corpus spans at least 4 months of repo history (avoids over-fitting to one work-stream)
 5. At least one PR per repo includes test file changes (so `tests_for` edges contribute)
 
-PR numbers are pinned in `scripts/bench/corpus.ts`. Once locked, they
-do not change. Re-running the bench against the same SHAs of ctxloom
-should produce identical numbers (modulo floating-point drift).
+PR numbers are pinned in `scripts/bench/corpus.ts`. They may change
+only when an external pin becomes unavailable or is proven to violate
+the rules above. Any replacement must preserve the original case's
+shape, be documented in the corpus, and trigger a complete rebaseline.
+The automatic preflight validates every pin before indexing begins.
 
 ## Per-PR pipeline
 
@@ -103,7 +114,7 @@ For each `(repo, PR)` in the corpus:
 fetch ground truth (gh pr view --json files)
   → ground_truth_files = {paths the PR actually changed} (binary-filtered)
   → entry_point = file with most lines changed (tie-break alphabetical)
-  → parent_sha = the commit before the PR landed
+  → merge_sha = the post-merge commit GitHub reports
 
 git worktree add <isolated dir> merge_sha    # post-PR state, see "Merge commit indexing" below
 ctxloom index <isolated dir>
@@ -111,7 +122,7 @@ build git overlay (GitOverlayStore: co-change + churn + ownership)
 ctxloom blast-radius <entry_point> --json --include-importees --include-symbol-callers --with-overlay
   → predicted_files = {files the graph says are affected}
 
-The prediction is the UNION of FIVE signals (locked here so the
+The prediction is the UNION of SIX signals (locked here so the
 methodology can't be moved at runtime):
 
   1. Seed file(s) — entry point itself
@@ -123,6 +134,9 @@ methodology can't be moved at runtime):
   5. Historical coupling — files that co-changed with the seed in
      the past N days, via the GitOverlayStore co-change index.
      Threshold confidence 0.2; top 10 by confidence.
+  6. Semantic similarity — high-confidence topical neighbors from
+     the indexed LanceDB vectors. Cosine distance < 0.5; top 10,
+     excluding files already returned by signals 1-5.
 
 Each signal is independently motivated; together they cover both
 structural relationships (imports + call sites) and behavioral
@@ -137,10 +151,20 @@ compute metrics:
   recall    = TP / (TP + FN)
   F1        = 2 * P * R / (P + R)
 
-compute tokens:
-  naive  = Σ tokens(file) for file in ground_truth_files (cl100k_base)
-  graph  = Σ skeleton_tokens(file) for file in predicted_files
+audit graph correctness:
+  symbolCoverage = correctly attributed AST declarations / AST declarations
+  importCoverage = exact expected local edges present / independently resolved local edges
+
+compute estimated tokens:
+  estimate(text) = ceil(characters(text) / 4)
+  naive  = Σ estimate(full_file) for ground_truth_files + their 1-hop imports
+  graph  = Σ estimate(skeleton) for predicted_files
   reduction = naive / graph
+
+Corpus totals are also reported:
+  total_without_ctxloom = Σ naive across every PR
+  total_with_ctxloom    = Σ graph across every PR
+  weighted_reduction    = total_without_ctxloom / total_with_ctxloom
 ```
 
 ## Locked decisions
@@ -150,17 +174,18 @@ compute tokens:
 | Entry-point selection | File with most lines changed (tie-break alphabetical) | Stable, reproducible. Matches what a reviewer would intuitively start from. |
 | Naive baseline | Sum of full-file tokens for every file in the PR (+ 1-hop imports) | "What an agent would re-read with no graph." |
 | Graph baseline | Sum of skeleton tokens for every file in `predicted` | What ctxloom would actually feed the agent. |
-| Tokenizer | `tiktoken` `cl100k_base` | Matches Claude and GPT tokenization. Reproducible across machines. |
+| Token estimator | `ceil(characters / 4)` | Same deterministic estimator as ctxloom's production budget surface. Counts are estimates, not provider billing tokens. |
 | Test files | Included on both sides | Realistic — agents read tests too. |
-| Imports | Both sides include 1-hop imports of changed files | Apples to apples — neither side gets unfair credit. |
+| Imports | Naive side expands ground truth by 1-hop imports; ctxloom side uses the complete predicted set, whose locked signals already include direct importees | Compares a conventional read-follow-imports workflow with the actual dependency-aware context ctxloom serves. |
 | Ground truth | Exact file set from `gh pr view --json files` | Single oracle, no human curation, no per-PR judgment calls. |
 | F1 calculation | Standard binary classification per file in repo | Anyone can re-derive from raw P/R values. |
 | Binary files | Excluded from both sides | Token counts undefined for binaries. |
+| Import audit oracle | Independent JS/TS, Python, and Go target resolver | Prevents testing the production resolver against itself; compares exact source-target edges. |
 
 ## Spike gate
 
 Before publishing any numbers, the bench runs on a 2-repo spike
-(express + fastapi, 2 PRs each). The full 6-repo bench only runs
+(express + fastapi, 2 PRs each). The full 5-repo bench only runs
 if the spike passes the gate:
 
 | Outcome | Action |
@@ -206,8 +231,8 @@ contains `History.md` / `CHANGELOG.md` lines, `package.json` version
 bumps, YAML config tweaks, lockfile noise — files the static graph
 cannot link to a code change by definition.
 
-For express PR #6903 (GT = `{History.md, lib/application.js,
-test/app.render.js}`), perfect graph quality yields recall = 2/3 =
+For express PR #7366 (GT = `{History.md, lib/request.js,
+test/req.fresh.js}`), perfect graph quality yields recall = 2/3 =
 0.67 — both source files predicted, History.md unpredictable. That's
 the **ceiling**, not a graph deficiency. The 0.90 threshold therefore
 penalized the graph for failing at something it cannot do.
@@ -215,9 +240,8 @@ penalized the graph for failing at something it cannot do.
 `sourceRecall` is recall computed against the indexable subset of
 each PR's ground truth (see `metrics.ts`). It asks the question we
 actually care about: *"of the indexable files in the PR, did the
-graph find them?"* Express PR #6903 scores sourceRecall = 1.00 under
-that lens — accurately reflecting that the graph found everything
-findable.
+graph find them?"* In this example, predicting both source files gives
+sourceRecall = 1.00 even though total recall remains 0.67.
 
 The 0.80 threshold remains demanding — a graph routinely missing 1
 in 5 indexable files isn't shippable — without rewarding structural
@@ -249,6 +273,7 @@ Three commitments that turn the bench from marketing into credibility:
 ```bash
 # Spike (gate)
 export CTXLOOM_LICENSE_KEY=...     # or use a trial key
+npm run bench:validate            # validates all 15 external pins
 npm run bench:spike
 
 # Full corpus (only if spike passes)

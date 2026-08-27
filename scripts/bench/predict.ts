@@ -19,7 +19,7 @@
  *   - ctxloom is installed and on PATH (or CTXLOOM_BIN env is set)
  *   - License is activated locally (state in ~/.ctxloom/ — no env
  *     var needed for local runs; CTXLOOM_LICENSE_KEY only for CI)
- *   - The worktree at `repoPath` is checked out to the parent SHA
+ *   - The worktree at `repoPath` is checked out to the merge SHA
  */
 import { execFileSync } from 'node:child_process';
 import { DependencyGraph, GitOverlayStore, VectorStore } from '@ctxloom/core';
@@ -50,12 +50,13 @@ export function indexRepo(repoPath: string): void {
 /**
  * Compute blast radius from the entry point against the indexed graph.
  *
- * Returns the union of FIVE signals:
+ * Returns the union of SIX signals:
  *   1. The entry point itself (always a TP if it's in ground truth)
  *   2. Direct importers (1-hop inbound)
  *   3. Direct importees (1-hop outbound — files the entry depends on)
  *   4. Symbol callers (files calling any symbol exported by the entry)
  *   5. Historical coupling (files that co-changed with entry in git)
+ *   6. Semantic similarity (topical neighbors from the vector store)
  *
  * Depth=1 calibration history: depth=3 over-predicted on hub files
  * (P=0.01-0.10). Switching to depth=1 collapsed recall to 0.07 because
@@ -95,10 +96,16 @@ export async function blastRadius(
   vectorStore?: VectorStore,
 ): Promise<Prediction> {
   const graph = new DependencyGraph();
-  const loaded = await graph.loadSnapshotOnly(repoPath);
+  // `ctxloom index` just wrote this snapshot with the trusted CLI. The
+  // harness itself runs through tsx and therefore identifies as `dev`;
+  // accept the known release/dev stamp mismatch without weakening normal
+  // product snapshot invalidation.
+  const loaded = await graph.loadSnapshotOnly(repoPath, {
+    acceptVersionMismatch: true,
+  });
   if (!loaded) {
     throw new Error(
-      `No graph snapshot found at ${repoPath}/.ctxloom/graph-snapshot.json. ` +
+      `No compatible graph snapshot found at ${repoPath}/.ctxloom/graph-snapshot.json. ` +
       `Did indexRepo() run successfully?`,
     );
   }
@@ -112,7 +119,7 @@ export async function blastRadius(
     includeSymbolCallers: true,
   });
 
-  // First union pass: the five sync signals from getImpactRadius.
+  // First union pass: the five synchronous signals from getImpactRadius.
   const predicted = new Set<string>([
     ...report.seedFiles,
     ...report.directImporters,

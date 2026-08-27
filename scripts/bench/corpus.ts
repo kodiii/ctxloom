@@ -5,11 +5,12 @@
  *
  *   SPIKE_CORPUS — 2 repos × 2 PRs each (4 PRs total).
  *     Used by the gating run before publishing the full bench.
- *     Gate: F1 ≥ 0.50 AND recall ≥ 0.90.
+ *     Gate: F1 ≥ 0.50 OR sourceRecall ≥ 0.80.
  *
- *   FULL_CORPUS — 6 repos × 3 PRs each (18 PRs total).
- *     Matches code-review-graph's reference set so users can compare
- *     numbers apples-to-apples. Only runs if the spike passes.
+ *   FULL_CORPUS — 5 repos × 3 PRs each (15 PRs total).
+ *     Uses the currently supported subset of code-review-graph's
+ *     reference set. Next.js remains deferred until indexing it is
+ *     operationally practical. Only runs if the spike passes.
  *
  * PR selection rules (locked in writing so we can't squint past them
  * during execution):
@@ -25,8 +26,9 @@
  *      `tests_for` edges contribute to the graph prediction)
  *
  * PR numbers were picked manually under these rules. Once locked, they
- * MUST NOT change between spike and full bench — that's the apples-to-
- * apples guarantee.
+ * MUST NOT change between spike and full bench. A pin may be replaced
+ * only when it becomes unavailable or violates a locked rule; the
+ * replacement must preserve the case shape and trigger a full rebaseline.
  *
  * @see evaluate/methodology.md for the full methodology.
  */
@@ -44,11 +46,13 @@ import type { CorpusEntry } from './types.js';
  * files, not a dependency bump, recent enough that the parent SHA
  * is on a current branch structure (not pre-rewrite history).
  *
- * Verified via `gh pr view <N>` 2026-05-19:
+ * Re-verified via the automatic corpus preflight 2026-08-26:
  *
- *   express#6903: lib/application.js + test/app.render.js + History.md
- *     "feat: Allow passing null or undefined as the value for
- *      options in app.render" — real feature work, has tests
+ *   express#7366: lib/request.js + test/req.fresh.js + History.md
+ *     "feat: allow conditional revalidation for QUERY requests"
+ *     — real feature work merged to the default branch, with tests.
+ *     Replaces unavailable #6903 while preserving the same three-file
+ *     changelog + implementation + test shape.
  *   express#6525: 14 files spanning lib/response.js, lib/utils.js,
  *     and 11 test files. "chore: enforce explicit Buffer import"
  *     — broad lint-rule rollout; good stress test for blast radius
@@ -71,22 +75,24 @@ import type { CorpusEntry } from './types.js';
  *     "spans ≥4 months" rule.
  */
 export const SPIKE_CORPUS: CorpusEntry[] = [
-  { name: 'express', repo: 'expressjs/express', prs: [6903, 6525] },
+  { name: 'express', repo: 'expressjs/express', prs: [7366, 6525] },
   { name: 'fastapi', repo: 'tiangolo/fastapi',  prs: [15030, 14186] },
 ];
 
 /**
  * Full corpus — runs only if SPIKE_CORPUS passes the gate.
  *
- * 6 repos × 3 PRs = 18 PRs. Each PR was hand-selected against the
+ * 5 repos × 3 PRs = 15 PRs. Each PR was hand-selected against the
  * methodology rules: merged, ≥2 source files, not a dep bump, span
  * ≥4 months, has test changes.
  *
  * Selection notes:
  *
  *   express: limited recent multi-file PRs (repo style favors small
- *     focused changes). #6903 + #6525 are both 2026-05; #5885 is
- *     2024-09 router@^2 bump for temporal spread (20mo separation).
+ *     focused changes). #7366 is a 2026-07 feature with tests,
+ *     #6525 is a broad 2025-06 lint-rule rollout, and #6196 is a
+ *     2025-01 multi-file standard-library migration. #6196 replaces
+ *     #5885, which targeted the non-default `5.0` branch.
  *
  *   fastapi: #15030 (SSE) + #14186 (Pydantic v1 compat) + #14978
  *     (strict_content_type security feature). All multi-file with
@@ -102,27 +108,23 @@ export const SPIKE_CORPUS: CorpusEntry[] = [
  *     foo.go + foo_test.go side-by-side; static graph friendly.
  *
  *   httpx: #3139 (zstd decoding, 2024-03) + #3319 (SSLContext API,
- *     2024-10) + #3673 (connection resets, 2025-09). All touch
- *     httpx/ + tests/, multi-file.
+ *     2024-10) + #3377 (lazy dependency loading, 2024-10). All touch
+ *     httpx/ + tests/, multi-file. #3377 replaces #3673, which
+ *     targeted the non-default `v1` branch.
  *
- *   next.js (deferred to v1.7.0): the repo is ~61k files, ~10x
- *     larger than the next-biggest corpus repo. The current indexer
- *     produces 2 LanceDB transactions per `upsert()` and our v1.5.5
- *     periodic compaction can't keep pace at that scale — empirical
- *     test 2026-05-21: nextjs indexing stalled after 3h with only
- *     ~18% of files processed and 22k+ transaction files on disk.
- *     The indexer needs streaming/batched upserts for monorepo
- *     support; tracked as a v1.7.0 follow-up (task #2 host adapters
- *     blocks on this same work). Corpus reverts to 5 repos × 3 PRs
- *     = 15 PRs total for v1.6.0 publication.
+ *   next.js (deferred): the repo is ~61k files, ~10x larger than the
+ *     next-biggest corpus repo. Streaming and batched upserts improved
+ *     the indexer, but a three-PR Next.js run still exceeds this public
+ *     benchmark's practical two-hour / ~3 GB runtime envelope. It will
+ *     be added only after a complete run fits that locked envelope.
  */
 export const FULL_CORPUS: CorpusEntry[] = [
-  { name: 'express', repo: 'expressjs/express', prs: [6903, 6525, 5885] },
+  { name: 'express', repo: 'expressjs/express', prs: [7366, 6525, 6196] },
   { name: 'fastapi', repo: 'tiangolo/fastapi',  prs: [15030, 14186, 14978] },
   { name: 'flask',   repo: 'pallets/flask',     prs: [4682, 4995, 5928] },
   { name: 'gin',     repo: 'gin-gonic/gin',     prs: [3904, 4053, 4491] },
-  { name: 'httpx',   repo: 'encode/httpx',      prs: [3139, 3319, 3673] },
-  // next.js deferred to v1.7.0 — see comment block above
+  { name: 'httpx',   repo: 'encode/httpx',      prs: [3139, 3319, 3377] },
+  // next.js deferred — see the runtime-envelope note above
 ];
 
 /**

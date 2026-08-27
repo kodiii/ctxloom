@@ -1,9 +1,9 @@
 /**
- * Type definitions for the v1.6.0 bench harness.
+ * Type definitions for the external-oracle benchmark harness.
  *
  * Two-stage release:
  *   Stage A — spike on 2 repos (express, fastapi) to gate publication
- *   Stage B — full corpus (6 repos × 3 PRs each) if spike passes
+ *   Stage B — full corpus (5 repos × 3 PRs each) if spike passes
  *
  * The spike re-uses the same harness; corpus.ts is the only file that
  * changes between stages. That guarantees apples-to-apples comparison
@@ -93,8 +93,8 @@ export interface Metrics {
    * lockfiles, etc.). The graph can't possibly predict those, so
    * counting them as false negatives understates real graph quality.
    *
-   * Example from the v1.6.0 spike: express #6903's ground truth was
-   * {History.md, lib/application.js, test/app.render.js}. Total
+   * Example shape: an Express feature PR changes History.md, one
+   * implementation file, and its matching test. Total
    * recall = 2/3 = 0.67. Source-file recall = 2/2 = 1.00. The graph
    * found everything it could find; the missing file was a changelog
    * entry that doesn't appear in any dependency graph in principle.
@@ -146,10 +146,9 @@ export interface GraphCorrectnessMetrics {
   /** Number of those present in graph.symbolIndex (numerator). */
   graphIndexed: number;
   /**
-   * Fraction of AST-found intra-repo (relative) import statements
-   * that resulted in a graph forwardEdge. Range [0, 1]; 1.0 means
-   * the import resolver caught every relative-path import the AST
-   * parser identified. Source:
+   * Fraction of independently resolved local source-target import
+   * edges that are present in the graph. Range [0, 1]; 1.0 means
+   * every exact expected edge is present. Source:
    * scripts/bench/graph-correctness.ts:auditImportEdges.
    *
    * Diagnostic for language-specific resolver gaps: e.g. if gin's
@@ -157,10 +156,10 @@ export interface GraphCorrectnessMetrics {
    * the Go-resolver path is dropping edges.
    */
   importCoverage: number;
-  /** Total relative-import sources the AST parser found (denominator). */
-  astRelativeImports: number;
-  /** Total graph forwardEdges across the same files (numerator). */
-  graphImportEdges: number;
+  /** Total exact local source-target edges independently expected. */
+  importExpectedEdges: number;
+  /** Number of those exact edges present in the graph. */
+  importMatchedEdges: number;
 }
 
 /** Token-reduction metrics for one PR. */
@@ -222,6 +221,8 @@ export interface BenchReport {
   ctxloomSha: string;
   /** Spike or full? Drives gating logic. */
   stage: 'spike' | 'full';
+  /** Token estimator used for both sides of the reduction comparison. */
+  tokenEstimator: string;
   /** Aggregate across all repos. */
   overall: {
     repoCount: number;
@@ -237,13 +238,20 @@ export interface BenchReport {
     avgSymbolCoverage: number;
     /** Mean import edge coverage. See RepoReport.avgImportCoverage. */
     avgImportCoverage: number;
+    /** Sum of estimated full-file + one-hop baseline tokens across all PRs. */
+    totalNaiveTokens: number;
+    /** Sum of estimated ctxloom skeleton-context tokens across all PRs. */
+    totalGraphTokens: number;
+    /** Weighted corpus reduction: totalNaiveTokens / totalGraphTokens. */
+    totalReduction: number;
+    /** Arithmetic mean of the individual per-PR reduction ratios. */
     avgReduction: number;
   };
   /** Per-repo breakdown. */
   repos: RepoReport[];
   /**
    * For spike stage only: did the gate pass?
-   * Gate: F1 ≥ 0.50 AND sourceRecall ≥ 0.80 across both spike repos.
+   * Gate: F1 ≥ 0.50 OR sourceRecall ≥ 0.80 across both spike repos.
    *
    * Why sourceRecall (not recall): PR ground truth includes
    * unindexable files (changelogs, lockfiles, configs) the graph

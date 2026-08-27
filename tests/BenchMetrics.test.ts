@@ -136,14 +136,15 @@ describe('computeMetrics', () => {
   /**
    * Source-file recall tests — the new metric.
    *
-   * The bench's express #6903 case in real life: GT included
-   * History.md (changelog), lib/application.js, test/app.render.js.
+   * The benchmark's three-file Express feature shape: GT includes
+   * History.md (changelog), one lib file, and its matching test.
    * The graph can't predict History.md. Total recall = 2/3 = 0.67;
    * source-file recall = 2/2 = 1.00.
    */
   describe('source-file recall', () => {
     it('unindexable GT files (md/yml/json) excluded from denominator', () => {
-      // Mirror the real express #6903 case.
+      // Mirror the three-file Express feature case without coupling
+      // this pure metric test to one external PR number.
       const m = computeMetrics(
         1,
         ['History.md', 'lib/application.js', 'test/app.render.js'],

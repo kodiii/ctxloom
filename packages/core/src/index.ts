@@ -10,7 +10,7 @@
  */
 
 // ─── Graph ───────────────────────────────────────────────────────────────────
-export type { GraphEdge } from './graph/DependencyGraph.js';
+export type { GraphEdge, LoadSnapshotOptions } from './graph/DependencyGraph.js';
 export { DependencyGraph } from './graph/DependencyGraph.js';
 export type { Community, CommunityCache } from './graph/CommunityDetector.js';
 export { CommunityDetector } from './graph/CommunityDetector.js';

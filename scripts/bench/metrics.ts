@@ -41,8 +41,8 @@ import type { DependencyGraph } from '@ctxloom/core';
  * the total recall AND the source-file-only recall makes the
  * structural ceiling distinguishable from the graph-quality ceiling.
  *
- * Empirical example from the v1.6.0 spike: express #6903's ground
- * truth was {History.md, lib/application.js, test/app.render.js}.
+ * Example shape: an Express feature PR changes History.md, one
+ * implementation file, and its matching test.
  * Total recall = 2/3 = 0.67. Source-file recall = 2/2 = 1.00. The
  * graph found everything it could find; the missed file was a
  * changelog entry no dependency graph could predict.

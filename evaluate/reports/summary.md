@@ -1,7 +1,8 @@
 # ctxloom benchmark
 
-Generated 2026-05-22T12:47:49.451Z on commit 38fee83.
+Generated 2026-08-26T10:23:38.504Z on commit 17818e4-dirty.
 Stage: **full**.
+Token estimator: **ctxloom production estimator: ceil(characters / 4)**.
 
 Reproduce locally:
 
@@ -13,7 +14,7 @@ npm run bench:full
 
 | Repos | PRs | Avg F1 | Avg Precision | Avg Recall | Avg Source Recall | Avg Graph Reachability | Avg Symbol Coverage | Avg Import Coverage | Avg Reduction |
 |------:|----:|-------:|--------------:|-----------:|------------------:|----------------------:|-------------------:|-------------------:|--------------:|
-| 5 | 15 | 0.42 | 0.47 | 0.52 | 0.61 | 0.94 | 1.00 | 1.00 | 24.6× |
+| 5 | 15 | 0.43 | 0.49 | 0.53 | 0.63 | 0.93 | 1.00 | 1.00 | 27.0× |
 
 > **Source Recall** = recall computed against only the indexable (source-file) subset of each PR's ground truth — measures the prediction algorithm.
 
@@ -21,17 +22,27 @@ npm run bench:full
 
 > **Symbol Coverage** = fraction of AST-declared function/class/method/interface symbols present in `graph.symbolIndex` with correct file attribution. Measured DIRECTLY against AST ground truth — no prediction algorithm or external oracle in between. The primary test of "absurd accuracy across all project files": if symbolCoverage ≥ 0.95 the graph genuinely knows where 95%+ of declared symbols live; downstream tools (`ctx_get_definition`, `find_callers`, refactor preview) inherit that accuracy.
 
-> **Import Coverage** = fraction of AST-found intra-repo (relative) import statements that resulted in a graph forwardEdge. Direct measure of the import resolver's correctness, independent of any prediction algorithm. Per-extension breakdown isolates language-specific resolver gaps — e.g. if `gin` shows .go imports at 0.30 coverage while JS/TS/Py are at 1.00, the Go-resolver path is dropping edges. Diagnoses precisely WHERE in the graph layer a low graphReachability number originates.
+> **Import Coverage** = fraction of independently resolved local source-target import edges that are present as exact graph forward edges. Unrelated extra graph edges cannot hide a miss. The corpus audit covers JS/TS, Python, and Go and is independent of the production resolver. Per-extension breakdown isolates language-specific resolver gaps — e.g. if `gin` shows .go imports at 0.30 coverage while JS/TS/Py are at 1.00, the Go-resolver path is dropping edges. Diagnoses precisely WHERE in the graph layer a low graphReachability number originates.
+
+> **Token counts are estimates**, not provider billing totals. Both comparison branches use `ctxloom production estimator: ceil(characters / 4)`, the same estimator as ctxloom's production budget surface.
+
+## Corpus token comparison
+
+| Without ctxloom | With ctxloom | Estimated saved | Weighted reduction | Mean per-PR reduction |
+|----------------:|-------------:|----------------:|-------------------:|----------------------:|
+| 1,367,753 | 71,046 | 1,296,707 (94.8%) | 19.3× | 27.0× |
+
+> These totals measure the benchmark's code-context payload only. They are not this Codex task's private reasoning, tool-call, or model-billing token totals.
 
 ## Per-repo
 
 | Repo | PRs | Avg F1 | Precision | Recall | Source Recall | Graph Reach. | Symbol Cov. | Import Cov. | Avg Reduction |
 |------|----:|-------:|----------:|-------:|--------------:|-------------:|------------:|------------:|--------------:|
-| `express` | 3 | 0.26 | 0.20 | 0.53 | 0.67 | 1.00 | 1.00 | 1.00 | 20.3× |
-| `fastapi` | 3 | 0.46 | 0.54 | 0.51 | 0.59 | 0.89 | 1.00 | 1.00 | 32.3× |
+| `express` | 3 | 0.47 | 0.41 | 0.73 | 0.95 | 0.83 | 1.00 | 1.00 | 32.0× |
+| `fastapi` | 3 | 0.46 | 0.54 | 0.51 | 0.59 | 0.89 | 1.00 | 1.00 | 32.4× |
 | `flask` | 3 | 0.39 | 0.40 | 0.62 | 0.74 | 0.98 | 1.00 | 1.00 | 17.5× |
-| `gin` | 3 | 0.47 | 0.55 | 0.47 | 0.49 | 0.95 | 1.00 | n/a | 28.3× |
-| `httpx` | 3 | 0.50 | 0.66 | 0.45 | 0.54 | 0.86 | 1.00 | 1.00 | 24.5× |
+| `gin` | 3 | 0.47 | 0.55 | 0.47 | 0.49 | 0.95 | 1.00 | 1.00 | 28.3× |
+| `httpx` | 3 | 0.36 | 0.53 | 0.30 | 0.40 | 0.98 | 1.00 | 1.00 | 24.9× |
 
 ## Per-PR (full data)
 
@@ -41,9 +52,9 @@ npm run bench:full
 
 | PR | TP | FP | FN | Precision | Recall | F1 | Src TP/GT | Src Recall | Graph Reach. | Naive tok | Graph tok | Reduction |
 |---:|---:|---:|---:|----------:|-------:|---:|----------:|-----------:|-------------:|----------:|----------:|----------:|
-| #6903 | 2 | 27 | 1 | 0.07 | 0.67 | 0.13 | 2/2 | 1.00 | 1.00 | 39,911 | 2,342 | 17.0× |
+| #7366 | 2 | 25 | 1 | 0.07 | 0.67 | 0.13 | 2/2 | 1.00 | 0.50 | 36,143 | 1,697 | 21.3× |
 | #6525 | 11 | 17 | 3 | 0.39 | 0.79 | 0.52 | 11/13 | 0.85 | 1.00 | 48,817 | 2,528 | 19.3× |
-| #5885 | 1 | 6 | 6 | 0.14 | 0.14 | 0.14 | 1/6 | 0.17 | 1.00 | 9,402 | 382 | 24.6× |
+| #6196 | 6 | 2 | 2 | 0.75 | 0.75 | 0.75 | 6/6 | 1.00 | 1.00 | 54,148 | 980 | 55.3× |
 
 ### fastapi
 
@@ -51,7 +62,7 @@ npm run bench:full
 |---:|---:|---:|---:|----------:|-------:|---:|----------:|-----------:|-------------:|----------:|----------:|----------:|
 | #15030 | 10 | 0 | 13 | 1.00 | 0.43 | 0.61 | 10/17 | 0.59 | 0.88 | 179,123 | 2,694 | 66.5× |
 | #14186 | 10 | 8 | 3 | 0.56 | 0.77 | 0.65 | 10/13 | 0.77 | 1.00 | 166,921 | 8,779 | 19.0× |
-| #14978 | 4 | 53 | 8 | 0.07 | 0.33 | 0.12 | 4/10 | 0.40 | 0.80 | 140,823 | 12,498 | 11.3× |
+| #14978 | 4 | 51 | 8 | 0.07 | 0.33 | 0.12 | 4/10 | 0.40 | 0.80 | 140,823 | 12,076 | 11.7× |
 
 ### flask
 
@@ -75,7 +86,7 @@ npm run bench:full
 |---:|---:|---:|---:|----------:|-------:|---:|----------:|-----------:|-------------:|----------:|----------:|----------:|
 | #3139 | 4 | 2 | 11 | 0.67 | 0.27 | 0.38 | 4/9 | 0.44 | 1.00 | 64,964 | 2,512 | 25.9× |
 | #3319 | 10 | 3 | 19 | 0.77 | 0.34 | 0.48 | 9/21 | 0.43 | 0.95 | 110,191 | 3,666 | 30.1× |
-| #3673 | 6 | 5 | 2 | 0.55 | 0.75 | 0.63 | 6/8 | 0.75 | 0.63 | 49,313 | 2,806 | 17.6× |
+| #3377 | 2 | 10 | 5 | 0.17 | 0.29 | 0.21 | 2/6 | 0.33 | 1.00 | 62,996 | 3,360 | 18.7× |
 
 </details>
 

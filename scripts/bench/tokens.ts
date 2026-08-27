@@ -1,5 +1,5 @@
 /**
- * Token-reduction measurement for the v1.7.0 bench.
+ * Token-reduction measurement for the external-oracle benchmark.
  *
  * Two questions, two numbers per PR:
  *
@@ -50,6 +50,9 @@ import path from 'node:path';
 import { Skeletonizer } from '../../packages/core/src/ast/Skeletonizer.js';
 import { defaultTokenEstimator } from '../../packages/core/src/budget/budget.js';
 import type { DependencyGraph } from '@ctxloom/core';
+
+/** Stable identifier emitted in reports and documented by the methodology. */
+export const BENCH_TOKEN_ESTIMATOR = 'ctxloom production estimator: ceil(characters / 4)';
 
 /** Extensions whose tokens we count — mirrors graph-correctness.ts. */
 const COUNTED_EXTENSIONS = new Set([

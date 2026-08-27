@@ -1,23 +1,24 @@
 # ctxloom — The Universal Code Context Engine
 
-A local-first MCP server that gives AI coding assistants deep structural understanding of your codebase through hybrid **Vector + AST + Graph** search, with **Skeletonization** for ~96% token reduction.
+A local-first MCP server that gives AI coding assistants deep structural understanding of your codebase through hybrid **Vector + AST + Graph** search. On the current external-oracle benchmark, its modeled code-context payload is **94.8% smaller corpus-wide**.
 
 No cloud indexing. No Python. Everything runs on your machine.
 
 > **ctxloom requires a license.** Start a free 14-day trial — no charge today; cancel before the trial ends to avoid billing.
 
-## v1.7.0 — what we can defend with numbers
+## Current benchmark — rebaselined for v1.7.12
 
 Measured on a **5-repo × 3-PR external-oracle benchmark** (15 merged PRs from expressjs/express, tiangolo/fastapi, pallets/flask, gin-gonic/gin, encode/httpx — ground truth = the human-authored diff from GitHub, **not** the graph's own traversal):
 
 | Metric                  | Value     | What it means |
 |-------------------------|----------:|---------------|
-| **Graph reachability**  | **0.94**  | 94% of source-file ground truth is reachable from the entry point via BFS |
-| **Source recall**       | **0.61**  | 61% of indexable PR files surfaced by the prediction algorithm |
-| **Avg F1**              | **0.42**  | Honest. We report it instead of cherry-picking a prettier number. |
+| **Graph reachability**  | **0.93**  | 93% of source-file ground truth is reachable from the entry point via BFS |
+| **Source recall**       | **0.63**  | 63% of indexable PR files surfaced by the prediction algorithm |
+| **Avg F1**              | **0.43**  | Honest. We report it instead of cherry-picking a prettier number. |
 | **Symbol coverage**     | **1.00**  | Every AST-declared function/class/method/interface is in the symbol index |
-| **Import coverage**     | **1.00**  | Every AST-found relative import resolves to a graph edge |
-| **Token reduction**     | **24.6×** | Naive baseline (full files + 1-hop imports) vs skeleton view — same production code path |
+| **Import coverage**     | **1.00**  | Every independently resolved local import target has its exact graph edge |
+| **Mean token reduction** | **27.0×** | Mean per PR; both sides use the production `ceil(characters / 4)` estimator |
+| **Corpus token totals** | **71,046 vs 1,367,753** | With ctxloom vs without: 94.8% estimated saving, weighted reduction 19.3× |
 
 Plus:
 
@@ -26,7 +27,7 @@ Plus:
 - **Monorepo support** — streaming file walk + batched LanceDB upserts; 50k+ file repos no longer stall
 - **Code-specific embedding upgrade** (opt-in via `CTXLOOM_EMBEDDING_MODEL=jina-code`) — +72.5% better discrimination on code-semantic queries
 
-**Reproduce every number**: `npm run bench:full`. Full methodology in [`evaluate/methodology.md`](evaluate/methodology.md). Release notes in [`docs/v1.7.0-release-notes.md`](docs/v1.7.0-release-notes.md). Long-form rationale in [`blog/v1.7.0-the-honest-numbers-post.md`](blog/v1.7.0-the-honest-numbers-post.md).
+**Reproduce every number**: `npm run bench:validate && npm run bench:full`. Full methodology in [`evaluate/methodology.md`](evaluate/methodology.md). The v1.7.0 release notes and long-form post remain historical snapshots of the original corpus.
 
 ## Multi-Project Support (v1.1.0)
 

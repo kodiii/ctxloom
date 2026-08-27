@@ -9,8 +9,8 @@ import type { BenchReport, RepoReport } from './types.js';
 
 /**
  * Render a coverage cell. -1 is the "not applicable" marker (e.g.
- * import coverage on pure-Go corpora that exclusively use module-path
- * imports) — emit "n/a" so reviewers don't confuse it with a real
+ * import coverage when no supported local targets are found) — emit
+ * "n/a" so reviewers don't confuse it with a real
  * score of 0.0 or 1.0.
  */
 function fmtCoverage(value: number): string {
@@ -25,6 +25,7 @@ export function renderMarkdown(report: BenchReport): string {
   lines.push('');
   lines.push(`Generated ${report.generatedAt} on commit ${report.ctxloomSha}.`);
   lines.push(`Stage: **${report.stage}**.`);
+  lines.push(`Token estimator: **${report.tokenEstimator}**.`);
   lines.push('');
   lines.push('Reproduce locally:');
   lines.push('');
@@ -85,12 +86,40 @@ export function renderMarkdown(report: BenchReport): string {
   );
   lines.push('');
   lines.push(
-    '> **Import Coverage** = fraction of AST-found intra-repo (relative) import statements ' +
-    'that resulted in a graph forwardEdge. Direct measure of the import resolver\'s correctness, ' +
-    'independent of any prediction algorithm. Per-extension breakdown isolates language-specific ' +
+    '> **Import Coverage** = fraction of independently resolved local source-target import edges ' +
+    'that are present as exact graph forward edges. Unrelated extra graph edges cannot hide a miss. ' +
+    'The corpus audit covers JS/TS, Python, and Go and is independent of the production resolver. ' +
+    'Per-extension breakdown isolates language-specific ' +
     'resolver gaps — e.g. if `gin` shows .go imports at 0.30 coverage while JS/TS/Py are at 1.00, ' +
     'the Go-resolver path is dropping edges. Diagnoses precisely WHERE in the graph layer a low ' +
     'graphReachability number originates.',
+  );
+  lines.push('');
+  lines.push(
+    '> **Token counts are estimates**, not provider billing totals. Both comparison branches ' +
+    `use \`${report.tokenEstimator}\`, the same estimator as ctxloom's production budget surface.`,
+  );
+  lines.push('');
+
+  const savedTokens = report.overall.totalNaiveTokens - report.overall.totalGraphTokens;
+  const savedPercent = report.overall.totalNaiveTokens === 0
+    ? 0
+    : (savedTokens / report.overall.totalNaiveTokens) * 100;
+  lines.push('## Corpus token comparison');
+  lines.push('');
+  lines.push('| Without ctxloom | With ctxloom | Estimated saved | Weighted reduction | Mean per-PR reduction |');
+  lines.push('|----------------:|-------------:|----------------:|-------------------:|----------------------:|');
+  lines.push(
+    `| ${report.overall.totalNaiveTokens.toLocaleString()} ` +
+    `| ${report.overall.totalGraphTokens.toLocaleString()} ` +
+    `| ${savedTokens.toLocaleString()} (${savedPercent.toFixed(1)}%) ` +
+    `| ${report.overall.totalReduction.toFixed(1)}× ` +
+    `| ${report.overall.avgReduction.toFixed(1)}× |`,
+  );
+  lines.push('');
+  lines.push(
+    '> These totals measure the benchmark\'s code-context payload only. They are not this ' +
+    'Codex task\'s private reasoning, tool-call, or model-billing token totals.',
   );
   lines.push('');
 
