@@ -1,6 +1,6 @@
 # ctxloom benchmark
 
-Generated 2026-08-26T10:23:38.504Z on commit 17818e4-dirty.
+Generated 2026-08-27T09:38:53.086Z on commit c0365ab.
 Stage: **full**.
 Token estimator: **ctxloom production estimator: ceil(characters / 4)**.
 

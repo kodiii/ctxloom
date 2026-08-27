@@ -7,6 +7,8 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
 ## [Unreleased]
 
+## [1.7.13] — 2026-08-27
+
 - **Benchmark corpus and reporting are reproducible again.** A preflight now
   validates all 15 merged-PR pins against each repository's default branch
   before indexing. Three unavailable or methodology-invalid pins were replaced
