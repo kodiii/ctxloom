@@ -5,38 +5,58 @@ Thanks for your interest in contributing! This guide covers the most common cont
 ## Quick orientation
 
 ```
-src/
-├── tools/          # One file per MCP tool — the easiest place to start
-├── ast/ASTParser.ts   # Tree-sitter parsing per language
+packages/core/src/
+├── tools/          # MCP tool implementations
+├── ast/            # Tree-sitter parsing and skeletonization
 ├── graph/          # DependencyGraph, CallGraphIndex, CommunityDetector
-├── utils/          # Import extractors, GoModuleResolver, logger
-└── grammars/       # Lazy grammar download + SHA-256 cache
-tests/              # Vitest tests — one file per module
-benchmarks/         # benchmark.ts + results.json
+├── utils/          # Import extractors, resolvers, and logging
+├── grammars/       # Lazy grammar download + SHA-256 cache
+└── indexer/        # File collection and vector indexing
+packages/mcp-client/ # Public client package surface
+apps/dashboard/      # Local web dashboard
+apps/pr-bot/         # GitHub App and review action
+src/                 # Compatibility re-exports and CLI entry points
+tests/               # Vitest integration and regression tests
+evaluate/            # External-oracle benchmark methodology and reports
 ```
+
+Most implementation work belongs in `packages/core/src`. Files under `src/`
+with the same names may only re-export the package implementation; check before
+editing so a change lands in the source of truth.
 
 ## Development setup
 
 ```bash
 git clone https://github.com/kodiii/ctxloom.git
 cd ctxloom
-npm install
+npm ci
 npm run build     # tsup, outputs to dist/
-npm test          # vitest run (274 tests, ~90s)
+npm test          # vitest test suite
 npm run lint      # tsc --noEmit
 ```
 
-## Add a new language in ~30 minutes
+For package publication and release steps, see [`docs/RELEASING.md`](docs/RELEASING.md).
+
+## Add or extend language support
 
 This is the most impactful contribution you can make.
 
-Languages waiting for a PR: **C#, C/C++, Ruby, PHP, Kotlin, Swift**
+ctxloom currently indexes TypeScript/JavaScript, Python, Go, Rust, Java, C#,
+Ruby, Kotlin, Swift, PHP, Dart, Vue, Jupyter, C/C++, Scala, Lua, Elixir, and
+Zig. Check the issue tracker before starting another language so the work is not
+duplicated.
 
-Each language needs changes in 4 files. Here's the exact template:
+A language usually touches these implementation surfaces:
 
-### 1. `src/grammars/GrammarLoader.ts` — register the grammar
+1. `packages/core/src/grammars/GrammarLoader.ts` — register or load the grammar.
+2. `packages/core/src/ast/ASTParser.ts` — extract declarations and imports.
+3. `packages/core/src/utils/importExtractor.ts` — resolve local imports.
+4. `packages/core/src/indexer/embedder.ts` — include the file extensions.
+5. `packages/core/src/watcher/FileWatcher.ts` — recognize changed source files.
+6. Tests under `tests/` — cover parsing, resolution, invalid syntax, and watcher/indexer parity.
 
-Find the `GRAMMARS` registry and add an entry:
+Use an existing language with a similar module system as the template. For
+example, a grammar registry entry has this shape:
 
 ```typescript
 {
@@ -49,115 +69,31 @@ Find the `GRAMMARS` registry and add an entry:
 },
 ```
 
-### 2. `src/ast/ASTParser.ts` — add parse logic
+Tests should cover:
 
-```typescript
-// 1. Add private field
-private kotlinLang: TreeSitter.Language | null = null;
-
-// 2. Add loader method
-private async loadKotlin(): Promise<void> {
-  if (this.kotlinLang) return;
-  try {
-    const wasmPath = await this.grammarLoader.ensureGrammar('kotlin');
-    this.kotlinLang = await TreeSitter.Language.load(wasmPath);
-  } catch (err) {
-    logger.warn('Kotlin grammar unavailable', { detail: err instanceof Error ? err.message : String(err) });
-  }
-}
-
-// 3. Route .kt / .kts in the parse() dispatch
-if (ext === '.kt' || ext === '.kts') return this.parseKotlin(filePath);
-
-// 4. Implement parser — emit nodes with these types:
-//    'function', 'class', 'interface', 'import'
-//    Each node needs: type, name, signature, startLine, endLine
-//    Import nodes also need: source (the import path string)
-private async parseKotlin(filePath: string): Promise<ParsedNode[]> {
-  if (!this.kotlinLang) await this.loadKotlin();
-  if (!this.kotlinLang) return [];
-
-  const parser = new TreeSitter.Parser();
-  parser.setLanguage(this.kotlinLang);
-  const source = fs.readFileSync(filePath, 'utf-8');
-  const tree = parser.parse(source);
-  if (!tree) return [];
-
-  const nodes: ParsedNode[] = [];
-  const lines = source.split('\n');
-
-  const walk = (node: TreeSitter.Node): void => {
-    switch (node.type) {
-      case 'function_declaration': {
-        const nameNode = node.childForFieldName?.('name');
-        if (nameNode) {
-          nodes.push({
-            type: 'function',
-            name: nameNode.text,
-            signature: (lines[node.startPosition.row] ?? '').trim(),
-            startLine: node.startPosition.row + 1,
-            endLine: node.endPosition.row + 1,
-          });
-        }
-        return;
-      }
-      // add class_declaration, import_header, etc.
-    }
-    for (const child of node.children) {
-      if (child) walk(child);
-    }
-  };
-
-  walk(tree.rootNode);
-  return nodes;
-}
-```
-
-### 3. `src/utils/importExtractor.ts` — add import resolution
-
-Add a case for the new extension in both `extractImports()` and `resolveImport()`.
-For most languages, this is: extract the string after `import` and map dots/slashes to a file path.
-
-### 4. `src/indexer/embedder.ts` — include files in collection
-
-Find `collectFiles()` and add the extension to the allowed set:
-
-```typescript
-const SUPPORTED_EXTENSIONS = new Set([
-  '.ts', '.tsx', '.js', '.jsx', '.mjs',
-  '.py', '.go', '.rs', '.java',
-  '.kt', '.kts',  // ← add here
-]);
-```
-
-Also update `FileWatcher.isSourceFile()` in `src/watcher/FileWatcher.ts`.
-
-### 5. Write tests
-
-Add a test file `tests/ASTParser_<language>.test.ts` covering:
 - Parse returns function/class/interface nodes
 - Import nodes have correct `source` field
 - Empty file returns `[]`
 - Invalid syntax doesn't throw
+- Imports resolve to the expected graph edge
+- Indexer and file watcher accept the same extensions
 
-See `tests/ASTParser.test.ts` for the pattern.
-
-### 6. Update README
-
-Add the language to the "Language Support" table in `README.md`.
+Update the README language list and add a changelog entry with the tests used to
+verify the new support.
 
 ---
 
 ## Adding or modifying an MCP tool
 
-Each tool lives in `src/tools/<name>.ts` and exports `register<Name>Tool(registry, ctx)`.
+Each tool lives in `packages/core/src/tools/<name>.ts` and exports a registration
+function such as `register<Name>Tool(registry, ctx)`.
 
 1. Write failing tests in `tests/<Name>.test.ts`
 2. Implement the tool (returns XML string)
-3. Register in `src/tools/index.ts`
+3. Register it in the MCP server's tool registry
 4. Add to help text in `src/index.ts`
 
-See `src/tools/blast-radius.ts` as a clean example.
+See `packages/core/src/tools/blast-radius.ts` as a clean example.
 
 ## Code style
 

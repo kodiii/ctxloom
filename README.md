@@ -444,22 +444,25 @@ The tool reads `.ctxloom/rules.yml` and the live dependency graph on every call 
 | Graph export (Gephi/Obsidian) | ✅ `ctx_graph_export` | ✅ | ❌ |
 | Cross-repo search | ✅ `ctx_cross_repo_search` | ✅ | ❌ |
 | All-in-one code review packet | ✅ `ctx_git_diff_review` | ✅ | ❌ |
-| Tree-sitter AST | ✅ TS/JS/Python/Go/Rust/Java/C#/Ruby/Kotlin/Swift/PHP/Dart/Vue — 13 languages | ✅ Multi-language | varies |
-| Token reduction (skeletonization) | ✅ **92% measured on real repos** | ✅ | ❌ |
+| Tree-sitter AST | ✅ 18 languages with import + symbol coverage | ✅ Multi-language | varies |
+| Token reduction (skeletonization) | ✅ **92% smaller modeled context on real repos** | ✅ | ❌ |
 | npm install size | ✅ <5 MB (lazy grammars) | ❌ Large | varies |
 | MCP protocol native | ✅ | ✅ | varies |
 | PR-native review comments | ✅ ctxloom-bot posts on every PR | ❌ | ❌ |
 
-> Token reduction is measured, not estimated. See [`benchmarks/README.md`](benchmarks/README.md).
+> Character reduction is measured directly; token equivalents use the same
+> `ceil(characters / 4)` estimator on both sides. See
+> [`benchmarks/README.md`](benchmarks/README.md).
 
 ---
 
-## Tools — 33 total
+## Tools — 34 total
 
 ### Search & Context
 
 | Tool | Description |
 |------|-------------|
+| `ctx_get_minimal_context` | Mandatory workflow orientation: graph readiness, recent changes, hubs, and a task-aware next-tool suggestion |
 | `ctx_search` | Hybrid semantic + graph search (vector similarity + import graph expansion) |
 | `ctx_get_file` | Safe file read with path traversal protection (5 MB max) |
 | `ctx_get_context_packet` | Smart multi-file context: primary file + dependency skeletons + reverse importers |
@@ -523,7 +526,7 @@ ctxloom fuses your git history onto the structural graph to produce a *risk map*
 Re-index with the `--with-git` flag (enabled by default):
 
 ```
-ctxloom . --with-git --git-window-days=365
+ctxloom index --with-git --git-window-days=365
 ```
 
 First run mines the last 365 days of commits (~30–90s on large repos). Subsequent runs are incremental.
@@ -615,7 +618,9 @@ Defaults are **provisional** (derived from the issue's initial table); a future 
 
 ### Token estimator
 
-Default = `chars / 4` — within ±10% of GPT/Claude tokenizers on code with zero tokenization cost. Pluggable per-tool via the `estimator` option on `BudgetOptions` for callers that need accuracy-critical estimation (e.g. tiktoken).
+Default = `ceil(chars / 4)` — a lightweight model used consistently for budget
+enforcement and comparative reports. It is an estimate rather than provider
+billing usage. The estimator is pluggable per tool through `BudgetOptions`.
 
 ### Kill switch
 
@@ -670,6 +675,11 @@ ctxloom --help                   Show help
 | Dart | ✅ Relative imports | ✅ | ✅ |
 | Vue SFC | ✅ Script block | ✅ | ✅ |
 | Jupyter Notebook | ✅ Python cell imports | ✅ | ✅ |
+| C / C++ | ✅ Local `#include` resolution | ✅ | ✅ |
+| Scala | ✅ Package imports | ✅ | ✅ |
+| Lua | ✅ `require` resolution | ✅ | ✅ |
+| Elixir | ✅ Alias/import/use resolution | ✅ | ✅ |
+| Zig | ✅ `@import` resolution | ✅ | ✅ |
 
 ---
 
@@ -779,10 +789,10 @@ The complete list of events, properties, what is *never* collected, and how proj
 ```bash
 git clone https://github.com/kodiii/ctxloom.git
 cd ctxloom
-npm install
+npm ci
 npm run build
-ctxloom index
-node dist/index.js
+node bin/ctxloom.cjs --version
+node bin/ctxloom.cjs index
 ```
 
 ---
@@ -792,66 +802,26 @@ node dist/index.js
 ```
 src/
 ├── index.ts                   # CLI entry point
-├── server.ts                  # MCP server (Stdio transport)
-├── tools/
-│   ├── registry.ts            # ToolRegistry: register/dispatch
-│   ├── search.ts              # ctx_search
-│   ├── file.ts                # ctx_get_file
-│   ├── context-packet.ts      # ctx_get_context_packet
-│   ├── call-graph.ts          # ctx_get_call_graph
-│   ├── definition.ts          # ctx_get_definition
-│   ├── rules.ts               # ctx_get_rules
-│   ├── rules-check.ts         # ctx_rules_check
-│   ├── similar-files.ts       # ctx_similar_files
-│   ├── status.ts              # ctx_status
-│   ├── blast-radius.ts        # ctx_blast_radius
-│   ├── hub-nodes.ts           # ctx_hub_nodes
-│   ├── bridge-nodes.ts        # ctx_bridge_nodes
-│   ├── community-list.ts      # ctx_community_list
-│   ├── architecture-overview.ts # ctx_architecture_overview
-│   ├── knowledge-gaps.ts      # ctx_knowledge_gaps
-│   ├── surprising-connections.ts # ctx_surprising_connections
-│   ├── wiki-generate.ts       # ctx_wiki_generate
-│   ├── graph-export.ts        # ctx_graph_export
-│   ├── git-diff-review.ts     # ctx_git_diff_review
-│   ├── refactor-preview.ts    # ctx_refactor_preview
-│   ├── execution-flow.ts      # ctx_execution_flow
-│   └── cross-repo-search.ts   # ctx_cross_repo_search
-├── rules/
-│   ├── types.ts               # Rule, RulesConfig, Violation, CheckResult, RulesConfigError
-│   ├── loadConfig.ts          # YAML + zod config loader
-│   ├── RulesChecker.ts        # picomatch glob engine — graph edges → violations
-│   ├── reporter.ts            # formatText (human) + formatJson (schemaVersion: 1)
-│   └── index.ts               # barrel export
-├── graph/
-│   ├── DependencyGraph.ts     # In-memory graph + snapshot + multi-language
-│   ├── CallGraphIndex.ts      # Symbol-level call edges (TypeScript/JS)
-│   ├── CommunityDetector.ts   # Louvain clustering (graphology)
-│   ├── WikiGenerator.ts       # Hash-cached community Markdown wiki
-│   └── GraphExporter.ts       # GraphML / DOT / Obsidian export
-├── ast/
-│   ├── ASTParser.ts           # tree-sitter multi-language parser
-│   └── Skeletonizer.ts        # Signature-only code views
-├── db/
-│   └── VectorStore.ts         # LanceDB vector storage
-├── indexer/
-│   └── embedder.ts            # HuggingFace embeddings + file collection
-├── grammars/
-│   └── GrammarLoader.ts       # Lazy grammar download + SHA-256 verify
-├── security/
-│   └── PathValidator.ts       # Path traversal protection (CWE-22)
-├── watcher/
-│   └── FileWatcher.ts         # chokidar (200ms debounce, incremental)
-├── setup/
-│   ├── clients.ts             # 13-client registry + detection
-│   └── setup-wizard.ts        # Interactive setup CLI
-└── utils/
-    ├── logger.ts              # Structured JSON-lines logger (stderr)
-    └── importExtractor.ts     # Regex import extraction (Python/Rust/Go/Java)
-
-benchmarks/
-├── benchmark.ts               # Benchmark suite (graph build + search + compression)
-└── README.md                  # Methodology and reproducibility guide
+├── server.ts                  # MCP transport and multi-project wiring
+├── setup/                     # setup/init and host adapters
+└── tools/, ast/, graph/, ...  # compatibility re-exports during migration
+packages/core/src/
+├── tools/                     # all 34 MCP tool implementations + registry
+├── ast/                       # multi-language AST parser and Skeletonizer
+├── graph/                     # dependency/call graphs, communities, exports
+├── indexer/                   # file collection and embeddings
+├── git/, risk/, trends/       # history overlay and structural risk
+├── rules/                     # architecture rules engine
+├── server/                    # per-project state and repository registry
+├── setup/, install/           # shared setup and installation logic
+└── db/, grammars/, watcher/   # persistence, language grammars, live updates
+packages/mcp-client/           # reusable MCP client package
+apps/dashboard/                # local graph/risk dashboard
+apps/pr-bot/                   # GitHub App and PR review action
+tests/                         # Vitest integration and regression suites
+benchmarks/                    # graph/search/skeletonization benchmarks
+evaluate/                      # external-oracle corpus and methodology
+docs/                          # operations, release, risk, and design docs
 ```
 
 ---
